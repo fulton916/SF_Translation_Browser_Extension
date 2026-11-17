@@ -65,8 +65,10 @@ export async function queryAll(session, soql, { tooling = false } = {}) {
   return records.map(stripAttributes);
 }
 
-function stripAttributes(r) {
+export function stripAttributes(r) {
   if (!r || typeof r !== 'object') return r;
+  // Keep arrays as arrays (bug: FlexiPage Metadata.flexiPageRegions became a plain object).
+  if (Array.isArray(r)) return r.map(stripAttributes);
   const { attributes, ...rest } = r;
   for (const k of Object.keys(rest)) if (rest[k] && typeof rest[k] === 'object') rest[k] = stripAttributes(rest[k]);
   return rest;

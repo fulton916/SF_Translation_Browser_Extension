@@ -547,3 +547,15 @@ test('label in its own master language opens the label to edit the Value, not a 
   const p = locate({ text: 'Submit request', org }).results[0];
   assert.ok(!buildGotoUrl(p.goto, 'en_US').masterEdit);
 });
+
+test('field section, page not readable, label matched → no extra card, label says why it is likely', () => {
+  const out = locate({ text: 'Business Unit', hints: sectionHints, org: orgBU });
+  assert.ok(!out.results.some((r) => r.key === 'area:fieldSection'));
+  const r = out.results.find((x) => x.source === SOURCE.CUSTOM_LABEL);
+  assert.match(r.notes[0], /Likely the source/);
+});
+
+test('field section, page not readable, no label matched → the section card explains', () => {
+  const out = locate({ text: 'Unmatched Header Text', hints: sectionHints, org: orgBU });
+  assert.ok(out.results.some((r) => r.key === 'area:fieldSection'));
+});

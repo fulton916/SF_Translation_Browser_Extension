@@ -835,8 +835,12 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
 
   // 7. Page metadata (buttons, sections, flows, custom components)
   // Clicked a Lightning App Builder component whose label was read from the page metadata.
+  const labelHits = results.filter((r) => r.source === SOURCE.CUSTOM_LABEL);
   if (pageComponent) applyPageComponent(org, results, add, pageComponent);
-  else if (areas.has('fieldSection')) {
+  else if (areas.has('fieldSection') && labelHits.length) {
+    // Page metadata not readable: no extra card (it confused testers). Say why the label is likely.
+    for (const r of labelHits) r.notes = ['Likely the source: Dynamic Forms section headers usually use a custom label.', ...(r.notes || [])];
+  } else if (areas.has('fieldSection')) {
     add({
       key: 'area:fieldSection',
       source: SOURCE.CONTEXT,
