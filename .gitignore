@@ -3,5 +3,6 @@ node_modules/
 *.zip
 .DS_Store
 Thumbs.db
-# Exported test logs can contain org details
+# Exported test logs and Workbench exports contain org details: keep them local
 sf-translation-log-*.json
+test-data/

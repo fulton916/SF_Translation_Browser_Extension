@@ -173,7 +173,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
     });
   }
   const record = rec ? { object: rec[1], id: rec[2] } : null;
-  const located = locate({ text, hints, org: { ...org, labelTranslations }, describes: describes.filter(Boolean), dataTranslations, record });
+  const located = locate({ text, hints, org: { ...org, labelTranslations }, describes: describes.filter(Boolean), dataTranslations, record, pageUrls: urls });
   return {
     ...located,
     hints,
