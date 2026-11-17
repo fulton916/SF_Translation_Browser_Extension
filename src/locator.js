@@ -184,6 +184,8 @@ export const WB_COMPONENT = {
   'Layout Section': 'LayoutSection',
   Flow: 'FlowDefinition',
   'Custom Label': 'ExternalString',
+  'Address Country': 'AddressCountry',
+  'Address State': 'AddressState',
 };
 const WB_ASPECT = { 'Field Label': 'master', 'Help Text': 'help', 'Related List Label': 'relationshiplabel', Description: 'description' };
 
@@ -200,7 +202,7 @@ export function namespaceOf(apiName) {
 }
 
 /** Translate page steps, or Override steps when the item comes from a package. */
-function workbench(org, { component, object, objectLabel, aspect, row, rows, pkg }) {
+function workbench(org, { component, object, objectLabel, aspect, row, rows, pkg, parent }) {
   const override = pkg && OVERRIDE_COMPONENTS.has(component);
   const steps = override
     ? ['Setup → Translation Workbench → Override', `Package: the one with namespace "${pkg}"`, languageStep(org), `Setup Component: ${component}`]
@@ -217,6 +219,8 @@ function workbench(org, { component, object, objectLabel, aspect, row, rows, pkg
     objectLabel: objectLabel || null,
     aspect: WB_ASPECT[aspect] || null,
     rows: [...new Set((rows || [row]).filter(Boolean))],
+    // Picklist Value is a tree on the Translate page: values sit under their field's node.
+    parent: parent || null,
   };
   const out = { source: override ? SOURCE.OVERRIDE : SOURCE.WORKBENCH, steps, url: override ? SETUP.override : SETUP.workbench, goto };
   if (override) out.packageNote = `Comes from the "${pkg}" package. Package items are translated on the Override page, not Translate.`;
@@ -350,6 +354,19 @@ function helpTextResult(org, d, f, confidence) {
 }
 
 function picklistResult(org, d, f, pv, confidence) {
+  // State and Country/Territory picklists (BillingCountryCode, MailingStateCode...) have their own components.
+  const address = /CountryCode$/.test(f.name) ? 'Address Country' : /StateCode$/.test(f.name) ? 'Address State' : null;
+  if (address) {
+    return {
+      key: `address:${address}.${pv.value}`,
+      confidence,
+      title: `${address === 'Address Country' ? 'Country/territory' : 'State/province'} name`,
+      subtitle: `"${pv.label}" (code: ${pv.value})`,
+      ...workbench(org, { component: address, row: pv.label, rows: [pv.label, pv.value] }),
+      copy: pv.value,
+      notes: ['One translation for the whole org: it applies to every address field.', 'Master name: Setup → State and Country/Territory Picklists.'],
+    };
+  }
   const notes = ['If the field uses a Global Value Set, pick Setup Component "Global Value Set" instead.'];
   if (!pv.active) notes.push('This value is inactive.');
   if (isDefaultLanguage(org)) notes.push(`Master label: Object Manager → ${d.label} → Fields → ${f.label} → Values → Edit.`);
@@ -358,7 +375,7 @@ function picklistResult(org, d, f, pv, confidence) {
     confidence,
     title: `Picklist value on ${d.name}.${f.name}`,
     subtitle: `"${pv.label}" (API value: ${pv.value})`,
-    ...workbench(org, { component: 'Picklist Value', object: d.name, objectLabel: d.label, row: `${pv.label} (field: ${f.label})`, rows: [pv.label, pv.value], pkg: namespaceOf(f.name) }),
+    ...workbench(org, { component: 'Picklist Value', object: d.name, objectLabel: d.label, row: `${pv.label} (field: ${f.label})`, rows: [pv.label, pv.value], pkg: namespaceOf(f.name), parent: f.label }),
     copy: pv.value,
     notes,
   };

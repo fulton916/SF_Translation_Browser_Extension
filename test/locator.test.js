@@ -474,3 +474,28 @@ test('org names on Setup pages (Object Manager) still rank above the Salesforce-
   assert.notEqual(r[0].key, 'setup:builtin');
   assert.equal(r.at(-1).key, 'setup:builtin');
 });
+
+// ---------- Findings from a real Workbench export (Nov 2026) ----------
+
+test('picklist goto names its field, because Picklist Value is a tree on the Translate page', () => {
+  const d = { name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
+    fields: [{ name: 'Segmentation_LST__c', label: 'Segmentation', custom: true, type: 'picklist', picklistValues: [{ label: 'Mid - Tier', value: 'Mid - Tier', active: true }] }] };
+  const r = locate({ text: 'Mid - Tier', org, describes: [d] }).results[0];
+  assert.equal(r.goto.component, 'PicklistMaster');
+  assert.equal(r.goto.parent, 'Segmentation');
+  assert.equal(buildGotoUrl(r.goto, 'de').autofill.parent, 'Segmentation');
+});
+
+test('country and state picklist values go to Address Country / Address State', () => {
+  const d = { name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
+    fields: [
+      { name: 'BillingCountryCode', label: 'Billing Country Code', custom: false, type: 'picklist', picklistValues: [{ label: 'Germany', value: 'DE', active: true }] },
+      { name: 'ShippingCountryCode', label: 'Shipping Country Code', custom: false, type: 'picklist', picklistValues: [{ label: 'Germany', value: 'DE', active: true }] },
+      { name: 'BillingStateCode', label: 'Billing State Code', custom: false, type: 'picklist', picklistValues: [{ label: 'Bavaria', value: 'BY', active: true }] },
+    ] };
+  const de = locate({ text: 'Germany', org, describes: [d] }).results;
+  assert.equal(de.length, 1, 'one org-wide result, not one per address field');
+  assert.equal(de[0].goto.component, 'AddressCountry');
+  assert.equal(de[0].goto.object, null);
+  assert.equal(locate({ text: 'Bavaria', org, describes: [d] }).results[0].goto.component, 'AddressState');
+});

@@ -502,16 +502,19 @@
       await choose(q, 'aspectSelect', [p.aspect]);
     }
 
-    const row = p.rows?.length ? await findGridRow(p.rows) : null;
+    // Most components show a grid; Picklist Value shows a tree (field node → values).
+    await waitFor(() => document.querySelector('.x-grid3-row, li.x-tree-node'), 10000).catch(() => null);
+    const isTree = !!document.querySelector('li.x-tree-node') && !document.querySelector('.x-grid3-row');
+    const row = !p.rows?.length ? null : isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows);
     if (row) {
       mark(row, false);
-      const cell = row.querySelector('.x-grid3-td-translation .x-grid3-cell-inner, .x-grid3-td-translation');
+      const cell = row.querySelector('.x-grid3-td-translation .x-grid3-cell-inner, .x-grid3-td-translation, .x-tree-col.translation');
       if (cell) {
         for (const type of ['mousedown', 'mouseup', 'click', 'dblclick']) {
           cell.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
         }
       }
-      toast(`Found "${row.querySelector('.x-grid3-col-masterLabel')?.innerText.trim() || p.rows[0]}". Type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
+      toast(`Found "${(row.querySelector('.x-grid3-col-masterLabel, .x-tree-node-anchor')?.innerText || p.rows[0]).trim()}". Type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
     } else {
       toast(`Filters are set. ${p.rows?.length ? `Row "${p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
     }
@@ -564,6 +567,29 @@
     if (!opt) return false;
     sel.value = opt.value;
     return true;
+  }
+
+  /** Picklist Value tree: expand the field's node, then find the value under it. Verified in a real org (Nov 2026). */
+  async function findTreeRow(parents, candidates) {
+    const want = candidates.filter(Boolean).map(norm);
+    const pw = parents.filter(Boolean).map(norm);
+    const label = (li) => norm(li.querySelector(':scope > .x-tree-node-el .x-tree-node-anchor')?.innerText);
+    const nodes = () => [...document.querySelectorAll('li.x-tree-node')];
+    // Two fields can share a label (e.g. standard and custom "Account Type"): try each.
+    const parentNodes = nodes().filter((li) => pw.includes(label(li)));
+    for (const li of parentNodes) {
+      const el = li.querySelector(':scope > .x-tree-node-el');
+      if (el?.classList.contains('x-tree-node-collapsed')) {
+        li.querySelector(':scope > .x-tree-node-el .x-tree-ec-icon')?.dispatchEvent(new MouseEvent('click', { bubbles: true, view: window }));
+        await waitFor(() => li.querySelector('li.x-tree-node'), 5000).catch(() => null);
+      }
+      const hit = [...li.querySelectorAll('li.x-tree-node')].find((k) => want.includes(label(k)));
+      if (hit) return hit.querySelector(':scope > .x-tree-node-el');
+    }
+    // No field given or not found under it: a value already visible anywhere.
+    const any = nodes().find((li) => want.includes(label(li)) && !pw.includes(label(li)));
+    if (!any) logEvent('warn', 'auto-fill', 'Picklist value not found in the tree', { field: parents, looking_for: candidates, fieldNodes: parentNodes.length });
+    return any ? any.querySelector(':scope > .x-tree-node-el') : null;
   }
 
   async function findGridRow(candidates) {
