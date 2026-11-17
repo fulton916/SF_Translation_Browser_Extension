@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in the extension is wrong or broken.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you clicked and what went wrong.
+      placeholder: Right-clicked "Business Unit" on an Opportunity, clicked Go to translation, the button stayed on "Opening…".
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to repeat it
+      placeholder: |
+        1. Open ...
+        2. Right-click ...
+        3. Click ...
+  - type: input
+    id: org
+    attributes:
+      label: Org
+      description: Which org or sandbox (no passwords or session IDs).
+      placeholder: UAT2 sandbox
+  - type: textarea
+    id: log
+    attributes:
+      label: Test log
+      description: Toolbar icon → Copy all, then paste here.
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag images here if they help.

@@ -1,0 +1,38 @@
+name: Test finding
+description: A result from testing in an org (wrong place, missing result, slow, confusing).
+labels: [test-finding]
+body:
+  - type: input
+    id: text
+    attributes:
+      label: Text you looked up
+      placeholder: Business Unit
+    validations:
+      required: true
+  - type: input
+    id: page
+    attributes:
+      label: Where you clicked
+      placeholder: Opportunity record page, field label
+  - type: textarea
+    id: result
+    attributes:
+      label: What the extension said
+    validations:
+      required: true
+  - type: textarea
+    id: correct
+    attributes:
+      label: Where the translation really is
+      description: If you know.
+  - type: input
+    id: org
+    attributes:
+      label: Org
+      placeholder: UAT2 sandbox
+  - type: textarea
+    id: log
+    attributes:
+      label: Test log
+      description: Toolbar icon → Copy all, then paste here.
+      render: text
