@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { locate, normalize, matchType, contextObjects, parseSelectionName, buildGotoUrl, namespaceOf, SOURCE } from '../src/locator.js';
+import { locate, normalize, matchType, contextObjects, parseSelectionName, buildGotoUrl, namespaceOf, isSetupPage, SOURCE } from '../src/locator.js';
 
 const org = {
   userLanguage: 'en_US',
@@ -439,4 +439,38 @@ test('data translation steps say Translations tab and Name-first rule', () => {
   const r = runData('Our best widget', { selectionNames: ['sfdc:RecordField.Product2.Description'] }).results[0];
   assert.ok(r.steps.includes('Click its Translations tab'));
   assert.ok(r.notes.some((n) => n.includes('Translate Name first')));
+});
+
+// ---------- Setup pages show Salesforce's own text (bug: "Export" heading matched maps__MA_Export) ----------
+
+const SETUP_URLS = [
+  'https://acme--uat.sandbox.my.salesforce-setup.com/lightning/setup/LabelWorkbenchExport/home',
+  'https://acme--uat.sandbox.my.salesforce-setup.com/i18n/TranslationWorkbenchExport.apexp',
+];
+
+test('isSetupPage: Setup yes, record pages no', () => {
+  assert.equal(isSetupPage(SETUP_URLS), true);
+  assert.equal(isSetupPage(['https://acme.my.salesforce.com/_ui/common/i18n/RenameTabStageManager']), true);
+  assert.equal(isSetupPage(['https://acme.lightning.force.com/lightning/r/Account/001000000000001AAA/view']), false);
+  assert.equal(isSetupPage([]), false);
+});
+
+test('Setup heading that equals a custom label → Salesforce text first, label hidden', () => {
+  const out = locate({ text: 'Submit request', org, pageUrls: SETUP_URLS });
+  assert.equal(out.results[0].title, "Salesforce's own Setup text");
+  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
+  assert.equal(out.droppedPartial, 1);
+});
+
+test('same label text on a record page is still a Custom Labels result', () => {
+  const r = locate({ text: 'Submit request', org, pageUrls: ['https://acme.lightning.force.com/lightning/r/Account/001000000000001AAA/view'] }).results;
+  assert.equal(r[0].source, SOURCE.CUSTOM_LABEL);
+  assert.ok(!r.some((x) => x.key === 'setup:builtin'));
+});
+
+test('org names on Setup pages (Object Manager) still rank above the Salesforce-text note', () => {
+  const r = locate({ text: 'Invoice', org, pageUrls: ['https://acme.my.salesforce-setup.com/lightning/setup/ObjectManager/home'] }).results;
+  assert.notEqual(r[0].key, 'setup:builtin');
+  assert.equal(r.at(-1).key, 'setup:builtin');
 });

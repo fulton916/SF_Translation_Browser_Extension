@@ -253,7 +253,8 @@
   }
 
   function confidenceText(c) {
-    return { confirmed: 'Confirmed by page', exact: 'Exact match', partial: 'Partial match', context: 'From page area' }[c] || c;
+    // "Same text" (not "Exact match"): equal words do not prove this is where the text comes from.
+    return { confirmed: 'Confirmed by page', exact: 'Same text', partial: 'Similar text', context: 'From page area' }[c] || c;
   }
 
   function langName(code) {

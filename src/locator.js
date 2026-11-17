@@ -637,7 +637,38 @@ function hintResults(org, hints, describes, areas, text) {
  * @param {object} input.org    org-wide data (labels, objects, tabs, apps, validation rules, languages)
  * @param {object[]} input.describes  sObject describes for context objects (with quickActions)
  */
-export function locate({ text, hints = {}, org = {}, describes = [], dataTranslations = [], record = null }) {
+/** True when the click happened on a Salesforce Setup page (Lightning Setup or a classic Setup frame). */
+export function isSetupPage(urls = []) {
+  return urls.filter(Boolean).some((u) => {
+    try {
+      const { host, pathname } = new URL(u);
+      if (/\.salesforce-setup\.com$/.test(host)) return true;
+      if (pathname.startsWith('/lightning/setup/')) return true;
+      return /\.my\.salesforce\.com$/.test(host) && /^\/(i18n|setup|ui\/setup|_ui\/common|01j|p\/setup)\b/.test(pathname);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function setupTextResult() {
+  return {
+    key: 'setup:builtin',
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'context',
+    title: "Salesforce's own Setup text",
+    subtitle: 'Page titles, headings, buttons, and help text on Setup pages',
+    steps: [
+      'Salesforce writes and translates this text. Admins cannot change or translate it.',
+      'To see it in another language, change your personal language: your profile picture → Settings → Language & Time Zone.',
+      'Names from your org shown on Setup pages (objects, fields, picklist values) are listed separately when found.',
+    ],
+    url: null,
+    notes: [],
+  };
+}
+
+export function locate({ text, hints = {}, org = {}, describes = [], dataTranslations = [], record = null, pageUrls = [] }) {
   const needle = normalize(text);
   const results = [];
   const add = (r) => r && results.push(r);
@@ -779,6 +810,17 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     const r = fieldLabelResult(org, d, f, 'context');
     r.notes = [`You clicked inside this field. Its label in Salesforce is "${f.label}".`, ...r.notes];
     add(r);
+  }
+
+  // Setup pages show Salesforce's own text. Custom labels are not used there, so a label
+  // with the same words is a coincidence (bug: "Export" heading matched the maps__MA_Export label).
+  if (isSetupPage(pageUrls)) {
+    for (const r of results) {
+      if (r.source !== SOURCE.CUSTOM_LABEL) continue;
+      r.confidence = 'partial';
+      r.notes = ['Same words only. Setup pages do not show custom labels, so this is probably not the text you clicked.', ...(r.notes || [])];
+    }
+    add(setupTextResult());
   }
 
   return finalize(results, areas);
