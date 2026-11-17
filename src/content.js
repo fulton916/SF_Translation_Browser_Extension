@@ -452,8 +452,17 @@
     });
   }
 
-  const patch = (obj) => new Promise((res) => chrome.runtime.sendMessage({ type: 'sftl:pendingUpdate', patch: obj }, res));
-  const finish = () => chrome.runtime.sendMessage({ type: 'sftl:pendingUpdate', done: true });
+  // Read lastError in every callback so Chrome does not list "Unchecked runtime.lastError" under Errors.
+  const quietSend = (msg) =>
+    new Promise((res) => {
+      try {
+        chrome.runtime.sendMessage(msg, (r) => res(chrome.runtime.lastError ? null : r));
+      } catch {
+        res(null);
+      }
+    });
+  const patch = (obj) => quietSend({ type: 'sftl:pendingUpdate', patch: obj });
+  const finish = () => quietSend({ type: 'sftl:pendingUpdate', done: true });
   const norm = (s) => String(s ?? '').replace(/[\s ]+/g, ' ').trim().replace(/^\*\s*/, '').toLowerCase();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

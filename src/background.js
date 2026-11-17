@@ -26,19 +26,21 @@ const MENU_ELEMENT = 'sftl-element';
 const SF_PAGES = ['https://*.force.com/*', 'https://*.my.salesforce.com/*', 'https://*.my.salesforce-setup.com/*'];
 
 chrome.runtime.onInstalled.addListener(() => {
+  // Callbacks read lastError so a failure is logged, not listed as "Unchecked runtime.lastError".
+  const checked = (what) => () => {
+    const err = chrome.runtime.lastError;
+    if (err) log('error', 'setup', `${what}: ${err.message}`);
+  };
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({
-      id: MENU_SELECTION,
-      title: 'Find Salesforce translation for "%s"',
-      contexts: ['selection'],
-      documentUrlPatterns: SF_PAGES,
-    });
-    chrome.contextMenus.create({
-      id: MENU_ELEMENT,
-      title: 'Find Salesforce translation for this text',
-      contexts: ['page', 'link', 'image', 'editable'],
-      documentUrlPatterns: SF_PAGES,
-    });
+    checked('Clear menus')();
+    chrome.contextMenus.create(
+      { id: MENU_SELECTION, title: 'Find Salesforce translation for "%s"', contexts: ['selection'], documentUrlPatterns: SF_PAGES },
+      checked('Create selection menu')
+    );
+    chrome.contextMenus.create(
+      { id: MENU_ELEMENT, title: 'Find Salesforce translation for this text', contexts: ['page', 'link', 'image', 'editable'], documentUrlPatterns: SF_PAGES },
+      checked('Create element menu')
+    );
   });
 });
 
