@@ -499,3 +499,51 @@ test('country and state picklist values go to Address Country / Address State', 
   assert.equal(de[0].goto.object, null);
   assert.equal(locate({ text: 'Bavaria', org, describes: [d] }).results[0].goto.component, 'AddressState');
 });
+
+// ---------- Dynamic Forms field section (bug: "Business Unit" header on an Account page) ----------
+// Real path: flexipage-field-section2 > flexipage-component2[flexipage_fieldSection6] > flexipage-tab2[role=tabpanel] ...
+const sectionHints = {
+  tags: ['span', 'h3', 'flexipage-field-section2', 'flexipage-component2', 'flexipage-tab2', 'flexipage-tabset2', 'forcegenerated-flexipage_prospect_record_page_three_column_account__view_js___lmt___1'],
+  tabRole: 'tabpanel',
+  componentIds: ['flexipage_fieldSection6', 'flexipage_tabset'],
+  flexipage: 'forcegenerated-flexipage_prospect_record_page_three_column_account__view_js___lmt___1',
+};
+const orgBU = { ...org, customLabels: [...org.customLabels, { Id: '101000000000009', Name: 'Business_Unit', MasterLabel: 'Business Unit', NamespacePrefix: null, Value: 'Business Unit', Language: 'en_US' }] };
+
+test('field section header: no false "Lightning page tab label" card, section area detected', () => {
+  const out = locate({ text: 'Business Unit', hints: sectionHints, org: orgBU });
+  assert.ok(!out.results.some((r) => r.key === 'area:lightningPageTab'));
+  assert.ok(out.areas.includes('fieldSection'));
+});
+
+test('field section whose label is {!$Label.Business_Unit} → that custom label, confirmed', () => {
+  const pc = { page: 'Prospect Record Page Three Column', id: 'flexipage_fieldSection6', component: 'flexipage:fieldSection', label: '{!$Label.Business_Unit}' };
+  const r = locate({ text: 'Business Unit', hints: sectionHints, org: orgBU, pageComponent: pc }).results[0];
+  assert.equal(r.source, SOURCE.CUSTOM_LABEL);
+  assert.equal(r.confidence, 'confirmed');
+  assert.match(r.notes[0], /Lightning App Builder is \{!\$Label\.Business_Unit\}/);
+});
+
+test('field section label typed as text → not translatable, suggests the matching label', () => {
+  const pc = { page: 'Prospect Record Page', id: 'flexipage_fieldSection2', component: 'flexipage:fieldSection', label: 'Business Unit' };
+  const r = locate({ text: 'Business Unit', hints: sectionHints, org: orgBU, pageComponent: pc }).results[0];
+  assert.equal(r.source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.copy, '{!$Label.c.Business_Unit}');
+});
+
+test('tab label itself (role=tab) is still the Lightning page tab card', () => {
+  const out = locate({ text: 'Territory', hints: { tags: ['a', 'li', 'lightning-tab-bar', 'flexipage-tabset2'], tabRole: 'tab' }, org });
+  assert.ok(out.results.some((r) => r.key === 'area:lightningPageTab'));
+});
+
+test('label in its own master language opens the label to edit the Value, not a translation', () => {
+  const r = locate({ text: 'Welcome to the portal', org }).results[0];
+  const b = buildGotoUrl(r.goto, 'en_US');
+  assert.equal(b.masterEdit, true);
+  assert.match(b.path, /ExternalStrings\/page\?address=/);
+  assert.ok(!/01j/.test(decodeURIComponent(b.path)));
+  // package label: an English override is valid, keep the translation page
+  const p = locate({ text: 'Submit request', org }).results[0];
+  assert.ok(!buildGotoUrl(p.goto, 'en_US').masterEdit);
+});

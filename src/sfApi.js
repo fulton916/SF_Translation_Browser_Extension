@@ -179,6 +179,44 @@ export async function loadDataTranslation(session, org, objectName, recordId) {
   return { ...out, recordId, parent, rows };
 }
 
+const flexiCache = new Map();
+
+/**
+ * Reads one Lightning App Builder component (e.g. a Dynamic Forms field section) from a record
+ * page's metadata. The page's generated tag is "forcegenerated-flexipage_<dev name>_<object>__view_js…";
+ * SOQL DeveloperName comparisons ignore case. Returns { page, id, component, label } or null.
+ */
+export async function loadFlexiPageComponent(session, flexipageTag, componentId, objects = []) {
+  const m = /^forcegenerated-flexipage_(.+?)__view/.exec(flexipageTag || '');
+  if (!m || !/^[A-Za-z0-9_]+$/.test(m[1]) || !/^[A-Za-z0-9_]+$/.test(componentId || '')) return null;
+  const names = [m[1]];
+  for (const o of objects) {
+    const sfx = '_' + o.toLowerCase();
+    if (m[1].endsWith(sfx)) names.unshift(m[1].slice(0, -sfx.length));
+  }
+  for (const name of names) {
+    const key = `${session.host}|${name}`;
+    let hit = flexiCache.get(key);
+    if (!hit || Date.now() - hit.at > CACHE_TTL_MS) {
+      hit = { at: Date.now(), promise: queryAll(session, `SELECT DeveloperName, MasterLabel, Metadata FROM FlexiPage WHERE DeveloperName = '${name}' LIMIT 1`, { tooling: true }) };
+      flexiCache.set(key, hit);
+      hit.promise.catch(() => flexiCache.delete(key));
+    }
+    const page = (await hit.promise)[0];
+    if (!page) continue;
+    for (const region of page.Metadata?.flexiPageRegions || []) {
+      for (const item of region.itemInstances || []) {
+        const ci = item.componentInstance;
+        if (ci?.identifier !== componentId) continue;
+        const label = (ci.componentInstanceProperties || []).find((p) => p.name === 'label')?.value ?? null;
+        return { page: page.MasterLabel || page.DeveloperName, id: componentId, component: ci.componentName, label };
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
 /** Describe + quick actions for one object. Returns null if the object is not visible. */
 export function loadDescribe(session, objectName, { refresh = false } = {}) {
   const key = `${session.host}|${objectName}`;

@@ -49,11 +49,19 @@
   // ---------- target capture ----------
 
   function describeTarget() {
-    const hints = { selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], attrs: {} };
+    // componentIds: Lightning App Builder component ids (e.g. flexipage_fieldSection6), nearest first.
+    // flexipage: the record page's generated tag, which carries its developer name.
+    // tabRole: 'tab' when the click was on a tab's label, 'tabpanel' when inside its content.
+    const hints = { selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null };
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
     for (const el of path.slice(0, 60)) {
       const tag = el.tagName.toLowerCase();
       hints.tags.push(tag);
+      if (!hints.flexipage && tag.startsWith('forcegenerated-flexipage_')) hints.flexipage = tag.slice(0, 200);
+      const role = el.getAttribute('role');
+      if (!hints.tabRole && (role === 'tab' || role === 'tabpanel')) hints.tabRole = role;
+      const tsn = el.getAttribute('data-target-selection-name');
+      if (tsn && /^flexipage_/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
       const aura = el.getAttribute('data-aura-class');
       if (aura && /^c[A-Z]/.test(aura)) hints.auraCustom.push(aura);
       for (const a of HINT_ATTRS) {
@@ -96,6 +104,7 @@
     }
     root.replaceChildren(style(), build(p));
     if (p.state === 'results') lastRequest = { text: p.text, hints: p.hints };
+    if (p.state !== 'loading') lastPayload = p;
   }
 
   function build(p) {
@@ -148,7 +157,9 @@
         const b = ev.currentTarget;
         ask({ type: 'sftl:openLog' }, 3000).catch(() => {});
         b.blur();
-      })
+      }),
+      document.createTextNode(' · '),
+      button('Report a problem', 'link', 'Copy a report of this lookup and open a new GitHub issue', (ev) => reportProblem(ev.currentTarget))
     );
     panel.append(foot);
     return panel;
@@ -178,6 +189,7 @@
             .then((res) => {
               if (res?.error) throw new Error(res.error);
               b.textContent = 'Go to translation';
+              if (res?.note) showCardNote(b, res.note);
             })
             .catch((e) => {
               b.textContent = 'Go to translation';
@@ -292,6 +304,67 @@
         reject(new Error(/context invalidated/i.test(e.message) ? RELOAD_MSG : e.message));
       }
     });
+  }
+
+  function showCardNote(fromEl, message) {
+    const actions = fromEl.closest('.actions');
+    actions?.parentElement.querySelector('.card-note')?.remove();
+    actions?.after(el('div', 'muted card-note', message));
+  }
+
+  // ---------- "Report a problem": copy a report, open a GitHub issue to paste it into ----------
+  const ISSUE_URL = 'https://github.com/fulton916/SF_Translation_Browser_Extension/issues/new';
+  let lastPayload = null;
+
+  async function reportProblem(b) {
+    const p = lastPayload || {};
+    const h = p.hints || {};
+    let recent = '';
+    try {
+      recent = (await ask({ type: 'sftl:getLog', limit: 15 }, 3000))?.text || '';
+    } catch {}
+    const lines = [
+      `Looked up: "${p.text || ''}"`,
+      `Page: ${location.host}${location.pathname}`,
+      `Translate into: ${targetLang || '(choose on the page)'} · viewing ${p.language?.user || '?'} · org default ${p.language?.orgDefault || '?'}`,
+      `Objects searched: ${(p.contextObjects || []).join(', ') || 'none'}`,
+      `Clicked element: ${(h.tags || []).filter((t) => t.includes('-')).slice(0, 6).join(' > ') || '(none)'}`,
+      h.selectionNames?.length ? `Page metadata: ${h.selectionNames.join(', ')}` : null,
+      h.componentIds?.length ? `Lightning components: ${h.componentIds.slice(0, 3).join(', ')}` : null,
+      p.areas?.length ? `Areas: ${p.areas.join(', ')}` : null,
+      p.state === 'error' ? `Error shown: ${p.message}` : null,
+      '',
+      'Results shown:',
+      ...(p.results || []).map((r, i) => `  ${i + 1}. ${r.confidence} | ${r.source} | ${r.title}`),
+      p.droppedPartial ? `  (+${p.droppedPartial} weaker matches hidden)` : null,
+      ...(p.warnings || []).map((w) => `Warning: ${w}`),
+      '',
+      `Extension version: ${chrome.runtime.getManifest?.().version || '?'}`,
+      '',
+      recent,
+    ].filter((x) => x !== null);
+    const report = lines.join('\n');
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(report);
+      copied = true;
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = report;
+      document.body.appendChild(ta);
+      ta.select();
+      copied = document.execCommand('copy');
+      ta.remove();
+    }
+    const title = `Test finding: "${String(p.text || '').slice(0, 60)}"`;
+    window.open(`${ISSUE_URL}?template=test_finding.yml&title=${encodeURIComponent(title)}`, '_blank', 'noopener');
+    logEvent('info', 'panel', 'Opened a GitHub issue to report a problem', { text: p.text, copied });
+    b.parentElement.querySelector('.report-note')?.remove();
+    b.parentElement.append(
+      el('div', 'muted report-note', copied
+        ? 'Report copied. In the GitHub tab: click the Test log box, press Ctrl+V, and add a sentence about what was wrong. Screenshots: Win+Shift+S, then Ctrl+V.'
+        : 'Could not copy the report. Open Test log → Copy all, then paste it into the issue.')
+    );
   }
 
   function showCardError(fromEl, message) {
