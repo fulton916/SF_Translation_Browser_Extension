@@ -1,0 +1,7 @@
+node_modules/
+*.log
+*.zip
+.DS_Store
+Thumbs.db
+# Exported test logs can contain org details
+sf-translation-log-*.json

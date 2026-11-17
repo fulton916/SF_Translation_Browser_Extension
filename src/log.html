@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Translation Locator Log</title>
+  <style>
+    :root { --bg: #f3f3f3; --card: #fff; --text: #181818; --muted: #5c5c5c; --line: #e5e5e5;
+      --error: #ba0517; --error-bg: #fef1f1; --warn: #8c4b02; --warn-bg: #fef1e6; --info: #2e844a; --info-bg: #ebf7e6; --accent: #0176d3; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #16181c; --card: #1f2227; --text: #e8e8e8; --muted: #a0a4ab; --line: #343840;
+        --error: #ff8a8a; --error-bg: #3a1d1f; --warn: #ffc27a; --warn-bg: #3a2c1a; --info: #8ad79a; --info-bg: #1d3424; --accent: #5aa9ff; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+    main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 16px; }
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    label { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
+    .counts { margin-left: auto; color: var(--muted); }
+    .empty { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 24px; color: var(--muted); }
+    .entry { background: var(--card); border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
+    .entry.error { border-left-color: var(--error); } .entry.warn { border-left-color: var(--warn); } .entry.info { border-left-color: var(--info); }
+    .top { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+    .lvl { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; }
+    .lvl.error { color: var(--error); background: var(--error-bg); } .lvl.warn { color: var(--warn); background: var(--warn-bg); } .lvl.info { color: var(--info); background: var(--info-bg); }
+    .time, .where, .page { color: var(--muted); font-size: 12px; }
+    .msg { flex: 1 1 300px; overflow-wrap: anywhere; }
+    pre { margin: 6px 0 0; padding: 6px 8px; background: var(--bg); border-radius: 4px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .status { color: var(--info); min-height: 1em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Test log</h1>
+    <p class="sub">Lookups, Go to translation, and auto-fill steps, newest first. Kept on this computer only (last 500 entries). No session IDs or query strings are stored.</p>
+    <div class="bar">
+      <button id="copy" class="primary" title="Copy as text to paste into a chat or ticket">Copy all</button>
+      <button id="download" title="Save as a JSON file">Download</button>
+      <button id="clear" title="Delete every entry">Clear</button>
+      <label><input type="checkbox" id="only-problems"> Errors and warnings only</label>
+      <span class="status" id="status"></span>
+      <span class="counts" id="counts"></span>
+    </div>
+    <div id="list"></div>
+  </main>
+  <script type="module" src="log.js"></script>
+</body>
+</html>
