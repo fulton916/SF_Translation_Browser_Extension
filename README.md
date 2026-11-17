@@ -1,0 +1,1 @@
+# SF_Translation_Browser_Extension
