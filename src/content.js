@@ -159,7 +159,9 @@
         b.blur();
       }),
       document.createTextNode(' · '),
-      button('Report a problem', 'link', 'Copy a report of this lookup and open a new GitHub issue', (ev) => reportProblem(ev.currentTarget))
+      button('Report a problem', 'link', 'Copy a report of this lookup and open a new GitHub issue', (ev) => reportProblem(ev.currentTarget)),
+      // Version shows whether the extension was reloaded after an update.
+      el('span', 'muted version', ` · v${chrome.runtime.getManifest?.().version || '?'}`)
     );
     panel.append(foot);
     return panel;
