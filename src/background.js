@@ -1,6 +1,6 @@
-import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations } from './sfApi.js';
-import { locate, contextObjects, buildGotoUrl, normalize, matchType } from './locator.js';
-import { addEntry } from './logStore.js';
+import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent } from './sfApi.js';
+import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
+import { addEntry, getEntries, formatEntries } from './logStore.js';
 
 // ---------- test log (viewer: click the toolbar icon) ----------
 const pathOf = (url) => {
@@ -82,6 +82,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     log(msg.level, msg.where || 'page', msg.message, { page: pathOf(sender.url || sender.tab?.url), details: msg.details, stack: msg.stack });
     return;
   }
+  if (msg?.type === 'sftl:getLog') {
+    getEntries().then((all) => sendResponse({ text: formatEntries(all.slice(-(msg.limit || 15)), chrome.runtime.getManifest().version) }));
+    return true;
+  }
   if (msg?.type === 'sftl:openLog') {
     openLog();
     return;
@@ -118,7 +122,10 @@ async function openTranslation({ goto, lang, orgDefault }, fromTab) {
     page: pathOf(fromTab.url),
     details: { goto, lang: lang || null, autofill: built.autofill },
   });
-  return { ok: true };
+  return {
+    ok: true,
+    note: built.masterEdit ? 'This is the label\'s own language, so this opens the label itself. Click Edit to change its Value (the original text).' : null,
+  };
 }
 
 // Panel "Refresh" button re-runs the lookup without the cache.
@@ -173,7 +180,15 @@ async function lookup({ text, hints, urls, refresh = false }) {
     });
   }
   const record = rec ? { object: rec[1], id: rec[2] } : null;
-  const located = locate({ text, hints, org: { ...org, labelTranslations }, describes: describes.filter(Boolean), dataTranslations, record, pageUrls: urls });
+  // Dynamic Forms field section: read its label from the Lightning page metadata.
+  let pageComponent = null;
+  if (detectAreas(hints).has('fieldSection') && hints.flexipage && hints.componentIds?.length) {
+    pageComponent = await loadFlexiPageComponent(session, hints.flexipage, hints.componentIds[0], objects).catch((e) => {
+      warnings.push(`Lightning page not read: ${e.message}`);
+      return null;
+    });
+  }
+  const located = locate({ text, hints, org: { ...org, labelTranslations }, describes: describes.filter(Boolean), dataTranslations, record, pageUrls: urls, pageComponent });
   return {
     ...located,
     hints,

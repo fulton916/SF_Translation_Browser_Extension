@@ -46,6 +46,9 @@ export const SETUP = {
 /** Page to open plus what content.js should auto-fill there. Pure, so it is unit tested. */
 export function buildGotoUrl(goto, lang, orgDefault) {
   if (goto.page === 'label') {
+    // Same language as the label itself (e.g. English for an English label): that is the master
+    // Value, not a translation. Open the label so it can be edited. Package labels keep the override path.
+    if (lang && lang === goto.masterLanguage && !goto.namespace) return { path: SETUP.customLabel(goto.labelId), autofill: null, masterEdit: true };
     const existingId = lang && goto.existing?.[lang];
     if (existingId) return { path: DEEP.labelEditTranslation(existingId), autofill: null };
     return { path: DEEP.labelNewTranslation(goto.labelId), autofill: lang && lang !== goto.masterLanguage ? { page: 'labelNew', lang } : null };
@@ -135,7 +138,13 @@ export function detectAreas(hints = {}) {
   if (has(/^one-app-nav-bar/)) areas.add('navTab');
   if (has(/layout-section$/) && !has(/layout-item$/)) areas.add('layoutSection');
   if (has(/^(flowruntime-|lightning-flow)/)) areas.add('flow');
-  if (has(/^(flexipage-tab|lightning-tab-bar)/)) areas.add('lightningPageTab');
+  // A tab's own label, not anything inside its content (bug: a field section inside the
+  // Details tab was reported as "Lightning page tab label").
+  if (hints.tabRole ? hints.tabRole === 'tab' && has(/^(flexipage-tab|lightning-tab-bar)/) : has(/^(flexipage-tab|lightning-tab-bar)/)) {
+    areas.add('lightningPageTab');
+  }
+  // Dynamic Forms field section header (not a field inside it).
+  if (has(/^flexipage-field-section/) && !has(/^(flexipage-field$|record_flexipage-record-field)/)) areas.add('fieldSection');
   if (has(/^(lst-related-list|force-related-list)/)) areas.add('relatedList');
   if (has(/(^lightning-path|pathassistant)/)) areas.add('path');
   const custom = tags.filter((t) => /^c-/.test(t));
@@ -268,6 +277,7 @@ function customLabelResult(org, label, confidence, translations, matchedLanguage
       labelId: label.Id,
       masterLanguage: label.Language,
       existing: Object.fromEntries((translations || []).filter((t) => t.Id).map((t) => [t.Language, t.Id])),
+      namespace: label.NamespacePrefix || null,
     },
     copy: `$Label.${label.NamespacePrefix || 'c'}.${label.Name}`,
     notes,
@@ -685,7 +695,47 @@ function setupTextResult() {
   };
 }
 
-export function locate({ text, hints = {}, org = {}, describes = [], dataTranslations = [], record = null, pageUrls = [] }) {
+/** Label typed as plain text in Lightning App Builder: never translated. */
+function builderTextResult(org, pc) {
+  const same = (org.customLabels || []).find((l) => normalize(l.Value) === normalize(pc.label) && !l.NamespacePrefix);
+  const ref = `{!$Label.c.${same ? same.Name : 'Your_Label'}}`;
+  return {
+    key: `builder:${pc.page}.${pc.id}`,
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'confirmed',
+    title: 'Field section label typed in Lightning App Builder',
+    subtitle: `"${pc.label}" on the Lightning page ${pc.page}`,
+    steps: [
+      'This label is plain text, so Salesforce never translates it.',
+      same ? `Custom label ${same.Name} already has this text. Add its translations if needed.` : 'Setup → Custom Labels → New: create a label with this text, then add its translations.',
+      `Lightning App Builder → ${pc.page} → click the section → set Label to ${ref} → Save.`,
+    ],
+    url: same ? SETUP.customLabel(same.Id) : SETUP.customLabels,
+    copy: ref,
+    notes: [],
+  };
+}
+
+const LABEL_REF = /^\{!\$Label\.(?:([A-Za-z0-9_]+)\.)?([A-Za-z0-9_]+)\}$/;
+
+function applyPageComponent(org, results, add, pc) {
+  const m = LABEL_REF.exec(String(pc.label || '').trim());
+  if (!m) return add(builderTextResult(org, pc));
+  const ns = m[1] && m[1] !== 'c' ? m[1] : null;
+  const label = (org.customLabels || []).find((l) => l.Name === m[2] && (l.NamespacePrefix || null) === ns);
+  if (!label) {
+    return add({ ...builderTextResult(org, pc), title: 'Field section uses a custom label that was not found', subtitle: `${pc.label} on ${pc.page}` });
+  }
+  let r = results.find((x) => x.key === `label:${label.Id}`);
+  if (!r) {
+    r = customLabelResult(org, label, 'confirmed', (org.labelTranslations || []).filter((t) => t.ExternalStringId === label.Id));
+    add(r);
+  }
+  r.confidence = 'confirmed';
+  r.notes = [`Confirmed: this section's label in Lightning App Builder is ${pc.label} (page ${pc.page}).`, ...(r.notes || [])];
+}
+
+export function locate({ text, hints = {}, org = {}, describes = [], dataTranslations = [], record = null, pageUrls = [], pageComponent = null }) {
   const needle = normalize(text);
   const results = [];
   const add = (r) => r && results.push(r);
@@ -784,6 +834,24 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   }
 
   // 7. Page metadata (buttons, sections, flows, custom components)
+  // Clicked a Lightning App Builder component whose label was read from the page metadata.
+  if (pageComponent) applyPageComponent(org, results, add, pageComponent);
+  else if (areas.has('fieldSection')) {
+    add({
+      key: 'area:fieldSection',
+      source: SOURCE.CONTEXT,
+      confidence: 'context',
+      title: 'Dynamic Forms field section header',
+      subtitle: 'Its label is set in Lightning App Builder',
+      steps: [
+        'If the section label is {!$Label.…}, translate that custom label.',
+        'If it is plain text, it is not translated: replace it with a custom label.',
+      ],
+      url: SETUP.customLabels,
+      notes: ['It is not a page layout section, so Translation Workbench → Layout Section does not change it.'],
+    });
+  }
+
   for (const r of hintResults(org, hints, describes, areas, String(text || '').trim())) {
     const existing = results.find((x) => x.key === r.key);
     if (existing) existing.confidence = 'confirmed';
