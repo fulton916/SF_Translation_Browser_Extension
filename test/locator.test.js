@@ -303,6 +303,38 @@ test('layout section goto searches for the clicked text', () => {
   assert.deepEqual(r.goto.rows, ['Additional Information']);
 });
 
+// Bug (Nov 2026): right-clicking the "Business Unit" section header showed the Account field
+// "Business Unit" first, because the section card ranked below every exact match.
+const layoutHeaderHints = { tags: ['span', 'button', 'h3', 'records-record-layout-section', 'records-record-layout-block'] };
+const withBusinessUnitField = { ...accountDescribe, fields: [...accountDescribe.fields, { name: 'Business_Unit__c', label: 'Business Unit', custom: true, type: 'picklist', picklistValues: [] }] };
+const runSection = (extra = {}) => locate({ text: 'Business Unit', hints: layoutHeaderHints, org, describes: [withBusinessUnitField], ...extra });
+
+test('section header click ranks the layout section above a field with the same name', () => {
+  const out = runSection();
+  assert.equal(out.results[0].key, 'area:layoutSection');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.ok(out.results.some((r) => r.key.includes('Business_Unit__c')), 'field still listed lower down');
+});
+
+test('section header goto has no parent, so auto-fill opens every layout', () => {
+  const r = runSection().results[0];
+  assert.equal(r.goto.parent, null);
+  assert.deepEqual(r.goto.rows, ['Business Unit']);
+  assert.ok(r.notes.some((n) => /several page layouts/.test(n)));
+});
+
+test('blank space inside a section (no heading in the path) is not promoted over an exact match', () => {
+  const out = locate({ text: 'Business Unit', hints: { tags: ['div', 'records-record-layout-section'] }, org, describes: [withBusinessUnitField] });
+  const r = out.results.find((x) => x.key === 'area:layoutSection');
+  assert.equal(r.confidence, 'context');
+  assert.notEqual(out.results[0].key, 'area:layoutSection');
+});
+
+test('a field inside a section is not treated as the section header', () => {
+  const out = locate({ text: 'Business Unit', hints: { tags: ['span', 'records-record-layout-item', 'records-record-layout-section'] }, org, describes: [withBusinessUnitField] });
+  assert.ok(!out.results.some((r) => r.key === 'area:layoutSection'));
+});
+
 test('every Translation Workbench result has a goto', () => {
   for (const t of ['Sales Region', 'Banking', 'Partner Account', 'Log a Call', 'Billing Console', 'Training Portal']) {
     const r = first(t);

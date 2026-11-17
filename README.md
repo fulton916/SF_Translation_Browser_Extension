@@ -72,7 +72,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
-| Page layout section header | **Translation Workbench** → Layout Section | From page metadata only |
+| Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Auto-fill opens every layout and lists each copy of the section |
 | Flow screen text | **Translation Workbench** → Flow | From page metadata only |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
 | Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
