@@ -589,7 +589,15 @@
     // Most components show a grid; Picklist Value shows a tree (field node → values).
     await waitFor(() => document.querySelector('.x-grid3-row, li.x-tree-node'), 10000).catch(() => null);
     const isTree = !!document.querySelector('li.x-tree-node') && !document.querySelector('.x-grid3-row');
-    const row = !p.rows?.length ? null : isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows);
+    let row = null;
+    if (p.rows?.length && isTree && !p.parent) {
+      // Layout Section (layout → sections): one section name can sit in several layouts.
+      const hits = await findInEveryNode(p.rows);
+      row = hits[0]?.row || null;
+      if (hits.length > 1) warnings.push(`Also in: ${hits.slice(1).map((h) => h.place).join(', ')}. Each layout has its own copy, so translate each one.`);
+    } else if (p.rows?.length) {
+      row = isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows);
+    }
     if (row) {
       mark(row, false);
       const cell = row.querySelector('.x-grid3-td-translation .x-grid3-cell-inner, .x-grid3-td-translation, .x-tree-col.translation');
@@ -674,6 +682,38 @@
     const any = nodes().find((li) => want.includes(label(li)) && !pw.includes(label(li)));
     if (!any) logEvent('warn', 'auto-fill', 'Picklist value not found in the tree', { field: parents, looking_for: candidates, fieldNodes: parentNodes.length });
     return any ? any.querySelector(':scope > .x-tree-node-el') : null;
+  }
+
+  /**
+   * Layout Section tree (layout → sections), parent unknown: open each layout and collect every
+   * match. A closed node's children are not on the page, so a search of what is visible stops at
+   * whichever layout happens to be open (bug: a section under a closed layout missed).
+   * Returns [{ row, place }], first match first.
+   */
+  async function findInEveryNode(candidates) {
+    const want = candidates.filter(Boolean).map(norm);
+    const anchor = (li) => (li.querySelector(':scope > .x-tree-node-el .x-tree-node-anchor')?.innerText || '').trim();
+    const nodeEl = (li) => li.querySelector(':scope > .x-tree-node-el');
+    const isClosed = (li) => nodeEl(li)?.classList.contains('x-tree-node-collapsed');
+    const toggle = (li) => li.querySelector(':scope > .x-tree-node-el .x-tree-ec-icon')?.dispatchEvent(new MouseEvent('click', { bubbles: true, view: window }));
+    const tops = [...document.querySelectorAll('li.x-tree-node')].filter((li) => !li.parentElement?.closest('li.x-tree-node'));
+    const hits = [];
+    const stopAt = Date.now() + 60000; // ponytail: 60 s budget; a layout list longer than that gets a partial search
+    for (const li of tops) {
+      if (Date.now() > stopAt) break;
+      const opened = isClosed(li);
+      if (opened) {
+        toggle(li);
+        // Done once it is no longer closed (an empty layout turns into a leaf, with no children).
+        await waitFor(() => !isClosed(li) && !nodeEl(li).classList.contains('x-tree-node-loading'), 4000).catch(() => null);
+      }
+      const hit = [...li.querySelectorAll('li.x-tree-node')].find((k) => want.includes(norm(anchor(k))));
+      if (hit) hits.push({ row: nodeEl(hit), place: anchor(li) });
+      else if (opened) toggle(li); // close layouts opened for nothing, so the list stays short
+    }
+    if (!hits.length) logEvent('warn', 'auto-fill', 'Section not found in any layout', { looking_for: candidates, layouts: tops.length });
+    else if (hits.length > 1) logEvent('info', 'auto-fill', `Section found in ${hits.length} layouts`, { looking_for: candidates, layouts: hits.map((h) => h.place) });
+    return hits;
   }
 
   async function findGridRow(candidates) {

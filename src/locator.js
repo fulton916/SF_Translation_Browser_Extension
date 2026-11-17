@@ -590,13 +590,19 @@ function hintResults(org, hints, describes, areas, text) {
 
   const obj = contextObjects([], hints)[0] || describes[0]?.name;
   if (areas.has('layoutSection')) {
+    // A heading in the path means the header itself was clicked (not blank space in the section):
+    // rank it above a field that happens to share the name (bug: "Demo Team" header → field card).
+    const onHeader = (hints.tags || []).some((t) => /^h[1-6]$/.test(t));
     out.push({
       key: 'area:layoutSection',
-      confidence: 'context',
+      confidence: onHeader ? 'confirmed' : 'context',
       title: 'Page layout section header',
       subtitle: 'You clicked inside a record page section header',
       ...workbench(org, { component: 'Layout Section', object: obj, objectLabel: obj ? objLabel(obj) : null, row: text || 'the section name' }),
-      notes: ['If the section comes from a Dynamic Forms field section, the label is set in Lightning App Builder and is not translatable there.'],
+      notes: [
+        'The same section name can be in several page layouts. Go to translation opens every layout and lists each copy.',
+        'If the section comes from a Dynamic Forms field section, the label is set in Lightning App Builder and is not translatable there.',
+      ],
     });
   }
   if (areas.has('flow')) {
