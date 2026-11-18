@@ -136,7 +136,10 @@ test('picklist, record type, quick action, validation, app, web tab', () => {
   assert.ok(vr.steps.includes('Object: Invoice'));
   assert.ok(first('Billing Console').steps.includes('Setup Component: App'));
   assert.ok(first('Training Portal').steps.includes('Setup Component: Web Tab'));
-  assert.equal(first('Sales').source, SOURCE.NOT_TRANSLATABLE);
+  // Renamed standard apps are listed in Translation Workbench → App (e.g. LightningSales "Acme Sales").
+  assert.equal(first('Sales').source, SOURCE.WORKBENCH);
+  assert.ok(first('Sales').steps.includes('Setup Component: App'));
+  assert.match(first('Sales').notes.join(' '), /Standard app: if it was renamed/);
   assert.equal(first('Home').source, SOURCE.RENAME_TABS);
 });
 

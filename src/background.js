@@ -184,7 +184,8 @@ async function lookup({ text, hints, urls, refresh = false }) {
   let labelTranslations = null;
   const warnings = [...(org.warnings || [])];
   if (org.customLabels) {
-    labelTranslations = await loadLabelTranslations(session, text, labelIds).catch((e) => {
+    // Drop a card's record count ("Active Relationships (0)"), as normalize() does.
+    labelTranslations = await loadLabelTranslations(session, text.replace(/\s*\(\d+\+?\)\s*$/, ''), labelIds).catch((e) => {
       warnings.push(`Custom label translations not searched: ${e.message || e}`);
       return null;
     });
