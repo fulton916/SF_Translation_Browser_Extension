@@ -468,7 +468,7 @@
       .card-confirmed { border: 2px solid #2e844a; background: #f3faf5; box-shadow: 0 0 0 3px rgba(46,132,74,.15); }
       .conf.confirmed { font-size: 12px; font-weight: 700; color: #fff; background: #2e844a; padding: 2px 8px; border-radius: 10px; }
       .conf.confirmed::before { content: '\\2713  '; }
-      .card-confirmed-none { border: 2px solid #747474; background: #f6f6f6; }
+      .card-confirmed-none { border: 2px solid #dd7a01; background: #fef6ec; box-shadow: 0 0 0 3px rgba(221,122,1,.15); }
       .conf.confirmed-none { font-size: 12px; font-weight: 700; color: #fff; background: #747474; padding: 2px 8px; border-radius: 10px; }
       .steps { margin: 6px 0 4px 18px; padding: 0; } .steps li { margin: 1px 0; }
       .notes { margin: 4px 0 0 16px; padding: 0; color: #5c5c5c; font-size: 12px; }
