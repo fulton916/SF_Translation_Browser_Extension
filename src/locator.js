@@ -1178,7 +1178,6 @@ function setupTextResult() {
     steps: [
       'Salesforce writes and translates this text. Admins cannot change or translate it.',
       'To see it in another language, change your personal language: your profile picture → Settings → Language & Time Zone.',
-      'Names from your org shown on Setup pages (objects, fields, picklist values) are listed separately when found.',
     ],
     url: null,
     notes: [],
@@ -1439,7 +1438,6 @@ function standardTextResult(area, confidence) {
     subtitle: `Headings, buttons and messages in ${a.what}`,
     steps: [
       'Salesforce writes and translates this text. Admins cannot change or translate it.',
-      'Names from your org inside it (record names, field labels, picklist values) are listed separately when found.',
     ],
     url: null,
     notes: area === 'reportChart' ? ['The chart title is set on the Lightning page; report and field names come from the report.'] : [],
