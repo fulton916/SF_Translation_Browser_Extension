@@ -76,6 +76,7 @@ export function buildGotoUrl(goto, lang, orgDefault) {
 export function normalize(s) {
   return String(s ?? '')
     .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width spaces (seen in real Path guidance)
     .replace(/[\s ]+/g, ' ')
     .trim()
     .replace(/^[*\s]+/, '') // required-field asterisk
@@ -146,7 +147,11 @@ export function detectAreas(hints = {}) {
   // Dynamic Forms field section header (not a field inside it).
   if (has(/^flexipage-field-section/) && !has(/^(flexipage-field$|record_flexipage-record-field)/)) areas.add('fieldSection');
   if (has(/^(lst-related-list|force-related-list)/)) areas.add('relatedList');
-  if (has(/(^lightning-path|pathassistant)/)) areas.add('path');
+  // Path: the guidance is in Aura divs (no custom tag names), so read their data-aura-class too.
+  // Verified live on an Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
+  const aura = hints.auraClasses || [];
+  if (has(/(^lightning-path|pathassistant)/) || aura.some((a) => /pathassistant/i.test(a))) areas.add('path');
+  if (aura.some((a) => /pathassistantPathAssistantInfo/i.test(a)) || has(/pathassistant-?info/i)) areas.add('pathGuidance');
   const custom = tags.filter((t) => /^c-/.test(t));
   if (custom.length || (hints.auraCustom || []).length) areas.add('customComponent');
   return areas;
@@ -195,6 +200,7 @@ export const WB_COMPONENT = {
   'Custom Label': 'ExternalString',
   'Address Country': 'AddressCountry',
   'Address State': 'AddressState',
+  'Path Step Rich Text': 'PathAssistantStepInfo',
 };
 const WB_ASPECT = { 'Field Label': 'master', 'Help Text': 'help', 'Related List Label': 'relationshiplabel', Description: 'description' };
 
@@ -549,6 +555,125 @@ function appResult(org, app, confidence) {
   };
 }
 
+// ---------- Path guidance ("Guidance for Success", PathAssistantStepInfo.Info) ----------
+
+const ENTITIES = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+function decodeEntities(s) {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] !== '#') return ENTITIES[e.toLowerCase()] ?? m;
+    const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+    return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m;
+  });
+}
+
+/** Rich text HTML → its visible lines (one per paragraph / list item), entities decoded, spaces collapsed. */
+export function htmlLines(html) {
+  return decodeEntities(
+    String(html ?? '')
+      .replace(/<\/?(p|div|br|li|ol|ul|h[1-6]|tr|td|th|table|blockquote|pre|hr)\b[^>]*>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/<[^>]*$/, '') // a cut-off tag at the end
+  )
+    .split('\n')
+    .map((l) => l.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/[\s ]+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+export const htmlToText = (html) => htmlLines(html).join(' ');
+
+// Contained matches need a real phrase: a single word like "Client" or "a" says nothing.
+const MIN_PATH_NEEDLE = 12;
+
+/**
+ * 'exact' when the text is the whole guidance or one whole line of it (the element you point at is
+ * usually one list item), 'partial' when a phrase of it, or the guidance plus more, else null.
+ */
+export function pathStepMatch(needle, info) {
+  const lines = htmlLines(info).map(normalize).filter(Boolean);
+  const full = lines.join(' ');
+  if (!needle || !full) return null;
+  if (full === needle || (needle.length >= 4 && lines.includes(needle))) return 'exact';
+  if (needle.length >= MIN_PATH_NEEDLE && /\s/.test(needle) && full.includes(needle)) return 'partial';
+  // Selection ran past the guidance (e.g. it includes the "Guidance for Success" heading).
+  if (full.length >= MIN_PATH_NEEDLE && full.length / needle.length >= 0.5 && needle.includes(full)) return 'partial';
+  return null;
+}
+
+/**
+ * The path a step belongs to. Step DeveloperNames seen in a real org (Nov 2026):
+ * "X<num>_<picklist value Id 01J…>_<record type Id 012… or null>_<Object>_<field without __c>"
+ * and the older "<Object>_<record type or null>_<field>_<01J…>_<num>".
+ */
+export function pathOfStep(dn, paths = [], objects = []) {
+  dn = String(dn || '');
+  const hits = (paths || []).filter((p) => {
+    const field = String(p.SobjectProcessField || '').replace(/__c$/, '');
+    const rts = p.RecordTypeId ? [p.RecordTypeId, p.RecordTypeId.slice(0, 15)] : ['null'];
+    return rts.some((rt) => dn.endsWith(`_${rt}_${p.SobjectType}_${field}`) || dn.startsWith(`${p.SobjectType}_${rt}_${field}_`));
+  });
+  const path = hits.find((p) => p.IsActive) || hits[0] || null;
+  if (path) return { path, object: path.SobjectType, field: path.SobjectProcessField };
+  // No path data: read object and field from the name itself.
+  const old = /^(.+?)_(?:012[A-Za-z0-9]{12,15}|null)_(.+?)_01J[A-Za-z0-9]{12,15}_\d+$/.exec(dn);
+  if (old) return { path: null, object: old[1], field: old[2] };
+  const rest = /_01J[A-Za-z0-9]{12,15}_(?:012[A-Za-z0-9]{12,15}|null)_(.+)$/.exec(dn)?.[1];
+  if (!rest) return { path: null, object: null, field: null };
+  const obj = (objects || [])
+    .map((o) => o.name)
+    .filter((n) => rest.startsWith(n.replace(/__c$/, '') + '_'))
+    .sort((a, b) => b.length - a.length)[0];
+  if (obj) return { path: null, object: obj, field: rest.slice(obj.replace(/__c$/, '').length + 1) };
+  const i = rest.indexOf('_');
+  return i > 0 ? { path: null, object: rest.slice(0, i), field: rest.slice(i + 1) } : { path: null, object: rest, field: null };
+}
+
+function pathStepResult(org, step, where, describes, confidence) {
+  const lines = htmlLines(step.Info);
+  const d = describes.find((x) => x.name === where.object);
+  const fieldName = where.field || '';
+  const f = d?.fields?.find((x) => x.name === fieldName || x.name === `${fieldName}__c`);
+  const objectLabel = d?.label || (org.objects || []).find((o) => o.name === where.object)?.label || where.object;
+  const fieldLabel = f?.label || fieldName.replace(/__c$/, '').replace(/_/g, ' ');
+  const pathName = where.path?.MasterLabel || where.path?.DeveloperName || 'unknown path';
+  const where2 = [objectLabel, fieldLabel].filter(Boolean).join(' › ');
+  const base = workbench(org, { component: 'Path Step Rich Text' });
+  const notes = [];
+  if (where.path && where.path.IsActive === false) notes.push('This path is inactive.');
+  if (step.Language && org.defaultLanguage && step.Language !== org.defaultLanguage) notes.push(`This guidance is written in ${languageName(step.Language)}.`);
+  if (isDefaultLanguage(org)) notes.push(`Master text: Setup → Path Settings → ${pathName} → Edit → the step's Guidance for Success.`);
+  return {
+    key: `path:${step.Id || step.DeveloperName}`,
+    confidence,
+    title: `Path guidance: ${pathName}${where2 ? ` (${where2})` : ''}`,
+    subtitle: `"${truncate(lines.join(' '), 100)}"`,
+    ...base,
+    steps: [
+      ...base.steps,
+      `Find the row that starts with "${truncate(step.Info, 50)}". The list shows the raw HTML; the text starts "${truncate(lines[0], 60)}".`,
+      'Double-click its translation cell. The whole guidance block is one translation: keep its formatting (lists, bold, links).',
+    ],
+    // The grid's master cell holds the raw Info HTML (checked live: every row equals Info exactly).
+    goto: { ...base.goto, rows: [step.Info, lines.join(' ')], rowMatch: 'richText', rowLabel: truncate(lines[0], 80) },
+    copy: step.DeveloperName,
+    notes,
+  };
+}
+
+function pathResults(org, needle, areas, describes, add) {
+  const pageObjects = new Set(describes.map((d) => d.name));
+  for (const step of org.pathSteps || []) {
+    const mt = pathStepMatch(needle, step.Info);
+    if (!mt) continue;
+    const where = pathOfStep(step.DeveloperName, org.paths, org.objects);
+    // A path for another object can share a line ("Who else reviews the sketch?"): never confirm it.
+    const otherObject = where.object && pageObjects.size && !pageObjects.has(where.object);
+    let confidence = mt;
+    if (!otherObject && (areas.has('pathGuidance') || (areas.has('path') && mt === 'exact'))) confidence = 'confirmed';
+    else if (otherObject) confidence = 'partial';
+    add(pathStepResult(org, step, where, describes, confidence));
+  }
+}
+
 // ---------- hint-only results (from page metadata, no text match needed) ----------
 
 function hintResults(org, hints, describes, areas, text) {
@@ -837,6 +962,9 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
         }
       }
     }
+
+    // 6c. Path guidance ("Guidance for Success")
+    pathResults(org, needle, areas, describes, add);
   }
 
   // 7. Page metadata (buttons, sections, flows, custom components)
@@ -953,8 +1081,8 @@ function finalize(results, areas) {
   const notFoundHelp = unique.length
     ? null
     : [
-        'Not found in custom labels, object/field names, picklists, record types, actions, apps, tabs, or validation messages.',
-        'Other places to check in Translation Workbench: Layout Section, Flow, Path Step Rich Text, Lookup Filter, Button and Link Label, Report, Dashboard.',
+        'Not found in custom labels, object/field names, picklists, record types, actions, apps, tabs, validation messages, or path guidance.',
+        'Other places to check in Translation Workbench: Layout Section, Flow, Lookup Filter, Button and Link Label, Report, Dashboard.',
         'Text typed into custom components is not translatable until a developer moves it into a Custom Label.',
       ];
   return { results: unique, droppedPartial, notFoundHelp, areas: [...areas] };

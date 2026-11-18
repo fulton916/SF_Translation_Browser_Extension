@@ -23,7 +23,7 @@ After you update the code: click reload on the extension in `chrome://extensions
 your Salesforce tabs. Panels left open from before the reload stop working.
 
 Requirements: you are logged in to Salesforce, and your user has **API Enabled**.
-Custom label and validation-rule search also need **View Setup and Configuration**.
+Custom label, validation-rule and path guidance search also need **View Setup and Configuration**.
 
 ## Report a bug or test finding
 
@@ -74,6 +74,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
 | Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Auto-fill opens every layout and lists each copy of the section |
 | Flow screen text | **Translation Workbench** → Flow | From page metadata only |
+| Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
 | Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
 | Record data: Product / Product Category Name and Description, plus enabled custom fields | **Data Translation**: the record's Translations tab (an admin adds it in Lightning App Builder) | Yes, on record pages; says how to enable it if off |
@@ -94,7 +95,7 @@ Salesforce has no documented deep links for these pages. These were found by ins
 | Custom label | `/01j/e?Parent=<label Id>` (New Translation), or `/<translation Id>/e` if one exists for the language | Picks the Language |
 | Standard object / field | `/_ui/common/i18n/RenameTabStageManager?id=<Object>&l=<lang>` | For a field: clicks Next (saves nothing), highlights the field on Step 2 |
 | Custom object | Rename Tabs and Labels list | Switches language, opens the object's Edit page |
-| Translation Workbench item | Translate page (`/i18n/TranslationWorkbench.apexp`) | Sets Language, Setup Component, Object, Aspect; finds the row (pages through the grid); opens its edit box |
+| Translation Workbench item | Translate page (`/i18n/TranslationWorkbench.apexp`) | Sets Language, Setup Component, Object, Aspect; finds the row (pages through the grid); opens its edit box. Path guidance: matches the row's raw HTML, or its text without tags |
 | Package item | Override page (`/i18n/LabelWorkbenchOverride.apexp`) | Same as Translate, plus picks the Package by namespace (warns if two packages share it) |
 | Record data | The record page | Clicks the Translations tab. If the page has none, says so |
 
@@ -129,6 +130,7 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
 ## Known limits
 
 - Fields, picklists, record types, and actions are searched for the object on the current page only.
+- Path guidance is matched on its master text only. Viewing Salesforce in a translated language, the guidance shows the translation, which is not searched.
 - Gov Cloud (`.mil`) and China (`.sfcrmproducts.cn`) domains are not mapped yet.
 - Experience Cloud sites are not supported (different session).
 - Some Setup component names in Translation Workbench vary slightly by org edition. The panel says
