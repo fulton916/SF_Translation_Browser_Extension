@@ -429,6 +429,25 @@ function systemFieldResult(d, f, confidence) {
   };
 }
 
+/**
+ * The Step 2 (master) label of a renamed standard field, when the label proves it: one "/" part equals the
+ * API name as words (R-01: BillingAddress "Billing Address/Main Address" is "Billing Address" on Step 2).
+ */
+function renamedMasterLabel(f) {
+  const parts = String(f.label || '').split('/').map((s) => s.trim());
+  if (parts.length < 2) return null;
+  const words = normalize(String(f.name || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2'));
+  return parts.find((p) => normalize(p) === words) || null;
+}
+
+/** "Its label in Salesforce is …", or the label the page shows when it differs (R-05: "Account Record Type"). */
+function fieldLabelNote(prefix, d, f, hints = {}) {
+  const hl = hints.highlightsLabel;
+  const shown = hl && displayLabels(d, f).some((l) => normalize(l) === normalize(hl)) ? hl : f.name === 'RecordTypeId' ? `${d.label} Record Type` : null;
+  if (shown && normalize(shown) !== normalize(f.label)) return `${prefix} The page shows it as "${shown}"; its API label is "${f.label}".`;
+  return `${prefix} Its label in Salesforce is "${f.label}".`;
+}
+
 function fieldLabelResult(org, d, f, confidence) {
   if (SYSTEM_FIELDS.has(f.name)) return systemFieldResult(d, f, confidence);
   if (!f.custom) {
@@ -441,7 +460,9 @@ function fieldLabelResult(org, d, f, confidence) {
       steps: [
         ...renameSteps(org, { custom: false, tabLabel: d.labelPlural || d.label }),
         'On the Step 1 page, click Next (do not change anything)',
-        `Step 2 page: find "${f.label}", change it, then Save`,
+        renamedMasterLabel(f)
+          ? `Step 2 page: find "${renamedMasterLabel(f)}" (shown on the page as "${f.label}"), change it, then Save`
+          : `Step 2 page: find "${f.label}", change it, then Save`,
       ],
       url: SETUP.renameTabs,
       goto: { page: 'rename', object: d.name, custom: d.custom, tabLabel: d.labelPlural || d.label, fieldLabel: f.label, fieldName: f.name },
@@ -1871,14 +1892,14 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       if (existing) existing.confidence = 'confirmed';
       else {
         const r = fieldLabelResult(org, d, f, 'confirmed');
-        r.notes = [`You pointed at this field's label. Its label in Salesforce is "${f.label}".`, ...r.notes];
+        r.notes = [fieldLabelNote("You pointed at this field's label.", d, f, hints), ...r.notes];
         add(r);
       }
       demoteSameTextLabels(results, 'record page field labels come from the field, not from custom labels.');
       continue;
     }
     const r = fieldLabelResult(org, d, f, 'context');
-    r.notes = [`You clicked inside this field. Its label in Salesforce is "${f.label}".`, ...r.notes];
+    r.notes = [fieldLabelNote('You clicked inside this field.', d, f, hints), ...r.notes];
     add(r);
   }
 
