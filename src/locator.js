@@ -942,11 +942,37 @@ export function pathAppliesToRecord(p, record, paths) {
 const recordTypeName = (describes, object, rtId) =>
   describes.find((d) => d.name === object)?.recordTypeInfos?.find((rt) => rt.recordTypeId && id15(rt.recordTypeId) === id15(rtId))?.name || null;
 
+/**
+ * Pointed inside the guidance of the path this record shows (record type known): a word or short phrase
+ * of that guidance (R-34: "information") is that guidance, even below MIN_PATH_NEEDLE.
+ */
+function inOwnPathGuidance(org, step, needle, areas, record) {
+  if (!areas.has('pathGuidance') || !record || record.recordTypeId === undefined) return false;
+  const n = stripGuidanceHeading(needle);
+  if (n.length < 3) return false;
+  const where = pathOfStep(step.DeveloperName, org.paths, org.objects);
+  if (!where.path || where.path.SobjectType !== record.object) return false;
+  if (!pathsForRecord(org.paths, record.object, record).includes(where.path)) return false;
+  return wordContains(htmlLines(step.Info).map(normalize).filter(Boolean).join(' '), n);
+}
+
 function pathResults(org, needle, areas, describes, add, rawText, record) {
   const pageObjects = new Set(describes.map((d) => d.name));
-  for (const step of org.pathSteps || []) {
-    const mt = pathStepMatch(needle, step.Info, rawText);
+  const steps = (org.pathSteps || []).map((step) => {
+    const direct = pathStepMatch(needle, step.Info, rawText);
+    return { step, direct, word: !direct && inOwnPathGuidance(org, step, needle, areas, record) };
+  });
+  // A word in the guidance of several steps: the page shows one of them, so confirm none.
+  const wordSteps = steps.filter((s) => s.word).length;
+  for (const { step, direct, word } of steps) {
+    const mt = direct || (word ? 'exact' : null);
     if (!mt) continue;
+    if (word && wordSteps > 1) {
+      const r = pathStepResult(org, step, pathOfStep(step.DeveloperName, org.paths, org.objects), describes, 'exact');
+      r.notes = ['These words are in the guidance of several steps of this path.', ...r.notes];
+      add(r);
+      continue;
+    }
     const where = pathOfStep(step.DeveloperName, org.paths, org.objects);
     // A path for another object can share a line ("Who else needs to be contacted?"): never confirm it.
     const otherObject = where.object && pageObjects.size && !pageObjects.has(where.object);
@@ -1563,10 +1589,13 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       const mt = matchType(needle, label.Value);
       if (mt) add(customLabelResult(org, label, mt, translationsById.get(label.Id)));
     }
+    // A user viewing the org's default language sees master values: a match on another language's
+    // translation only is a coincidence (DV2 R-34: en_US user, maps__ labels matched through sv/fr).
+    const otherLanguage = (lang) => org.userLanguage && org.userLanguage === org.defaultLanguage && lang !== org.userLanguage;
     for (const tr of org.labelTranslations || []) {
       const label = labelsById.get(tr.ExternalStringId);
       const mt = label && matchType(needle, tr.Value);
-      if (mt) add(customLabelResult(org, label, mt, translationsById.get(label.Id), tr.Language));
+      if (mt) add(customLabelResult(org, label, otherLanguage(tr.Language) ? 'partial' : mt, translationsById.get(label.Id), tr.Language));
     }
 
     // 2. Object names. Rename Tabs and Labels only lists objects that have a tab,

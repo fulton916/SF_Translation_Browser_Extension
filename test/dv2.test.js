@@ -98,6 +98,37 @@ test('DV2-01: guidance of another record type\'s path is not confirmed', () => {
   assert.match(spec2.notes[0], /record type Specification, not this record/);
 });
 
+test('R-34: one word highlighted in the record\'s own path guidance finds that guidance', () => {
+  const org = {
+    ...pathOrg,
+    customLabels: [...pathOrg.customLabels, lbl('101D00000000020', 'MA_Info', 'Info', 'maps')],
+    labelTranslations: [{ ExternalStringId: '101D00000000020', Language: 'sv', Value: 'Information' }],
+  };
+  const rs = locate({ text: 'information', org, describes: [opp], hints: guidance, record: oppRecord(RT_SALES) }).results;
+  assert.equal(rs[0].key, 'path:1CF000000000011');
+  assert.equal(rs[0].confidence, 'confirmed');
+  const spec = rs.find((r) => r.key === 'path:1CF000000000012');
+  assert.ok(!spec || spec.confidence !== 'confirmed', 'the other record type\'s path is not confirmed');
+  // Record type not known: no word-level match.
+  const unknown = locate({ text: 'information', org, describes: [opp], hints: guidance, record: { object: 'Opportunity', id: '006000000000001AAA' } }).results;
+  assert.ok(!unknown.some((r) => r.key.startsWith('path:') && r.confidence === 'confirmed'));
+});
+
+test('R-34: a label that matches only through a non-user-language translation is "similar text"', () => {
+  const org = {
+    ...baseOrg,
+    customLabels: [lbl('101D00000000021', 'MA_Info', 'Info', 'maps')],
+    labelTranslations: [{ ExternalStringId: '101D00000000021', Language: 'sv', Value: 'Information' }],
+  };
+  const out = locate({ text: 'Information', org, describes: [] });
+  const r = out.results.find((x) => x.key === 'label:101D00000000021');
+  assert.equal(r.confidence, 'partial');
+  assert.ok(r.notes.some((n) => n.includes('Swedish translation')));
+  // A user viewing another language: that language's translation is still an exact match.
+  const sv = locate({ text: 'Information', org: { ...org, userLanguage: 'sv' }, describes: [] }).results;
+  assert.equal(sv.find((x) => x.key === 'label:101D00000000021').confidence, 'exact');
+});
+
 // ---------- DV2-02: Rename Tabs Step 2 shows the master label, not the renamed one ----------
 
 test('DV2-02: Go to translation for a renamed standard field also looks for its master label on Step 2', () => {
