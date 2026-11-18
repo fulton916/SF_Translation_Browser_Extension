@@ -265,6 +265,22 @@ test('SB-09: a value that is in no picklist list is flagged as record data', () 
   assert.ok(!multi.some((x) => x.key.startsWith('value:')));
 });
 
+test('SB-09: a partial highlight of a real picklist value is not flagged as "not a value"', () => {
+  // Custom picklist with every value known: part of an active value.
+  const out = locate({ text: 'Unit North', org: teamOrg, describes: [contactTeam], hints: contactField('Demo_Team__c') });
+  const custom = out.results;
+  assert.ok(!custom.some((x) => x.key.startsWith('value:')), 'no value: card');
+  assert.ok(!custom.some((x) => x.confidence === 'confirmed' && x.source === SOURCE.NOT_TRANSLATABLE), 'nothing wrongly confirmed');
+  assert.ok(out.droppedPartial >= 1, 'the partial value match is kept as "similar text"');
+  // Part of an inactive value (from the field metadata).
+  const inactive = locate({ text: 'Unit WEST', org: teamOrg, describes: [contactTeam], hints: contactField('Demo_Team__c') }).results;
+  assert.ok(!inactive.some((x) => x.key.startsWith('value:')));
+  // Standard field, only active values known: part of "Web Form".
+  const lead = { ...contactTeam, fields: contactTeam.fields.map((f) => (f.name === 'LeadSource' ? { ...f, picklistValues: [{ label: 'Web Form', value: 'Web Form', active: true }] } : f)) };
+  const std = locate({ text: 'Web', org: teamOrg, describes: [lead], hints: contactField('LeadSource') }).results;
+  assert.ok(!std.some((x) => x.key.startsWith('value:')));
+});
+
 test('SB-06: loadValueSet returns the local values of a field, inactive ones included', async () => {
   globalThis.fetch = async (u) => {
     const url = decodeURIComponent(u);

@@ -62,7 +62,8 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Standard object name (Account, Opportunity) | **Rename Tabs and Labels** → Standard Tabs | Yes |
 | Custom object name | **Rename Tabs and Labels** → Custom Tabs (master label: Object Manager) | Yes |
 | Standard field label | **Rename Tabs and Labels** → object → Edit → Next (step 2) | Yes (current object) |
-| Standard tab (Home, Chatter) | **Rename Tabs and Labels** | Yes |
+| Standard tab (Chatter and others TabDefinition lists) | **Rename Tabs and Labels** | Yes |
+| Nav bar Home tab | Salesforce text, not translatable, unless TabDefinition lists `standard-home` (then **Rename Tabs and Labels**) | From page metadata (nav item `data-id="home"`) |
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
 | Standard field help text | **Translation Workbench** → Standard Field Help | Yes (current object) |
 | Picklist value | **Translation Workbench** → Picklist Value, or → Global Value Set (tree: value set label → values) when the field uses one | Yes (current object). The value set is read from Tooling `CustomField.Metadata` for matching custom picklists |

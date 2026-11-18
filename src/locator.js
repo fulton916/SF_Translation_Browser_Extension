@@ -1466,6 +1466,9 @@ function addRecordValueResults(org, d, f, results, add) {
   if (f.type === 'multipicklist') return;
   // A single-select value that is not a value of the picklist (e.g. Lead Source "Example Referral").
   if (/picklist/.test(f.type || '') && f.name !== 'CurrencyIsoCode') {
+    // Part of a real value (partial highlight, or a partial match of an inactive value): the value is in
+    // the picklist, so do not flag it. Only a text that matches no value of the field at all is flagged.
+    if (results.some((r) => r.key.startsWith(`picklist:${key}.`))) return;
     add(notInPicklistResult(d, f, !!org.valueSets?.[key]?.values));
     demoteSameTextLabels(results, 'you pointed at a value on the record, not at a label.');
     return;
