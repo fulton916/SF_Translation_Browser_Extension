@@ -462,7 +462,7 @@ test('R-67: nav bar Calendar (standard-Event) is Salesforce\'s own tab; same-tex
   const out = locate({ text: 'Calendar', org, describes: [], hints });
   assert.equal(out.results[0].key, 'sfdctab:Event');
   assert.equal(out.results[0].confidence, 'confirmed');
-  assert.equal(out.results[0].title, 'Salesforce standard tab (Calendar)');
+  assert.equal(out.results[0].title, 'Salesforce text');
   assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
   // An object tab whose object name matches stays the Rename Tabs answer.
   const acct = locate({ text: 'Accounts', org, describes: [], hints: { ...hints, selectionNames: ['sfdc:TabDefinition.standard-Account'], attrs: { 'data-id': 'Account' } } }).results;
@@ -474,7 +474,7 @@ test('R-67: nav bar Calendar (standard-Event) is Salesforce\'s own tab; same-tex
 
 test('SB-12: Salesforce text in standard components is confirmed when nothing from the org matches', () => {
   const tl = locate({ text: 'No activities to show.', org: baseOrg, describes: [], hints: { sfComponents: ['runtime_sales_activities_activityPanel'] } }).results[0];
-  assert.equal(tl.title, 'Salesforce activity timeline text');
+  assert.equal(tl.title, 'Salesforce text');
   assert.equal(tl.confidence, 'confirmed');
   // An org name inside it (a field label) keeps the Salesforce-text card as page context.
   const acct = { name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [], fields: [{ name: 'AccountNumber', label: 'Account Number', custom: false, type: 'string', picklistValues: [] }] };

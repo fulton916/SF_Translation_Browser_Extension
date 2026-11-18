@@ -68,9 +68,9 @@ test('M-01: section label @@@SFDC...SFDC@@@ is a Salesforce standard name; the s
   const r = out.results[0];
   assert.equal(r.source, SOURCE.NOT_TRANSLATABLE);
   assert.equal(r.confidence, 'confirmed');
-  assert.equal(r.title, 'Salesforce standard section name (translated by Salesforce)');
+  assert.equal(r.title, 'Salesforce text');
   assert.match(r.subtitle, /"Opportunity Information"/);
-  assert.match(r.steps[0], /No action needed/);
+  assert.match(r.steps[0], /Admins cannot change or translate it/);
   assert.ok(!out.results.some((x) => /typed in Lightning App Builder/.test(x.title)));
   const label = out.results.find((x) => x.key === 'label:101S00000000004');
   assert.equal(label.confidence, 'exact');
@@ -111,7 +111,7 @@ test('M-05: Lightning display labels (Account Owner, Account Name, Opportunity N
   const cb = run('Created By', { hints: field('CreatedById') }).results[0];
   assert.equal(cb.key, 'field:Account.CreatedById');
   assert.equal(cb.source, SOURCE.NOT_TRANSLATABLE);
-  assert.match(cb.title, /Salesforce system field/);
+  assert.equal(cb.title, 'Salesforce text');
 });
 
 test('M-05: pointing at a field label confirms the field and demotes same-text custom labels', () => {
@@ -180,7 +180,7 @@ test('M-13: pointing at a value: record data, formula output and currency name c
   assert.match(v[0].title, /^Record data: a value typed on the record/);
   assert.ok(v.some((x) => x.key === 'field:Account.Name' && x.confidence === 'context'), 'label card still listed');
   assert.match(run('Open report', { hints: field('Demo_Report_Link__c', 'value') }).results[0].title, /^Formula output/);
-  assert.equal(run('USD - U.S. Dollar', { hints: field('CurrencyIsoCode', 'value') }).results[0].title, 'Salesforce currency name');
+  assert.equal(run('USD - U.S. Dollar', { hints: field('CurrencyIsoCode', 'value') }).results[0].title, 'Salesforce text');
   // A picklist value is still the picklist answer.
   assert.ok(run('U.S. Dollar', { hints: field('CurrencyIsoCode', 'value') }).results[0].key.startsWith('picklist:Account.CurrencyIsoCode.'));
 });
@@ -230,10 +230,10 @@ test('M-17: a highlight of the heading plus guidance lines finds the step', () =
 test('M-15: path heading and step buttons are Salesforce text; the button names the path field', () => {
   const pathArea = { tags: ['span', 'button', 'div'], auraClasses: ['runtime_sales_pathassistantPathAssistantHeader', 'runtime_sales_pathassistantPathAssistant'] };
   const h = locate({ text: 'Guidance for Success', org: pathOrg, describes: [oppPath], hints: pathArea });
-  assert.equal(h.results[0].title, 'Salesforce path text');
+  assert.equal(h.results[0].title, 'Salesforce text');
   assert.equal(h.notFoundHelp, null);
   const b = locate({ text: 'Mark Mid Stage as Complete', org: pathOrg, describes: [oppPath], hints: pathArea }).results;
-  assert.equal(b[0].title, 'Salesforce path text');
+  assert.equal(b[0].title, 'Salesforce text');
   assert.ok(b.some((r) => r.key === 'field:Opportunity.Demo_Mid_Stage__c' && r.confidence === 'context'));
   assert.ok(locate({ text: 'Mark as Current Mid Stage', org: pathOrg, describes: [oppPath], hints: pathArea }).results.some((r) => r.key === 'field:Opportunity.Demo_Mid_Stage__c'));
 });
@@ -241,10 +241,10 @@ test('M-15: path heading and step buttons are Salesforce text; the button names 
 test('M-15: activity timeline, duplicates and feed text → Salesforce text first, same-text labels hidden', () => {
   const org = { ...baseOrg, customLabels: [...baseOrg.customLabels, lbl('101S0000000000E', 'MA_Upcoming', 'Upcoming & Overdue', 'acme')] };
   const out = locate({ text: 'Upcoming & Overdue', org, describes: [account], hints: { tags: ['span', 'div'], sfComponents: ['runtime_sales_activities_activityPanel'] } });
-  assert.equal(out.results[0].title, 'Salesforce activity timeline text');
+  assert.equal(out.results[0].title, 'Salesforce text');
   assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
-  assert.equal(locate({ text: 'updated this record.', org, describes: [], hints: { sfComponents: ['forceChatter_recordFeedContainer'] } }).results[0].title, 'Salesforce Chatter feed text');
-  assert.equal(locate({ text: 'View Duplicates', org, describes: [], hints: { sfComponents: ['runtime_sales_merge_mergeCandidatesPreviewCard2'] } }).results[0].title, 'Salesforce duplicate check text');
+  assert.equal(locate({ text: 'updated this record.', org, describes: [], hints: { sfComponents: ['forceChatter_recordFeedContainer'] } }).results[0].title, 'Salesforce text');
+  assert.equal(locate({ text: 'View Duplicates', org, describes: [], hints: { sfComponents: ['runtime_sales_merge_mergeCandidatesPreviewCard2'] } }).results[0].title, 'Salesforce text');
   // A field label inside the timeline is still found.
   assert.ok(locate({ text: 'Account Owner', org, describes: [account], hints: { sfComponents: ['runtime_sales_activities_activityPanel'] } }).results.some((r) => r.key === 'field:Account.OwnerId'));
 });

@@ -411,21 +411,33 @@ function fieldLabelMatch(needle, d, f) {
   return out;
 }
 
-function systemFieldResult(d, f, confidence) {
-  const shown = displayLabels(d, f).slice(-1)[0];
+/**
+ * One card for every text Salesforce writes and translates itself. Same title and first step everywhere;
+ * `subtitle` says what was found, `steps` adds an optional "to show different text" fix.
+ */
+export const SALESFORCE_TEXT = {
+  title: 'Salesforce text',
+  step: 'Salesforce writes and translates this text. Admins cannot change or translate it.',
+};
+
+function salesforceTextResult(key, confidence, extra = {}) {
   return {
-    key: `field:${d.name}.${f.name}`,
+    key,
     source: SOURCE.NOT_TRANSLATABLE,
     confidence,
-    title: `Salesforce system field: ${d.label} → ${shown}`,
-    subtitle: `API name ${d.name}.${f.name}`,
-    steps: [
-      'Salesforce names this audit field and translates it into every language.',
-      'It is not a custom label, and it is not listed in Translation Workbench.',
-    ],
+    url: null,
+    notes: [],
+    ...extra,
+    title: SALESFORCE_TEXT.title,
+    steps: [SALESFORCE_TEXT.step, ...(extra.steps || [])],
+  };
+}
+
+function systemFieldResult(d, f, confidence) {
+  return {
+    ...salesforceTextResult(`field:${d.name}.${f.name}`, confidence, { subtitle: `System field ${d.name}.${f.name}` }),
     url: SETUP.objectFields(d.name),
     copy: `${d.name}.${f.name}`,
-    notes: ['If you do find it on Rename Tabs and Labels → Step 2 for this object, rename it there.'],
   };
 }
 
@@ -583,12 +595,7 @@ function dataResult(org, dt, f, confidence, row) {
 function recordValueResult(d, f) {
   const base = { key: `value:${d.name}.${f.name}`, source: SOURCE.NOT_TRANSLATABLE, confidence: 'confirmed', url: SETUP.objectFields(d.name), copy: `${d.name}.${f.name}`, notes: [] };
   if (f.name === 'CurrencyIsoCode') {
-    return {
-      ...base,
-      title: 'Salesforce currency name',
-      subtitle: `Value of ${d.label} → ${f.label}`,
-      steps: ['Salesforce names currencies (ISO code and name) and translates the names itself. No action needed.'],
-    };
+    return { ...salesforceTextResult(base.key, 'confirmed', { subtitle: `Currency name in ${d.label} → ${f.label}` }), url: base.url, copy: base.copy };
   }
   if (f.autoNumber) {
     return {
@@ -723,25 +730,11 @@ const isStandardGlobalAction = (name) => STANDARD_GLOBAL_ACTIONS.has(String(name
 /** A Salesforce standard action (global or feed) that TW → Action does not list. */
 function standardActionResult(object, name, confidence, label) {
   const feed = object === 'FeedItem';
-  return {
-    key: `stdaction:${object}.${name}`,
-    source: SOURCE.NOT_TRANSLATABLE,
-    confidence,
-    title: `Salesforce standard ${feed ? '' : 'global '}action ${object}.${name}`,
-    subtitle: confidence === 'confirmed' ? 'Found in page metadata' : label ? `"${label}"` : '',
-    steps: feed
-      ? [
-          'Salesforce names this standard feed action and translates its label itself.',
-          'Translation Workbench → Action does not list it. To show different text, use a custom quick action instead, then translate that.',
-        ]
-      : [
-          'Salesforce standard global action; Salesforce translates its label.',
-          'Translation Workbench → Action does not list it. To show different text, create a custom global action and translate that.',
-        ],
-    url: null,
+  return salesforceTextResult(`stdaction:${object}.${name}`, confidence, {
+    subtitle: `Standard ${feed ? 'feed' : 'global'} action ${object}.${name}`,
+    steps: [feed ? 'To show different text, use a custom quick action instead, then translate that.' : 'To show different text, create a custom global action and translate that.'],
     copy: `${object}.${name}`,
-    notes: [],
-  };
+  });
 }
 
 function validationResult(org, vr, confidence, objLabel) {
@@ -1037,20 +1030,12 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
         notes: [],
       });
     } else if (sn.kind === 'StandardButton') {
-      out.push({
-        key: `stdbtn:${sn.object}.${sn.name}`,
-        source: SOURCE.NOT_TRANSLATABLE,
-        confidence: 'confirmed',
-        title: `Standard button ${sn.name}`,
-        subtitle: 'Found in page metadata',
-        steps: [
-          'Salesforce translates standard button labels itself.',
-          'To show different text, replace it with a custom button or quick action, then translate that.',
-        ],
+      out.push(salesforceTextResult(`stdbtn:${sn.object}.${sn.name}`, 'confirmed', {
+        subtitle: `Standard button ${sn.name}`,
+        steps: ['To show different text, replace it with a custom button or quick action, then translate that.'],
         url: SETUP.objectDetails(sn.object || ''),
         copy: sn.name,
-        notes: [],
-      });
+      }));
     } else if (sn.kind === 'QuickAction' && sn.object === 'FeedItem') {
       // Salesforce's own feed actions (FeedItem.ContentNote "New Note"; also TextPost, LinkPost,
       // PollPost, QuestionPost). QuickActionDefinition has no row for them, so TW → Action does not list them.
@@ -1169,19 +1154,9 @@ export function isSetupPage(urls = []) {
 }
 
 function setupTextResult() {
-  return {
-    key: 'setup:builtin',
-    source: SOURCE.NOT_TRANSLATABLE,
-    confidence: 'context',
-    title: "Salesforce's own Setup text",
-    subtitle: 'Page titles, headings, buttons, and help text on Setup pages',
-    steps: [
-      'Salesforce writes and translates this text. Admins cannot change or translate it.',
-      'To see it in another language, change your personal language: your profile picture → Settings → Language & Time Zone.',
-    ],
-    url: null,
-    notes: [],
-  };
+  return salesforceTextResult('setup:builtin', 'context', {
+    steps: ['To see it in another language, change your personal language: your profile picture → Settings → Language & Time Zone.'],
+  });
 }
 
 // Lightning App Builder components whose text the page metadata holds, by componentName.
@@ -1228,13 +1203,10 @@ const STANDARD_TAB = /^Standard\.Tab\.([A-Za-z0-9_]+)$/;
 function standardNameResult(org, pc, name) {
   const kind = pcKind(pc);
   return {
-    key: `sfdcname:${pc.page}.${pc.id}`,
-    source: SOURCE.NOT_TRANSLATABLE,
-    confidence: 'confirmed',
-    title: `Salesforce standard ${kind.part} name (translated by Salesforce)`,
-    subtitle: `"${name}" on the Lightning page ${pc.page} (stored as ${pc.label})`,
+    ...salesforceTextResult(`sfdcname:${pc.page}.${pc.id}`, 'confirmed'),
+    subtitle: `Standard ${kind.part} name "${name}" on the Lightning page ${pc.page} (stored as ${pc.label})`,
     steps: [
-      'Salesforce supplies this name and translates it into every language. No action needed.',
+      SALESFORCE_TEXT.step,
       `To show different text: create a custom label, then Lightning App Builder → ${pc.page} → click the ${kind.part} → set ${kind.field} to {!$Label.c.Your_Label} → Save, and translate that label.`,
     ],
     url: SETUP.customLabels,
@@ -1267,13 +1239,10 @@ function standardRelatedList(org, results, add, pc) {
     obj.notes = [`Standard related list ${api}: its title is the object's plural name.`, ...(obj.notes || [])];
   } else {
     add({
-      key: `stdlist:${api}`,
-      source: SOURCE.NOT_TRANSLATABLE,
-      confidence: 'confirmed',
-      title: 'Salesforce standard related list',
-      subtitle: `${api} on the Lightning page ${pc.page}`,
+      ...salesforceTextResult(`stdlist:${api}`, 'confirmed'),
+      subtitle: `Standard related list ${api} on the Lightning page ${pc.page}`,
       steps: [
-        'Salesforce names this related list and translates its title itself. No action needed.',
+        SALESFORCE_TEXT.step,
         `To show different text: in Lightning App Builder → ${pc.page}, use a Dynamic Related List – Single and set its Related List Label to {!$Label.c.Your_Label}, then translate that label.`,
       ],
       url: SETUP.customLabels,
@@ -1383,13 +1352,13 @@ function confirmNames(results, keyRe, why) {
 }
 
 const STANDARD_AREAS = {
-  activityTimeline: { title: 'Salesforce activity timeline text', what: 'the activity timeline' },
-  duplicates: { title: 'Salesforce duplicate check text', what: 'the duplicates card' },
-  feed: { title: 'Salesforce Chatter feed text', what: 'the Chatter feed' },
-  reportChart: { title: 'Salesforce report chart text', what: 'the report chart' },
-  path: { title: 'Salesforce path text', what: 'the path (heading and buttons)' },
-  calendar: { title: 'Salesforce calendar text', what: 'the Calendar page (header buttons, views, day headers, My Calendars)' },
-  globalHeader: { title: 'Salesforce header text', what: 'the global header (search, reminders, notifications)' },
+  activityTimeline: { what: 'the activity timeline' },
+  duplicates: { what: 'the duplicates card' },
+  feed: { what: 'the Chatter feed' },
+  reportChart: { what: 'the report chart' },
+  path: { what: 'the path (heading and buttons)' },
+  calendar: { what: 'the Calendar page (header buttons, views, day headers, My Calendars)' },
+  globalHeader: { what: 'the global header (search, reminders, notifications)' },
 };
 
 // Calendar list entries Salesforce names itself (English; add other languages when seen). Any other
@@ -1429,17 +1398,8 @@ function addCalendarResults(needle, areas, results, add) {
 }
 
 function standardTextResult(area, confidence) {
-  const a = STANDARD_AREAS[area];
   return {
-    key: `sfdctext:${area}`,
-    source: SOURCE.NOT_TRANSLATABLE,
-    confidence,
-    title: a.title,
-    subtitle: `Headings, buttons and messages in ${a.what}`,
-    steps: [
-      'Salesforce writes and translates this text. Admins cannot change or translate it.',
-    ],
-    url: null,
+    ...salesforceTextResult(`sfdctext:${area}`, confidence),
     notes: area === 'reportChart' ? ['The chart title is set on the Lightning page; report and field names come from the report.'] : [],
   };
 }
@@ -1744,17 +1704,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   const tabKnown = stdTab === 'home' || (Array.isArray(org.objects) && org.objects.length > 0);
   if (areas.has('navTab') && stdTab && tabKnown && !results.some((r) => /^(object|tab|app):/.test(r.key) && ['confirmed', 'exact'].includes(r.confidence))) {
     const shown = String(text || '').trim().slice(0, 60) || stdTab;
-    add({
-      key: `sfdctab:${stdTab}`,
-      source: SOURCE.NOT_TRANSLATABLE,
-      confidence: 'confirmed',
-      title: `Salesforce standard tab (${shown})`,
-      subtitle: `Found in page metadata: standard-${stdTab}`,
-      steps: [`Salesforce names the ${shown} tab and translates it into every language. No action needed.`],
-      url: null,
-      copy: `standard-${stdTab}`,
-      notes: [],
-    });
+    add(salesforceTextResult(`sfdctab:${stdTab}`, 'confirmed', { subtitle: `Standard tab standard-${stdTab}`, copy: `standard-${stdTab}` }));
     demoteLabelsToPartial(results, `the ${shown} tab is named by Salesforce, not by a custom label.`);
   }
   // The object name above the record name in the highlights panel (bug: "Account" ranked below custom labels).

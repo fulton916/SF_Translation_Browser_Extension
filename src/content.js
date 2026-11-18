@@ -210,7 +210,7 @@
     if (p.more?.length) {
       const n = p.more.length;
       panel.append(
-        button(`Show ${n} more match${n === 1 ? '' : 'es'}`, 'link', 'Show the other places this text appears', (ev) => {
+        button(`Show ${n} similar text${n === 1 ? '' : 's'} in your org`, 'link', 'Org text that shares words with what you pointed at', (ev) => {
           ev.currentTarget.remove();
           for (const r of p.more) list.append(card(r));
         })
@@ -420,7 +420,7 @@
       '',
       'Results shown:',
       ...(p.results || []).map((r, i) => `  ${i + 1}. ${r.confidence} | ${r.source} | ${r.title}`),
-      p.more?.length ? `  (+${p.more.length} more behind "Show more")` : null,
+      p.more?.length ? `  (+${p.more.length} similar texts behind the "Show similar" button)` : null,
       ...(p.warnings || []).map((w) => `Warning: ${w}`),
       '',
       `Extension version: ${chrome.runtime.getManifest?.().version || '?'}`,
