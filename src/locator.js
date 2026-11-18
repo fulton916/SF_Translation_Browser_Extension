@@ -160,6 +160,13 @@ export function detectAreas(hints = {}) {
   // Record highlights panel (records-highlights2): the object name above the record name, or the record name.
   if (has(/^records-(lwc-)?highlights/)) areas.add(hints.recordTitle ? 'recordTitle' : 'highlights');
   if (hints.helpIcon) areas.add('helpIcon');
+  // Salesforce's own components on a record page (component ids seen in the UAT2 Account page DOM).
+  const comps = [...(hints.componentIds || []), ...(hints.sfComponents || [])];
+  const comp = (re) => comps.some((c) => re.test(c));
+  if (comp(/^runtime_sales_activities/)) areas.add('activityTimeline');
+  if (comp(/^runtime_sales_merge/)) areas.add('duplicates');
+  if (comp(/^forceChatter_/)) areas.add('feed');
+  if (comp(/^flexipage_reportChart/)) areas.add('reportChart');
   // Path: the guidance is in Aura divs (no custom tag names), so read their data-aura-class too.
   // Verified on a UAT2 Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
   const aura = hints.auraClasses || [];
@@ -1136,6 +1143,70 @@ function confirmNames(results, keyRe, why) {
   }
 }
 
+const STANDARD_AREAS = {
+  activityTimeline: { title: 'Salesforce activity timeline text', what: 'the activity timeline' },
+  duplicates: { title: 'Salesforce duplicate check text', what: 'the duplicates card' },
+  feed: { title: 'Salesforce Chatter feed text', what: 'the Chatter feed' },
+  reportChart: { title: 'Salesforce report chart text', what: 'the report chart' },
+  path: { title: 'Salesforce path text', what: 'the path (heading and buttons)' },
+};
+
+function standardTextResult(area, confidence) {
+  const a = STANDARD_AREAS[area];
+  return {
+    key: `sfdctext:${area}`,
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence,
+    title: a.title,
+    subtitle: `Headings, buttons and messages in ${a.what}`,
+    steps: [
+      'Salesforce writes and translates this text. Admins cannot change or translate it.',
+      'Names from your org inside it (record names, field labels, picklist values) are listed separately when found.',
+    ],
+    url: null,
+    notes: area === 'reportChart' ? ['The chart title is set on the Lightning page; report and field names come from the report.'] : [],
+  };
+}
+
+// Path text Salesforce writes (English): the guidance heading and the step buttons
+// (UAT2: "Mark Sub Stage as Complete", "Mark as Current Sub Stage").
+const PATH_BUTTONS = [/^mark (.+) as complete$/, /^mark as current (.+)$/, /^mark (.+) as current$/, /^select closed (.+)$/];
+
+function addStandardTextResults(org, needle, areas, describes, results, add) {
+  if (areas.has('path') && needle) {
+    const button = PATH_BUTTONS.map((re) => re.exec(needle)).find(Boolean);
+    if (needle === 'guidance for success' || button) {
+      add(standardTextResult('path', 'confirmed'));
+      demoteLabelsToPartial(results, 'this is Salesforce path text.');
+      // The button names the path field ("Sub Stage"): its label is translated like any field label.
+      for (const d of button ? describes : []) {
+        for (const f of d.fields || []) {
+          if (!displayLabels(d, f).some((l) => normalize(l) === button[1])) continue;
+          const r = fieldLabelResult(org, d, f, 'context');
+          r.notes = [`The button shows this field's label ("${f.label}"). Translating the label changes the button text.`, ...r.notes];
+          add(r);
+        }
+      }
+      return;
+    }
+  }
+  for (const area of ['activityTimeline', 'duplicates', 'feed', 'reportChart']) {
+    if (!areas.has(area)) continue;
+    // Field labels, picklist values and record data inside these components are still listed above it.
+    add(standardTextResult(area, 'context'));
+    if (area !== 'reportChart') demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS[area].what}.`);
+    return;
+  }
+}
+
+function demoteLabelsToPartial(results, why) {
+  for (const r of results) {
+    if (r.source !== SOURCE.CUSTOM_LABEL || r.confidence === 'confirmed') continue;
+    r.confidence = 'partial';
+    r.notes = [`Same words only: ${why}`, ...(r.notes || [])];
+  }
+}
+
 function addHelpIconResults(org, describes, confirmedFields, results, add) {
   const fieldOf = (o, n) => {
     const d = describes.find((x) => x.name === o);
@@ -1162,6 +1233,8 @@ function addHelpIconResults(org, describes, confirmedFields, results, add) {
 function addRecordValueResults(org, d, f, results, add) {
   const key = `${d.name}.${f.name}`;
   if (results.some((r) => r.key.startsWith(`picklist:${key}.`) && r.confidence !== 'partial')) return;
+  // A picklist value that did not match (e.g. several values of a multi-select): not typed data.
+  if (/picklist/.test(f.type || '') && f.name !== 'CurrencyIsoCode') return;
   // Data Translation is on for this field: that is the answer.
   const dt = results.find((r) => r.key === `data:${key}` && !r.off);
   if (dt) dt.confidence = 'confirmed';
@@ -1281,6 +1354,9 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   if (areas.has('navTab')) confirmNames(results, /^(object|tab|app):/, 'navigation bar items show object, tab and app names, not custom labels.');
   // The object name above the record name in the highlights panel (UAT2: "Account" ranked below 3 labels).
   if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');
+
+  // Salesforce's own text in standard record page components.
+  addStandardTextResults(org, needle, areas, describes, results, add);
 
   // 7. Page metadata (buttons, sections, flows, custom components)
   // Clicked a Lightning App Builder component whose label was read from the page metadata.

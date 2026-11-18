@@ -78,7 +78,7 @@
     // recordTitle: the record name in the highlights panel (lightning-formatted-text slot="primaryField").
     const hints = {
       selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null,
-      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false,
+      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [],
     };
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
     let inField = false;
@@ -103,6 +103,9 @@
       // Lightning App Builder component ids, as in the page metadata: flexipage_fieldSection6,
       // flexipage_tab2Tab (tab flexipage_tab2), lst_dynamicRelatedList16, force_relatedListSingleContainer15.
       if (tsn && /^(flexipage_|lst_|force_)/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
+      // Salesforce's own record page components (seen in UAT2): runtime_sales_activities_activityPanel,
+      // runtime_sales_merge_mergeCandidatesPreviewCard2 (duplicates), forceChatter_recordFeedContainer.
+      if (tsn && /^(runtime_|forceChatter_)/.test(tsn) && hints.sfComponents.length < 10) hints.sfComponents.push(tsn.slice(0, 100));
       const aura = el.getAttribute('data-aura-class');
       if (aura && /^c[A-Z]/.test(aura)) hints.auraCustom.push(aura);
       if (aura && hints.auraClasses.length < 20) hints.auraClasses.push(aura.split(/\s+/)[0].slice(0, 100));
