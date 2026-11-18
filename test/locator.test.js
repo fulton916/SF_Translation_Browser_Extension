@@ -497,7 +497,7 @@ test('isSetupPage: Setup yes, record pages no', () => {
 test('Setup heading that equals a custom label → Salesforce text first, label hidden', () => {
   const out = locate({ text: 'Submit request', org, pageUrls: SETUP_URLS });
   assert.equal(out.results[0].title, 'Salesforce text');
-  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(out.results[0].source, SOURCE.SALESFORCE);
   assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
   assert.equal(out.droppedPartial, 1);
 });

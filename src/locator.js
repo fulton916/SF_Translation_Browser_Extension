@@ -10,6 +10,7 @@ export const SOURCE = {
   DATA: 'Data Translation (record data)',
   CUSTOM_OBJECT: 'Custom translation object',
   NOT_TRANSLATABLE: 'Not translatable as-is',
+  SALESFORCE: 'Owned by Salesforce',
   CONTEXT: 'Page context',
 };
 
@@ -22,6 +23,7 @@ const SOURCE_RANK = {
   [SOURCE.OVERRIDE]: 3,
   [SOURCE.WORKBENCH]: 4,
   [SOURCE.NOT_TRANSLATABLE]: 5,
+  [SOURCE.SALESFORCE]: 5,
   [SOURCE.CONTEXT]: 6,
 };
 const MAX_PARTIAL = 3;
@@ -423,7 +425,7 @@ export const SALESFORCE_TEXT = {
 function salesforceTextResult(key, confidence, extra = {}) {
   return {
     key,
-    source: SOURCE.NOT_TRANSLATABLE,
+    source: SOURCE.SALESFORCE,
     confidence,
     url: null,
     notes: [],
@@ -1422,10 +1424,9 @@ function addClosedStepResult(org, needle, describes, results, add, record) {
   add({
     ...standardTextResult('path', 'confirmed'),
     key: 'sfdctext:pathClosed',
-    title: 'Salesforce path step "Closed"',
     subtitle: 'The final Closed step groups the closed stages (Closed Won / Closed Lost)',
     steps: [
-      'Salesforce shows this step and translates "Closed" itself. No action needed.',
+      SALESFORCE_TEXT.step,
       'Once the record is closed, the step shows its closed value (e.g. Closed Won). That value is a picklist value: Translation Workbench → Picklist Value.',
     ],
   });

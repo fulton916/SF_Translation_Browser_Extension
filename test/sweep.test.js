@@ -66,7 +66,7 @@ test('M-01: section label @@@SFDC...SFDC@@@ is a Salesforce standard name; the s
   const pc = { page: 'Opportunity Record Page', id: 'flexipage_fieldSection1', component: 'flexipage:fieldSection', label: '@@@SFDCOpportunity_InformationSFDC@@@' };
   const out = run('Opportunity Information', { hints: sectionHints, pageComponent: pc });
   const r = out.results[0];
-  assert.equal(r.source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(r.source, SOURCE.SALESFORCE);
   assert.equal(r.confidence, 'confirmed');
   assert.equal(r.title, 'Salesforce text');
   assert.match(r.subtitle, /"Opportunity Information"/);
@@ -110,7 +110,7 @@ test('M-05: Lightning display labels (Account Owner, Account Name, Opportunity N
   assert.equal(locate({ text: 'Opportunity Name', org: baseOrg, describes: [opp] }).results[0].key, 'field:Opportunity.Name');
   const cb = run('Created By', { hints: field('CreatedById') }).results[0];
   assert.equal(cb.key, 'field:Account.CreatedById');
-  assert.equal(cb.source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(cb.source, SOURCE.SALESFORCE);
   assert.equal(cb.title, 'Salesforce text');
 });
 
