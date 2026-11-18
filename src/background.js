@@ -210,9 +210,29 @@ async function lookup({ text, hints, urls, refresh = false }) {
     const expect = areas.has('fieldSection') ? /^flexipage:fieldSection$/ : areas.has('relatedList') ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/ : /^flexipage:tab$/;
     if (pageComponent && !expect.test(pageComponent.component || '')) pageComponent = null;
   }
+  const liveDescribes = describes.filter(Boolean);
+  const parentDescribe = liveDescribes.find((d) => d.name === record?.object) || liveDescribes[0];
+  // Custom related list title (relatedListApiName …__r, no label of its own): its Related List Label is on
+  // the child object's lookup field (e.g. Demo_Contracts__r → Contract.Demo_Opportunity__c).
+  const api = pageComponent?.props?.relatedListApiName;
+  if (areas.has('relatedList') && !String(pageComponent?.label ?? '').trim() && /__r$/.test(api || '')) {
+    const child = await relatedChild(session, parentDescribe, api, refresh);
+    if (child) pageComponent = { ...pageComponent, child: { ...child.rel, fieldLabel: child.field?.label || null, objectLabel: child.describe?.label || null } };
+  }
+  // Inside related list rows ("Stage:" in Opportunities on an Account): the rows are the child
+  // object's records, so its field labels are searched too.
+  let listObject = null;
+  const listComponentId = (hints.componentIds || []).find((c) => /^(lst_|force_relatedList)/.test(c));
+  if (areas.has('relatedListRow') && hints.flexipage && listComponentId) {
+    const pc = await loadFlexiPageComponent(session, hints.flexipage, listComponentId, objects).catch(() => null);
+    const child = pc?.props?.relatedListApiName ? await relatedChild(session, parentDescribe, pc.props.relatedListApiName, refresh) : null;
+    if (child?.describe) {
+      listObject = child.describe.name;
+      if (!liveDescribes.some((d) => d.name === listObject)) liveDescribes.push(child.describe);
+    }
+  }
   // Global Value Sets: only for the custom picklists this text can be about (each costs 2-3 Tooling queries).
   const valueSets = {};
-  const liveDescribes = describes.filter(Boolean);
   const hinted = new Set((hints.selectionNames || []).map((s) => /^sfdc:RecordField\.(.+)$/.exec(s)?.[1]).filter(Boolean));
   const picklistFields = [];
   for (const d of liveDescribes) {
@@ -228,14 +248,22 @@ async function lookup({ text, hints, urls, refresh = false }) {
       })
     )
   );
-  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent });
+  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
   return {
     ...located,
     hints,
-    contextObjects: objects,
+    contextObjects: listObject && !objects.includes(listObject) ? [...objects, listObject] : objects,
     warnings,
     language: { user: org.userLanguage, orgDefault: org.defaultLanguage },
   };
+}
+
+/** The child relationship a related list shows (relationshipName = relatedListApiName), with the child describe. */
+async function relatedChild(session, parent, relationshipName, refresh) {
+  const rel = (parent?.childRelationships || []).find((c) => c.relationshipName === relationshipName);
+  if (!rel) return null;
+  const describe = await loadDescribe(session, rel.childSObject, { refresh });
+  return { rel, describe, field: describe?.fields?.find((f) => f.name === rel.field) || null };
 }
 
 async function sendToFrame(tabId, frameId, msg) {

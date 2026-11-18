@@ -334,6 +334,10 @@ export function loadDescribe(session, objectName, { refresh = false } = {}) {
       })),
       recordTypeInfos: (d.recordTypeInfos || []).map((rt) => ({ name: rt.name, developerName: rt.developerName, master: rt.master, recordTypeId: rt.recordTypeId })),
       quickActions: (Array.isArray(qa) ? qa : []).map((a) => ({ label: a.label, name: a.name, type: a.type })),
+      // Related lists name a child relationship (relatedListApiName): which child object and lookup field.
+      childRelationships: (d.childRelationships || [])
+        .filter((c) => c.relationshipName && c.childSObject && c.field)
+        .map((c) => ({ childSObject: c.childSObject, field: c.field, relationshipName: c.relationshipName })),
       // Org-built translation objects, e.g. Demo_Translations__c (not the standard *DataTranslation).
       translationChildren: (d.childRelationships || [])
         .filter((c) => c.relationshipName && /__c$/.test(c.childSObject) && /translat/i.test(c.childSObject))
