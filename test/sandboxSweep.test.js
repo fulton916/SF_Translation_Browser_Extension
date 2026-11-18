@@ -116,3 +116,38 @@ test('SB-02: Go to translation for a renamed standard field also looks for its m
   assert.deepEqual(renameFieldCandidates('Parent Account ID', 'ParentId'), ['Parent Account ID', 'ParentId', 'Parent Id', 'Parent']);
   assert.deepEqual(renameFieldCandidates('Account Number', 'AccountNumber'), ['Account Number', 'AccountNumber']);
 });
+
+// ---------- SB-03: field labels and values in the highlights panel (compact layout) ----------
+
+const hlAccount = {
+  name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
+  fields: [
+    { name: 'AccountNumber', label: 'Account Number', custom: false, type: 'string', picklistValues: [] },
+    { name: 'BillingAddress', label: 'Billing Address/Main Address', custom: false, type: 'address', picklistValues: [] },
+  ],
+};
+const hlOrg = { ...baseOrg, customLabels: [lbl('101D00000000002', 'Account_Number', 'Account Number'), lbl('101D00000000003', 'Billing_Address', 'Billing Address')] };
+// Real composed path: p.slds-text-title > div > records-highlights-details-item > … records-highlights2.
+const hlHints = (fieldPart, highlightsLabel) => ({
+  tags: ['p', 'div', 'records-highlights-details-item', 'slot', 'div', 'records-highlights2', 'records-lwc-highlights-panel'],
+  fieldPart, highlightsLabel,
+});
+const hlRecord = { object: 'Account', id: '001000000000001AAA' };
+
+test('SB-03: a highlights panel field label is the field, not the same-text custom label', () => {
+  const out = locate({ text: 'Account Number', org: hlOrg, describes: [hlAccount], hints: hlHints('label', 'Account Number'), record: hlRecord });
+  assert.ok(out.areas.includes('highlightsField') && !out.areas.includes('highlights'));
+  assert.equal(out.results[0].key, 'field:Account.AccountNumber');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.equal(out.results.find((r) => r.key === 'label:101D00000000002').confidence, 'exact');
+  // Partial highlight of a renamed label: the item's label still names the field.
+  const part = locate({ text: 'Billing Address', org: hlOrg, describes: [hlAccount], hints: hlHints('label', 'Billing Address/Main Address'), record: hlRecord });
+  assert.equal(part.results[0].key, 'field:Account.BillingAddress');
+  assert.equal(part.results[0].confidence, 'confirmed');
+});
+
+test('SB-03: a highlights panel value is record data of that field', () => {
+  const out = locate({ text: 'A-100200', org: hlOrg, describes: [hlAccount], hints: hlHints('value', 'Account Number'), record: hlRecord });
+  assert.equal(out.results[0].key, 'value:Account.AccountNumber');
+  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+});
