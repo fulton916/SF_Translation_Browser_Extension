@@ -250,6 +250,7 @@ export function loadDescribe(session, objectName, { refresh = false } = {}) {
         label: f.label,
         custom: f.custom,
         type: f.type,
+        calculated: !!f.calculated, // formula field: its value is computed, not typed
         inlineHelpText: f.inlineHelpText,
         picklistValues: (f.picklistValues || []).map((p) => ({ label: p.label, value: p.value, active: p.active })),
       })),

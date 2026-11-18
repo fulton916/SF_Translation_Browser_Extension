@@ -157,6 +157,7 @@
     panel.append(list);
 
     if (p.droppedPartial) panel.append(el('div', 'muted', `${p.droppedPartial} weaker partial matches hidden.`));
+    if (p.hiddenManaged) panel.append(el('div', 'muted', `${p.hiddenManaged} more managed-package labels with the same text hidden.`));
     if (p.notFoundHelp) {
       const nf = el('div', 'card');
       nf.append(el('div', 'card-title', 'No match found'));
@@ -360,6 +361,7 @@
       'Results shown:',
       ...(p.results || []).map((r, i) => `  ${i + 1}. ${r.confidence} | ${r.source} | ${r.title}`),
       p.droppedPartial ? `  (+${p.droppedPartial} weaker matches hidden)` : null,
+      p.hiddenManaged ? `  (+${p.hiddenManaged} same-text managed labels hidden)` : null,
       ...(p.warnings || []).map((w) => `Warning: ${w}`),
       '',
       `Extension version: ${chrome.runtime.getManifest?.().version || '?'}`,

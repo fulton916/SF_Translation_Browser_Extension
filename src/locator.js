@@ -81,6 +81,7 @@ export function normalize(s) {
     .trim()
     .replace(/^[*\s]+/, '') // required-field asterisk
     .replace(/[\s:*]+$/, '') // trailing colon / asterisk
+    .replace(/\s*\(\d+\+?\)$/, '') // record count on a card title: "Demo Gadgets (0)", "Cases (10+)"
     .toLowerCase();
 }
 
@@ -268,6 +269,7 @@ function customLabelResult(org, label, confidence, translations, matchedLanguage
     key: `label:${label.Id}`,
     source: SOURCE.CUSTOM_LABEL,
     confidence,
+    pkg: label.NamespacePrefix || null,
     title: `Custom label ${ns}${label.Name}`,
     subtitle: label.MasterLabel && label.MasterLabel !== label.Name ? label.MasterLabel : '',
     steps: [
@@ -320,7 +322,58 @@ function objectResult(org, obj, confidence, plural, tab) {
   };
 }
 
+// Labels Lightning shows for standard fields whose describe label differs (checked live, Nov 2026:
+// OwnerId "Owner ID" shows "Account Owner", Opportunity.AccountId "Account ID" shows "Account Name").
+const STD_DISPLAY = {
+  OwnerId: (d) => [`${d.label} Owner`, 'Owner'],
+  AccountId: () => ['Account Name'],
+  ContactId: () => ['Contact Name'],
+  RecordTypeId: (d) => [`${d.label} Record Type`, 'Record Type'],
+  Name: (d) => [`${d.label} Name`],
+};
+// Audit fields: Salesforce names them, and Rename Tabs and Labels does not list them.
+const SYSTEM_FIELDS = new Set(['CreatedById', 'LastModifiedById', 'CreatedDate', 'LastModifiedDate', 'SystemModstamp']);
+
+/** Every label a field can show on a Lightning page: the describe label first. */
+export function displayLabels(d, f) {
+  const out = [f.label];
+  if (!f.custom && f.label) {
+    const prefix = `${d.label} `;
+    // "Account Phone" shows as "Phone", "Account Description" as "Description".
+    if (f.label.startsWith(prefix) && f.label.length > prefix.length) out.push(f.label.slice(prefix.length));
+    // Lookups: "Created By ID" shows as "Created By", "Parent Account ID" as "Parent Account".
+    if (f.type === 'reference' && / ID$/.test(f.label)) out.push(f.label.slice(0, -3));
+    out.push(...(STD_DISPLAY[f.name]?.(d) || []));
+  }
+  return [...new Set(out.filter(Boolean))];
+}
+
+function fieldLabelMatch(needle, d, f) {
+  let out = null;
+  for (const l of displayLabels(d, f)) out = best(out, matchType(needle, l));
+  return out;
+}
+
+function systemFieldResult(d, f, confidence) {
+  const shown = displayLabels(d, f).slice(-1)[0];
+  return {
+    key: `field:${d.name}.${f.name}`,
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence,
+    title: `Salesforce system field: ${d.label} → ${shown}`,
+    subtitle: `API name ${d.name}.${f.name}`,
+    steps: [
+      'Salesforce names this audit field and translates it into every language.',
+      'It is not a custom label, and it is not listed in Translation Workbench.',
+    ],
+    url: SETUP.objectFields(d.name),
+    copy: `${d.name}.${f.name}`,
+    notes: ['If you do find it on Rename Tabs and Labels → Step 2 for this object, rename it there.'],
+  };
+}
+
 function fieldLabelResult(org, d, f, confidence) {
+  if (SYSTEM_FIELDS.has(f.name)) return systemFieldResult(d, f, confidence);
   if (!f.custom) {
     return {
       key: `field:${d.name}.${f.name}`,
@@ -429,9 +482,43 @@ function dataResult(org, dt, f, confidence, row) {
   };
 }
 
+/** A value shown in a record field (content.js hints.fieldPart === 'value') that is not a picklist value. */
+function recordValueResult(d, f) {
+  const base = { key: `value:${d.name}.${f.name}`, source: SOURCE.NOT_TRANSLATABLE, confidence: 'confirmed', url: SETUP.objectFields(d.name), copy: `${d.name}.${f.name}`, notes: [] };
+  if (f.name === 'CurrencyIsoCode') {
+    return {
+      ...base,
+      title: 'Salesforce currency name',
+      subtitle: `Value of ${d.label} → ${f.label}`,
+      steps: ['Salesforce names currencies (ISO code and name) and translates the names itself. No action needed.'],
+    };
+  }
+  if (f.calculated) {
+    return {
+      ...base,
+      title: `Formula output: ${d.label} → ${f.label}`,
+      subtitle: `${d.name}.${f.name} is a formula field`,
+      steps: [
+        'The formula calculates this text. Translation tools do not change it.',
+        `To translate it: Object Manager → ${d.label} → Fields → ${f.label} → Edit the formula, and return text from custom labels ($Label.c.Your_Label) instead of typed text.`,
+      ],
+    };
+  }
+  return {
+    ...base,
+    title: `Record data: a value typed on the record (${d.label} → ${f.label})`,
+    subtitle: 'This is data stored on the record, not a label',
+    steps: [
+      'Translation tools do not change values that people type on records.',
+      'If every user must see it in their language, use a picklist field instead, or Data Translation where the object supports it.',
+    ],
+  };
+}
+
 function dataOffResult(object, fieldName) {
   return {
     key: `data:${object}.${fieldName}`,
+    off: true,
     source: SOURCE.DATA,
     confidence: 'context',
     title: `Record data: ${object} ${fieldName}`,
@@ -532,16 +619,19 @@ function tabResult(org, tab, confidence) {
 
 function appResult(org, app, confidence) {
   if (app.NamespacePrefix === 'standard') {
+    // A renamed standard app (e.g. LightningSales shown as "Acme Sales") is listed in
+    // Translation Workbench → App, so point there; not verified that the launcher shows that translation.
     return {
       key: `app:${app.Name}`,
-      source: SOURCE.NOT_TRANSLATABLE,
       confidence,
       title: `Salesforce standard app ${app.Name}`,
       subtitle: `"${app.Label}"`,
-      steps: ['Salesforce translates standard app names. To change it, create a custom app.'],
-      url: SETUP.appManager,
+      ...workbench(org, { component: 'App', aspect: 'Field Label', row: app.Label }),
       copy: app.Name,
-      notes: [],
+      notes: [
+        'Standard app: if it was renamed, translate the new name here. Otherwise Salesforce translates it itself.',
+        'If the translation does not show, the name cannot be translated: use a custom app instead (App Manager).',
+      ],
     };
   }
   return {
@@ -588,10 +678,34 @@ const MIN_PATH_NEEDLE = 12;
  * 'exact' when the text is the whole guidance or one whole line of it (the element you point at is
  * usually one list item), 'partial' when a phrase of it, or the guidance plus more, else null.
  */
-export function pathStepMatch(needle, info) {
+// The heading above the guidance (Salesforce text). Highlights often start with it.
+const GUIDANCE_HEADINGS = ['guidance for success'];
+function stripGuidanceHeading(n) {
+  for (const h of GUIDANCE_HEADINGS) {
+    if (n === h) return '';
+    if (n.startsWith(h + ' ')) return n.slice(h.length + 1);
+  }
+  return n;
+}
+
+/**
+ * `rawText` (optional) is the text before normalize, so a highlight across several list items can be
+ * compared line by line: every line in the step → 'exact', at least 2 lines → 'partial'.
+ */
+export function pathStepMatch(needle, info, rawText = null) {
   const lines = htmlLines(info).map(normalize).filter(Boolean);
   const full = lines.join(' ');
+  needle = stripGuidanceHeading(needle || '');
   if (!needle || !full) return null;
+  const needleLines = String(rawText ?? '')
+    .split(/\r?\n/)
+    .map(normalize)
+    .filter((l) => l && !GUIDANCE_HEADINGS.includes(l));
+  if (needleLines.length >= 2) {
+    const hits = needleLines.filter((l) => lines.includes(l)).length;
+    if (hits === needleLines.length) return 'exact';
+    if (hits >= 2) return 'partial';
+  }
   if (full === needle || (needle.length >= 4 && lines.includes(needle))) return 'exact';
   if (needle.length >= MIN_PATH_NEEDLE && /\s/.test(needle) && full.includes(needle)) return 'partial';
   // Selection ran past the guidance (e.g. it includes the "Guidance for Success" heading).
@@ -659,10 +773,10 @@ function pathStepResult(org, step, where, describes, confidence) {
   };
 }
 
-function pathResults(org, needle, areas, describes, add) {
+function pathResults(org, needle, areas, describes, add, rawText) {
   const pageObjects = new Set(describes.map((d) => d.name));
   for (const step of org.pathSteps || []) {
-    const mt = pathStepMatch(needle, step.Info);
+    const mt = pathStepMatch(needle, step.Info, rawText);
     if (!mt) continue;
     const where = pathOfStep(step.DeveloperName, org.paths, org.objects);
     // A path for another object can share a line ("Who else reviews the sketch?"): never confirm it.
@@ -826,20 +940,30 @@ function setupTextResult() {
   };
 }
 
+// Lightning App Builder components whose text the page metadata holds, by componentName.
+// prop: the componentInstanceProperty with the shown text (sfApi.js reads the same table).
+export const PAGE_COMPONENT_KINDS = {
+  'flexipage:fieldSection': { prop: 'label', what: 'Field section label', part: 'section', field: 'Label' },
+  'lst:dynamicRelatedList': { prop: 'relatedListLabel', what: 'Related list label', part: 'related list', field: 'Related List Label' },
+  'flexipage:tab': { prop: 'title', what: 'Tab label', part: 'tab', field: 'Label' },
+};
+const pcKind = (pc) => PAGE_COMPONENT_KINDS[pc.component] || { prop: 'label', what: 'Component label', part: 'component', field: 'Label' };
+
 /** Label typed as plain text in Lightning App Builder: never translated. */
 function builderTextResult(org, pc) {
+  const kind = pcKind(pc);
   const same = (org.customLabels || []).find((l) => normalize(l.Value) === normalize(pc.label) && !l.NamespacePrefix);
   const ref = `{!$Label.c.${same ? same.Name : 'Your_Label'}}`;
   return {
     key: `builder:${pc.page}.${pc.id}`,
     source: SOURCE.NOT_TRANSLATABLE,
     confidence: 'confirmed',
-    title: 'Field section label typed in Lightning App Builder',
+    title: `${kind.what} typed in Lightning App Builder`,
     subtitle: `"${pc.label}" on the Lightning page ${pc.page}`,
     steps: [
       'This label is plain text, so Salesforce never translates it.',
       same ? `Custom label ${same.Name} already has this text. Add its translations if needed.` : 'Setup → Custom Labels → New: create a label with this text, then add its translations.',
-      `Lightning App Builder → ${pc.page} → click the section → set Label to ${ref} → Save.`,
+      `Lightning App Builder → ${pc.page} → click the ${kind.part} → set ${kind.field} to ${ref} → Save.`,
     ],
     url: same ? SETUP.customLabel(same.Id) : SETUP.customLabels,
     copy: ref,
@@ -848,14 +972,63 @@ function builderTextResult(org, pc) {
 }
 
 const LABEL_REF = /^\{!\$Label\.(?:([A-Za-z0-9_]+)\.)?([A-Za-z0-9_]+)\}$/;
+// Salesforce's own name for a standard section, stored in the page as a token (seen live:
+// "@@@SFDCOpportunity_InformationSFDC@@@"). Salesforce shows and translates it itself.
+const SFDC_TOKEN = /^@@@SFDC(.+)SFDC@@@$/;
+// Salesforce's own tab names (Details, Related, Chatter...): "Standard.Tab.detail".
+const STANDARD_TAB = /^Standard\.Tab\.([A-Za-z0-9_]+)$/;
 
+function standardNameResult(org, pc, name) {
+  const kind = pcKind(pc);
+  return {
+    key: `sfdcname:${pc.page}.${pc.id}`,
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'confirmed',
+    title: `Salesforce standard ${kind.part} name (translated by Salesforce)`,
+    subtitle: `"${name}" on the Lightning page ${pc.page} (stored as ${pc.label})`,
+    steps: [
+      'Salesforce supplies this name and translates it into every language. No action needed.',
+      `To show different text: create a custom label, then Lightning App Builder → ${pc.page} → click the ${kind.part} → set ${kind.field} to {!$Label.c.Your_Label} → Save, and translate that label.`,
+    ],
+    url: SETUP.customLabels,
+    copy: pc.label,
+    notes: [],
+  };
+}
+
+/** A custom label with the same words as a Salesforce standard name: a coincidence, never the source. */
+function demoteSameTextLabels(results, why) {
+  for (const r of results) {
+    if (r.source !== SOURCE.CUSTOM_LABEL || r.confidence === 'partial') continue;
+    r.confidence = 'exact';
+    r.notes = [`Same words only: ${why}`, ...(r.notes || [])];
+  }
+}
+
+/** Returns true when the component's text was explained (so generic area cards are not needed). */
 function applyPageComponent(org, results, add, pc) {
-  const m = LABEL_REF.exec(String(pc.label || '').trim());
-  if (!m) return add(builderTextResult(org, pc));
+  const text = String(pc.label ?? '').trim();
+  const kind = pcKind(pc);
+  // No text set (e.g. a related list that keeps its default title): the generic cards still apply.
+  if (!text && pc.component !== 'flexipage:fieldSection') return false;
+  const token = SFDC_TOKEN.exec(text);
+  const std = STANDARD_TAB.exec(text);
+  if (token || std) {
+    const name = token ? token[1].replace(/_/g, ' ') : std[1];
+    add(standardNameResult(org, pc, name));
+    demoteSameTextLabels(results, `this ${kind.part} shows a Salesforce standard name (${text}), not a custom label.`);
+    return true;
+  }
+  const m = LABEL_REF.exec(text);
+  if (!m) {
+    add(builderTextResult(org, pc));
+    return true;
+  }
   const ns = m[1] && m[1] !== 'c' ? m[1] : null;
   const label = (org.customLabels || []).find((l) => l.Name === m[2] && (l.NamespacePrefix || null) === ns);
   if (!label) {
-    return add({ ...builderTextResult(org, pc), title: 'Field section uses a custom label that was not found', subtitle: `${pc.label} on ${pc.page}` });
+    add({ ...builderTextResult(org, pc), title: `${kind.what} uses a custom label that was not found`, subtitle: `${pc.label} on ${pc.page}` });
+    return true;
   }
   let r = results.find((x) => x.key === `label:${label.Id}`);
   if (!r) {
@@ -863,7 +1036,46 @@ function applyPageComponent(org, results, add, pc) {
     add(r);
   }
   r.confidence = 'confirmed';
-  r.notes = [`Confirmed: this section's label in Lightning App Builder is ${pc.label} (page ${pc.page}).`, ...(r.notes || [])];
+  r.notes = [`Confirmed: this ${kind.part}'s label in Lightning App Builder is ${pc.label} (page ${pc.page}).`, ...(r.notes || [])];
+  return true;
+}
+
+function confirmPathValues(org, describes, results) {
+  const pageObjects = new Set(describes.map((d) => d.name));
+  const paths = (org.paths || []).filter((p) => p.IsActive !== false && pageObjects.has(p.SobjectType));
+  let confirmed = false;
+  for (const p of paths) {
+    const prefix = `picklist:${p.SobjectType}.${p.SobjectProcessField}.`;
+    for (const r of results) {
+      if (!r.key.startsWith(prefix) || r.confidence !== 'exact') continue;
+      r.confidence = 'confirmed';
+      r.notes = [`This is a step of the path "${p.MasterLabel || p.DeveloperName}" (field ${p.SobjectProcessField}).`, ...(r.notes || [])];
+      confirmed = true;
+    }
+  }
+  if (confirmed) demoteSameTextLabels(results, 'path steps show picklist values, not custom labels.');
+}
+
+function confirmNavItems(results) {
+  const nav = results.filter((r) => /^(object|tab|app):/.test(r.key) && r.confidence === 'exact');
+  if (!nav.length) return;
+  for (const r of nav) r.confidence = 'confirmed';
+  for (const r of results) {
+    if (r.source !== SOURCE.CUSTOM_LABEL) continue;
+    r.confidence = 'partial';
+    r.notes = ['Same words only: navigation bar items show object, tab and app names, not custom labels.', ...(r.notes || [])];
+  }
+}
+
+/** Pointed at a field's value (not its label) and the value is not one of its picklist values. */
+function addRecordValueResults(org, d, f, results, add) {
+  const key = `${d.name}.${f.name}`;
+  if (results.some((r) => r.key.startsWith(`picklist:${key}.`) && r.confidence !== 'partial')) return;
+  // Data Translation is on for this field: that is the answer.
+  const dt = results.find((r) => r.key === `data:${key}` && !r.off);
+  if (dt) dt.confidence = 'confirmed';
+  else add(recordValueResult(d, f));
+  demoteSameTextLabels(results, 'you pointed at a value on the record, not at a label.');
 }
 
 export function locate({ text, hints = {}, org = {}, describes = [], dataTranslations = [], record = null, pageUrls = [], pageComponent = null }) {
@@ -931,7 +1143,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     // 6. Context objects: fields, help text, picklists, record types, quick actions
     for (const d of describes) {
       for (const f of d.fields || []) {
-        const lm = matchType(needle, f.label);
+        const lm = fieldLabelMatch(needle, d, f);
         if (lm) add(fieldLabelResult(org, d, f, lm));
         const hm = f.inlineHelpText && matchType(needle, f.inlineHelpText);
         if (hm) add(helpTextResult(org, d, f, hm));
@@ -947,7 +1159,10 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       }
       for (const qa of d.quickActions || []) {
         const mt = matchType(needle, qa.label);
-        if (mt) add(quickActionResult(org, d.name, d.label, qa, mt));
+        // Object actions are "Account.Demo_New_Case"; a name without a dot is a global action
+        // (bug: Demo_Service_Task was shown as Object: Account).
+        const global = !String(qa.name || '').includes('.');
+        if (mt) add(quickActionResult(org, global ? null : d.name, global ? 'Global' : d.label, qa, mt));
       }
     }
 
@@ -964,8 +1179,14 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     }
 
     // 6c. Path guidance ("Guidance for Success")
-    pathResults(org, needle, areas, describes, add);
+    pathResults(org, needle, areas, describes, add, text);
   }
+
+  // Path chevrons show the path field's picklist values (bug: Mid Stage "Sketch" ranked below acme__Pkg_Sketch).
+  if (areas.has('path') && !areas.has('pathGuidance')) confirmPathValues(org, describes, results);
+
+  // Navigation bar items are object, tab and app names, never custom labels.
+  if (areas.has('navTab')) confirmNavItems(results);
 
   // 7. Page metadata (buttons, sections, flows, custom components)
   // Clicked a Lightning App Builder component whose label was read from the page metadata.
@@ -1005,8 +1226,9 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   for (const r of results) {
     if (r.confidence === 'exact' && confirmedFields.some((cf) => aboutField(r, cf))) r.confidence = 'confirmed';
   }
-  // Clicked a record value in a field that supports Data Translation.
-  for (const cf of confirmedFields) {
+  // Clicked a record value in a field that supports Data Translation (never for a click on the label).
+  const onLabel = hints.fieldPart === 'label';
+  for (const cf of onLabel ? [] : confirmedFields) {
     if (results.some((r) => aboutField(r, cf) && r.confidence !== 'partial')) continue;
     const [o, fName] = cf.split('.');
     const dt = dataTranslations.find((x) => x.object === o);
@@ -1015,7 +1237,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     else if (!dt && DATA_TRANSLATION_FIELDS[o]?.includes(fName) && Array.isArray(org.objects)) add(dataOffResult(o, fName));
   }
   // Clicked a record value: also list org-built translation objects (e.g. Demo_Translations__c).
-  for (const cf of confirmedFields) {
+  for (const cf of onLabel ? [] : confirmedFields) {
     if (results.some((r) => aboutField(r, cf) && r.confidence !== 'partial' && !r.key.startsWith('data:'))) continue;
     const d = describes.find((x) => x.name === cf.split('.')[0]);
     for (const child of d?.translationChildren || []) {
@@ -1024,12 +1246,29 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     }
   }
   // Clicked inside a field but the text matched nothing about it (e.g. "Name" vs. describe label "Full Name").
+  // A 'partial' card for the field ("Phone" vs. "Account Phone") is replaced: finalize keeps the better card.
+  const fieldPart = hints.fieldPart || null;
   for (const cf of confirmedFields) {
-    if (results.some((r) => aboutField(r, cf) && r.confidence !== 'partial')) continue;
     const [o, fName] = cf.split('.');
     const d = describes.find((x) => x.name === o);
     const f = d?.fields?.find((x) => x.name === fName);
     if (!f) continue;
+    if (fieldPart === 'value') addRecordValueResults(org, d, f, results, add);
+    // On a value, the field's label card is still listed below the value answer.
+    const covers = (r) => aboutField(r, cf) && r.confidence !== 'partial' && !(fieldPart === 'value' && /^(value|data):/.test(r.key));
+    if (fieldPart !== 'label' && results.some(covers)) continue;
+    if (fieldPart === 'label') {
+      // Pointed at the field's label: the page proves it, whatever the describe label says.
+      const existing = results.find((r) => r.key === `field:${cf}` && r.confidence !== 'partial');
+      if (existing) existing.confidence = 'confirmed';
+      else {
+        const r = fieldLabelResult(org, d, f, 'confirmed');
+        r.notes = [`You pointed at this field's label. Its label in Salesforce is "${f.label}".`, ...r.notes];
+        add(r);
+      }
+      demoteSameTextLabels(results, 'record page field labels come from the field, not from custom labels.');
+      continue;
+    }
     const r = fieldLabelResult(org, d, f, 'context');
     r.notes = [`You clicked inside this field. Its label in Salesforce is "${f.label}".`, ...r.notes];
     add(r);
@@ -1049,13 +1288,26 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   return finalize(results, areas);
 }
 
+// Managed-package labels with the same words as a field or object are usually a coincidence
+// (seen live: package labels "Workshop", "Phone", "Type"...). Rank them after non-label answers.
+const MANAGED_EXACT_RANK = SOURCE_RANK[SOURCE.NOT_TRANSLATABLE] + 0.5;
+// With a page-confirmed answer, show at most this many same-text managed labels; fold the rest.
+const MAX_MANAGED_WITH_CONFIRMED = 2;
+
+const isManagedLabel = (r) => r.source === SOURCE.CUSTOM_LABEL && !!r.pkg;
+const sourceRank = (r) => (isManagedLabel(r) && r.confidence === 'exact' ? MANAGED_EXACT_RANK : SOURCE_RANK[r.source]);
+
 function finalize(results, areas) {
-  const seen = new Set();
-  let unique = results.filter((r) => {
-    if (seen.has(r.key)) return false;
-    seen.add(r.key);
-    return true;
-  });
+  // One card per key, the best-ranked one (bug: Account "Phone" kept a 'partial' field card added
+  // first and dropped it, losing the 'context' card for the clicked field).
+  // 'partial' loses even to 'context' here, because partial cards are hidden when anything better exists.
+  const KEEP_RANK = { confirmed: 0, exact: 1, context: 2, partial: 3 };
+  const byKey = new Map();
+  for (const r of results) {
+    const prev = byKey.get(r.key);
+    if (!prev || KEEP_RANK[r.confidence] < KEEP_RANK[prev.confidence]) byKey.set(r.key, r);
+  }
+  let unique = [...byKey.values()];
   unique.forEach((r) => {
     r.source ||= SOURCE.WORKBENCH;
     if (r.packageNote) r.notes = [r.packageNote, ...(r.notes || [])];
@@ -1064,9 +1316,21 @@ function finalize(results, areas) {
   unique.sort(
     (a, b) =>
       CONFIDENCE_RANK[a.confidence] - CONFIDENCE_RANK[b.confidence] ||
-      SOURCE_RANK[a.source] - SOURCE_RANK[b.source] ||
+      sourceRank(a) - sourceRank(b) ||
+      // Unmanaged labels before managed ones (bug: acme__Workshop sorted before the org's own Workshop label).
+      Number(isManagedLabel(a)) - Number(isManagedLabel(b)) ||
       a.title.localeCompare(b.title)
   );
+  let hiddenManaged = 0;
+  if (unique.some((r) => r.confidence === 'confirmed')) {
+    let shown = 0;
+    unique = unique.filter((r) => {
+      if (!isManagedLabel(r) || r.confidence !== 'exact') return true;
+      if (++shown <= MAX_MANAGED_WITH_CONFIRMED) return true;
+      hiddenManaged++;
+      return false;
+    });
+  }
   // Partial matches are guesses. Show them only when nothing better exists.
   const hasBetter = unique.some((r) => r.confidence !== 'partial');
   const limit = hasBetter ? 0 : MAX_PARTIAL;
@@ -1085,7 +1349,7 @@ function finalize(results, areas) {
         'Other places to check in Translation Workbench: Layout Section, Flow, Lookup Filter, Button and Link Label, Report, Dashboard.',
         'Text typed into custom components is not translatable until a developer moves it into a Custom Label.',
       ];
-  return { results: unique, droppedPartial, notFoundHelp, areas: [...areas] };
+  return { results: unique, droppedPartial, hiddenManaged, notFoundHelp, areas: [...areas] };
 }
 
 // ---------- helpers ----------
