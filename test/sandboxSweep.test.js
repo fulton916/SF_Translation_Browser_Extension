@@ -189,3 +189,29 @@ test('SB-10: a global action shows once (Global.NewContact and NewContact are th
   assert.equal(qas[0].confidence, 'confirmed');
   assert.equal(qas[0].goto.object, 'Global');
 });
+
+// ---------- SB-05: the path's generic "Closed" step ----------
+
+test('SB-05: the Closed chevron is Salesforce path text; same-word labels, fields and record types drop', () => {
+  const org = { ...pathOrg, customLabels: [lbl('101D00000000004', 'Demo_Closed', 'Closed'), lbl('101D00000000005', 'MA_Closed', 'Closed', 'acme')] };
+  const o = {
+    ...opp,
+    recordTypeInfos: [...opp.recordTypeInfos, { name: 'Closed', developerName: 'Closed', master: false, recordTypeId: '012000000000009AAA' }],
+    fields: [
+      ...opp.fields,
+      { name: 'IsClosed', label: 'Closed', custom: false, type: 'boolean', picklistValues: [] },
+      { name: 'ForecastCategory', label: 'Forecast Category', custom: false, type: 'picklist', picklistValues: [{ label: 'Closed', value: 'Closed', active: true }] },
+    ],
+  };
+  const rs = locate({ text: 'Closed', org, describes: [o], hints: chevron, record: oppRecord(RT_RETAIL) }).results;
+  assert.equal(rs[0].key, 'sfdctext:pathClosed');
+  assert.equal(rs[0].confidence, 'confirmed');
+  assert.equal(rs[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.ok(!rs.some((r) => r.source === SOURCE.CUSTOM_LABEL || r.key.startsWith('rt:') || r.key === 'field:Opportunity.IsClosed'), 'coincidences hidden');
+  // A path whose field really has a "Closed" value: that value is the step.
+  const withValue = { ...o, fields: o.fields.map((f) => (f.name === 'StageName' ? { ...f, picklistValues: [...f.picklistValues, { label: 'Closed', value: 'Closed', active: true }] } : f)) };
+  const rv = locate({ text: 'Closed', org, describes: [withValue], hints: chevron, record: oppRecord(RT_RETAIL) }).results;
+  assert.equal(rv[0].key, 'picklist:Opportunity.StageName.Closed');
+  assert.equal(rv[0].confidence, 'confirmed');
+  assert.ok(!rv.some((r) => r.key === 'sfdctext:pathClosed'));
+});

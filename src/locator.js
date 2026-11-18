@@ -1264,7 +1264,39 @@ function standardTextResult(area, confidence) {
 // (a test sandbox: "Mark Mid Stage as Complete", "Mark as Current Mid Stage").
 const PATH_BUTTONS = [/^mark (.+) as complete$/, /^mark as current (.+)$/, /^mark (.+) as current$/, /^select closed (.+)$/];
 
-function addStandardTextResults(org, needle, areas, describes, results, add) {
+// Salesforce's generic last path step (English; add other languages when seen).
+const CLOSED_STEPS = ['closed'];
+
+/** The path's final "Closed" chevron, when no path field on the page has a value with that label. */
+function addClosedStepResult(org, needle, describes, results, add, record) {
+  const pathFields = describes.flatMap((d) =>
+    pathsForRecord(org.paths, d.name, record).map((p) => ({ d, f: (d.fields || []).find((f) => f.name === p.SobjectProcessField) }))
+  ).filter((x) => x.f);
+  const isValue = pathFields.some(({ f }) => (f.picklistValues || []).some((pv) => normalize(pv.label) === needle));
+  // No path data: any matching picklist value may be the step.
+  if (isValue || (!Array.isArray(org.paths) && results.some((r) => r.key.startsWith('picklist:') && r.confidence === 'exact'))) return false;
+  add({
+    ...standardTextResult('path', 'confirmed'),
+    key: 'sfdctext:pathClosed',
+    title: 'Salesforce path step "Closed"',
+    subtitle: 'The final Closed step groups the closed stages (Closed Won / Closed Lost)',
+    steps: [
+      'Salesforce shows this step and translates "Closed" itself. No action needed.',
+      'Once the record is closed, the step shows its closed value (e.g. Closed Won). That value is a picklist value: Translation Workbench → Picklist Value.',
+    ],
+  });
+  demoteLabelsToPartial(results, 'the Closed step is Salesforce path text.');
+  // Field labels, record types and values of other fields with the same word are coincidences (S-04: IsClosed, ForecastCategory, record type Closed).
+  for (const r of results) {
+    if (!/^(field|rt|picklist):/.test(r.key) || r.confidence === 'confirmed' || r.confidence === 'partial') continue;
+    r.confidence = 'partial';
+    r.notes = ['Same words only: the Closed step is Salesforce path text.', ...(r.notes || [])];
+  }
+  return true;
+}
+
+function addStandardTextResults(org, needle, areas, describes, results, add, record) {
+  if (areas.has('path') && !areas.has('pathGuidance') && CLOSED_STEPS.includes(needle) && addClosedStepResult(org, needle, describes, results, add, record)) return;
   if (areas.has('path') && needle) {
     const button = PATH_BUTTONS.map((re) => re.exec(needle)).find(Boolean);
     if (needle === 'guidance for success' || button) {
@@ -1457,7 +1489,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');
 
   // Salesforce's own text in standard record page components.
-  addStandardTextResults(org, needle, areas, describes, results, add);
+  addStandardTextResults(org, needle, areas, describes, results, add, record);
 
   // 7. Page metadata (buttons, sections, flows, custom components)
   // Clicked a Lightning App Builder component whose label was read from the page metadata.
