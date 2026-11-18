@@ -1700,22 +1700,27 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   // Navigation bar items are object, tab and app names, never custom labels.
   if (areas.has('navTab')) confirmNames(results, /^(object|tab|app):/, 'navigation bar items show object, tab and app names, not custom labels.');
   if (areas.has('appName')) confirmNames(results, /^app:/, 'the app name comes from the app, not from a custom label.');
-  // The Home tab (DV2 nav item: data-id="home", sfdc:TabDefinition.standard-home) is Salesforce's own tab:
-  // not in Rename Tabs and Labels when TabDefinition does not list it.
-  const homeTab = (hints.selectionNames || []).includes('sfdc:TabDefinition.standard-home') || hints.attrs?.['data-id'] === 'home';
-  if (areas.has('navTab') && homeTab && !results.some((r) => /^(object|tab|app):/.test(r.key) && ['confirmed', 'exact'].includes(r.confidence))) {
+  // A standard tab that matched no object, tab or app name is Salesforce's own tab (DV2 nav items: data-id="home",
+  // sfdc:TabDefinition.standard-home; R-67 "Calendar", sfdc:TabDefinition.standard-Event, whose object is "Event").
+  const stdTab =
+    (hints.selectionNames || []).map((s) => /^sfdc:TabDefinition\.standard-(\w+)$/.exec(s)?.[1]).find(Boolean) ||
+    (hints.attrs?.['data-id'] === 'home' ? 'home' : null);
+  // An object tab says so only when the object names were loaded (else a renamed object would look like Salesforce's).
+  const tabKnown = stdTab === 'home' || (Array.isArray(org.objects) && org.objects.length > 0);
+  if (areas.has('navTab') && stdTab && tabKnown && !results.some((r) => /^(object|tab|app):/.test(r.key) && ['confirmed', 'exact'].includes(r.confidence))) {
+    const shown = String(text || '').trim().slice(0, 60) || stdTab;
     add({
-      key: 'sfdctab:home',
+      key: `sfdctab:${stdTab}`,
       source: SOURCE.NOT_TRANSLATABLE,
       confidence: 'confirmed',
-      title: 'Salesforce standard tab (Home)',
-      subtitle: 'Found in page metadata: standard-home',
-      steps: ['Salesforce names the Home tab and translates it into every language. No action needed.'],
+      title: `Salesforce standard tab (${shown})`,
+      subtitle: `Found in page metadata: standard-${stdTab}`,
+      steps: [`Salesforce names the ${shown} tab and translates it into every language. No action needed.`],
       url: null,
-      copy: 'standard-home',
+      copy: `standard-${stdTab}`,
       notes: [],
     });
-    demoteLabelsToPartial(results, 'the Home tab is named by Salesforce, not by a custom label.');
+    demoteLabelsToPartial(results, `the ${shown} tab is named by Salesforce, not by a custom label.`);
   }
   // The object name above the record name in the highlights panel (UAT2: "Account" ranked below 3 labels).
   if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');

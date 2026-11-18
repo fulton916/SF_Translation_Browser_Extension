@@ -451,6 +451,25 @@ test('DV2-11: nav bar Home is Salesforce\'s own tab; same-text managed labels ar
   assert.ok(!listed.results.some((r) => r.key === 'sfdctab:home'));
 });
 
+test('R-67: nav bar Calendar (standard-Event) is Salesforce\'s own tab; same-text managed labels drop', () => {
+  const org = {
+    ...baseOrg,
+    objects: [...baseOrg.objects, { name: 'Event', label: 'Event', labelPlural: 'Events', custom: false }],
+    tabs: [...baseOrg.tabs, { Name: 'standard-Event', Label: 'Calendar', IsCustom: false, SobjectName: 'Event' }],
+    customLabels: [lbl('101D00000000030', 'calendar', 'Calendar', 'maps'), lbl('101D00000000031', 'MA_Calendar', 'Calendar', 'maps')],
+  };
+  const hints = { tags: ['span', 'a', 'one-app-nav-bar-item-root', 'one-app-nav-bar'], selectionNames: ['sfdc:TabDefinition.standard-Event'], attrs: { 'data-id': 'Event' } };
+  const out = locate({ text: 'Calendar', org, describes: [], hints });
+  assert.equal(out.results[0].key, 'sfdctab:Event');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.equal(out.results[0].title, 'Salesforce standard tab (Calendar)');
+  assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
+  // An object tab whose object name matches stays the Rename Tabs answer.
+  const acct = locate({ text: 'Accounts', org, describes: [], hints: { ...hints, selectionNames: ['sfdc:TabDefinition.standard-Account'], attrs: { 'data-id': 'Account' } } }).results;
+  assert.equal(acct[0].key, 'object:Account');
+  assert.ok(!acct.some((r) => r.key.startsWith('sfdctab:')));
+});
+
 // ---------- DV2-12: not-translatable cards: badge and wording ----------
 
 test('DV2-12: Salesforce text in standard components is confirmed when nothing from the org matches', () => {
