@@ -434,3 +434,58 @@ test('SB-13: the app name next to the nav bar confirms the app', () => {
   // A nav bar item is still navTab, not appName.
   assert.ok(!locate({ text: 'Accounts', org, describes: [], hints: { tags: ['span', 'one-app-nav-bar-item-root', 'one-app-nav-bar', 'one-appnav'] } }).areas.includes('appName'));
 });
+
+// ---------- Calendar page (R-52..R-58): Salesforce's own calendar text ----------
+
+const calOrg = {
+  ...baseOrg,
+  objects: [...baseOrg.objects, { name: 'Event', label: 'Event', labelPlural: 'Events', custom: false }],
+  customLabels: [
+    lbl('101D00000000010', 'Pkg_Framework_New_Event', 'New Event', 'acme'),
+    lbl('101D00000000011', 'MA_New_Event', 'New Event', 'acme'),
+    lbl('101D00000000012', 'MA_TODAY', 'Today', 'acme'),
+    lbl('101D00000000013', 'Example_Refresh', 'Refresh'),
+  ],
+};
+const eventDescribe = { name: 'Event', label: 'Event', labelPlural: 'Events', custom: false, recordTypeInfos: [], fields: [], quickActions: [{ label: 'New Event', name: 'NewEvent', type: 'Create' }] };
+// Real path: button.new-event-button < div... < div[forceCalendar] < div[calendarHome]; no data-target-selection-name.
+const calButton = { tags: ['button', 'div'], auraClasses: ['forceCalendar', 'calendarHome', 'lafPageHost'] };
+const runCal = (text, hints, describes = [eventDescribe]) => locate({ text, org: calOrg, describes, hints, pageUrls: ['https://example.lightning.force.com/lightning/o/Event/home'] });
+
+test('Calendar: "New Event" is Salesforce calendar text, not the managed labels or the NewEvent global action', () => {
+  const out = runCal('New Event', calButton);
+  assert.ok(out.areas.includes('calendar'));
+  assert.equal(out.results[0].key, 'sfdctext:calendar');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL), 'same-text labels are partial and hidden');
+  assert.ok(!out.results.some((r) => r.key.startsWith('qa:')), 'the global action is partial and hidden');
+});
+
+test('Calendar: Today, Refresh, My Calendars and day headers are Salesforce calendar text', () => {
+  for (const text of ['Today', 'Refresh', 'My Calendars', 'Previous Week']) {
+    const r = runCal(text, calButton).results[0];
+    assert.equal(r.key, 'sfdctext:calendar', text);
+    assert.equal(r.confidence, 'confirmed', text);
+  }
+  const header = runCal('WED 18', { tags: ['strong', 'div'], auraClasses: ['forceCalendarDayHeader', 'forceCalendarDayWeekView', 'forceCalendar', 'calendarHome'] }).results[0];
+  assert.equal(header.key, 'sfdctext:calendar');
+  assert.equal(header.confidence, 'confirmed');
+});
+
+test('Calendar: sidebar entries — My Events is Salesforce text, other calendars were named by a user', () => {
+  const item = { tags: ['label', 'div', 'li', 'ol', 'div'], auraClasses: ['uiLabel', 'calendarListItem', 'calendarListPanel', 'forceCalendar', 'calendarHome'] };
+  const mine = runCal('My Events', item).results[0];
+  assert.equal(mine.key, 'sfdctext:calendar');
+  assert.equal(mine.confidence, 'confirmed');
+  const user = runCal('Example Team Visits', item).results;
+  assert.equal(user[0].key, 'sfdctext:calendarName');
+  assert.ok(!user.some((r) => r.key === 'sfdctext:calendar'));
+});
+
+test('Calendar: an event box shows record data, not Salesforce calendar text', () => {
+  const ev = { tags: ['div', 'div', 'div', 'div', 'runtime_calendar-timed-event', 'ul', 'runtime_calendar-day-timed-events', 'div'], auraClasses: ['forceCalendarDay', 'forceCalendarDayWeekView', 'forceCalendar', 'calendarHome'] };
+  const out = runCal('Example customer visit', ev);
+  assert.ok(!out.areas.includes('calendar'));
+  assert.ok(!out.results.some((r) => r.key === 'sfdctext:calendar'));
+});
