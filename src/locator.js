@@ -1780,6 +1780,17 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   for (const r of results) {
     if (r.confidence === 'exact' && confirmedFields.some((cf) => aboutField(r, cf))) r.confidence = 'confirmed';
   }
+  // A value of one field: another field's picklist or global value set value with the same words is a
+  // coincidence (DV2 R-62: Lead Source value matched GVS Source System of Lead.Source_System_LST__c).
+  if (hints.fieldPart === 'value' && confirmedFields.length) {
+    const [o, fName] = confirmedFields[0].split('.');
+    const shown = describes.find((x) => x.name === o)?.fields?.find((x) => x.name === fName)?.label || fName;
+    for (const r of results) {
+      if (!r.key.startsWith('picklist:') || confirmedFields.some((cf) => r.key.startsWith(`picklist:${cf}.`)) || ['partial', 'confirmed'].includes(r.confidence)) continue;
+      r.confidence = 'partial';
+      r.notes = [`Same words only: you pointed at the ${shown} field.`, ...(r.notes || [])];
+    }
+  }
   // The value of the Record Type field is a record type name (DV2: "Buying Accounts" under Account Record Type).
   for (const cf of hints.fieldPart === 'label' ? [] : confirmedFields) {
     const [o, fName] = cf.split('.');
