@@ -319,3 +319,19 @@ test('DV2-08: "Stage:" in an Opportunities related list row on an Account → Op
   assert.equal(out.results[0].confidence, 'confirmed');
   assert.ok(!out.results.some((r) => r.key.startsWith('vr:')));
 });
+
+// ---------- DV2-11: nav bar Home ----------
+
+test('DV2-11: nav bar Home is Salesforce\'s own tab; same-text managed labels are hidden', () => {
+  const org = { ...baseOrg, customLabels: [lbl('101D00000000006', 'gcx_home_title', 'Home', 'examplepkg'), lbl('101D00000000007', 'MA_Home', 'Home', 'maps')] };
+  // Real nav item (DV2): one-app-nav-bar-item-root data-id="home" data-target-selection-name="sfdc:TabDefinition.standard-home".
+  const hints = { tags: ['span', 'a', 'one-app-nav-bar-item-root', 'one-app-nav-bar'], selectionNames: ['sfdc:TabDefinition.standard-home'], attrs: { 'data-id': 'home' } };
+  const out = locate({ text: 'Home', org, describes: [], hints });
+  assert.equal(out.results[0].key, 'sfdctab:home');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
+  // A Home tab listed in TabDefinition stays the Rename Tabs answer.
+  const listed = locate({ text: 'Home', org: { ...org, tabs: [...org.tabs, { Name: 'standard-home', Label: 'Home', IsCustom: false, SobjectName: null }] }, describes: [], hints });
+  assert.equal(listed.results[0].key, 'tab:standard-home');
+  assert.ok(!listed.results.some((r) => r.key === 'sfdctab:home'));
+});
