@@ -226,3 +226,25 @@ test('M-17: a highlight of the heading plus guidance lines finds the step', () =
   const some = 'Who draws the first sketch?\nHow will you share it with your Team?\nSomething else entirely';
   assert.equal(pathStepMatch(normalize(some), PATH_INFO, some), 'partial');
 });
+
+test('M-15: path heading and step buttons are Salesforce text; the button names the path field', () => {
+  const pathArea = { tags: ['span', 'button', 'div'], auraClasses: ['runtime_sales_pathassistantPathAssistantHeader', 'runtime_sales_pathassistantPathAssistant'] };
+  const h = locate({ text: 'Guidance for Success', org: pathOrg, describes: [oppPath], hints: pathArea });
+  assert.equal(h.results[0].title, 'Salesforce path text');
+  assert.equal(h.notFoundHelp, null);
+  const b = locate({ text: 'Mark Mid Stage as Complete', org: pathOrg, describes: [oppPath], hints: pathArea }).results;
+  assert.equal(b[0].title, 'Salesforce path text');
+  assert.ok(b.some((r) => r.key === 'field:Opportunity.Demo_Mid_Stage__c' && r.confidence === 'context'));
+  assert.ok(locate({ text: 'Mark as Current Mid Stage', org: pathOrg, describes: [oppPath], hints: pathArea }).results.some((r) => r.key === 'field:Opportunity.Demo_Mid_Stage__c'));
+});
+
+test('M-15: activity timeline, duplicates and feed text → Salesforce text first, same-text labels hidden', () => {
+  const org = { ...baseOrg, customLabels: [...baseOrg.customLabels, lbl('101S0000000000E', 'MA_Upcoming', 'Upcoming & Overdue', 'acme')] };
+  const out = locate({ text: 'Upcoming & Overdue', org, describes: [account], hints: { tags: ['span', 'div'], sfComponents: ['runtime_sales_activities_activityPanel'] } });
+  assert.equal(out.results[0].title, 'Salesforce activity timeline text');
+  assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
+  assert.equal(locate({ text: 'updated this record.', org, describes: [], hints: { sfComponents: ['forceChatter_recordFeedContainer'] } }).results[0].title, 'Salesforce Chatter feed text');
+  assert.equal(locate({ text: 'View Duplicates', org, describes: [], hints: { sfComponents: ['runtime_sales_merge_mergeCandidatesPreviewCard2'] } }).results[0].title, 'Salesforce duplicate check text');
+  // A field label inside the timeline is still found.
+  assert.ok(locate({ text: 'Account Owner', org, describes: [account], hints: { sfComponents: ['runtime_sales_activities_activityPanel'] } }).results.some((r) => r.key === 'field:Account.OwnerId'));
+});

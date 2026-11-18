@@ -65,7 +65,8 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Standard tab (Home, Chatter) | **Rename Tabs and Labels** | Yes |
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
 | Standard field help text | **Translation Workbench** → Standard Field Help | Yes (current object) |
-| Picklist value | **Translation Workbench** → Picklist Value (or Global Value Set) | Yes (current object) |
+| Picklist value | **Translation Workbench** → Picklist Value, or → Global Value Set (tree: value set label → values) when the field uses one | Yes (current object). The value set is read from Tooling `CustomField.Metadata` for matching custom picklists |
+| Path step chevron | The path field's picklist value (above) | Confirmed for the active paths of the object |
 | Record type | **Translation Workbench** → Record Type | Yes (current object) |
 | Quick action | **Translation Workbench** → Action | Yes (current object) |
 | Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects) |
@@ -81,6 +82,9 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Record data in an org-built translation object (e.g. `Demo_Translations__c`) | That object's related list on the record | Yes: any custom child object with "Translat" in its name |
 | Standard button (Edit, Delete) | Not translatable (Salesforce translates it) | Flagged |
 | Text typed into a custom LWC/Aura or Lightning App Builder | Not translatable until moved into a Custom Label | Flagged |
+| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → not translatable | Read from the FlexiPage for the clicked section, list header or tab |
+| Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), or currency name (Salesforce) | When you point at the value, not the label |
+| Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart | Not translatable (Salesforce translates it) | Flagged from the page area |
 
 Language rule: if you are viewing Salesforce in the org default language, the text is the
 **master label**. Change it in Object Manager (or the label itself). Translations go into the
