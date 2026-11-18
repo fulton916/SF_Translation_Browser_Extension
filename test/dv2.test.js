@@ -610,3 +610,31 @@ test('R-11: the event reminder popup gets a header-text card, without confirming
   // The nav bar is never the global header.
   assert.ok(!locate({ text: 'Accounts', org: baseOrg, describes: [], hints: { tags: ['span', 'one-app-nav-bar-item-root', 'one-app-nav-bar', 'one-appnav', 'header'], auraClasses: ['oneHeader'] } }).areas.includes('globalHeader'));
 });
+
+// ---------- R-05 / R-01: wording of standard field cards ----------
+
+test('R-05: inside the Record Type field, the note names the page label, not only "Record Type ID"', () => {
+  const acct = {
+    name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, quickActions: [],
+    recordTypeInfos: [{ name: 'Example Type', developerName: 'Example_Type', master: false, recordTypeId: '012000000000005AAA' }],
+    fields: [{ name: 'RecordTypeId', label: 'Record Type ID', custom: false, type: 'reference', picklistValues: [] }],
+  };
+  const rs = locate({ text: 'Example Type', org: baseOrg, describes: [acct], hints: { selectionNames: ['sfdc:RecordField.Account.RecordTypeId'], fieldPart: 'value' } }).results;
+  assert.equal(rs[0].key, 'rt:Account.Example_Type');
+  const r = rs.find((x) => x.key === 'field:Account.RecordTypeId');
+  assert.equal(r.notes[0], 'You clicked inside this field. The page shows it as "Account Record Type"; its API label is "Record Type ID".');
+});
+
+test('R-01: a renamed standard field tells which row to find on Step 2 and how the page shows it', () => {
+  const account = {
+    name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
+    fields: [
+      { name: 'BillingAddress', label: 'Billing Address/Account Address', custom: false, type: 'address', picklistValues: [] },
+      { name: 'AccountNumber', label: 'Account Number', custom: false, type: 'string', picklistValues: [] },
+    ],
+  };
+  const r = locate({ text: 'Billing Address/Account Address', org: baseOrg, describes: [account] }).results.find((x) => x.key === 'field:Account.BillingAddress');
+  assert.ok(r.steps.includes('Step 2 page: find "Billing Address" (shown on the page as "Billing Address/Account Address"), change it, then Save'));
+  const n = locate({ text: 'Account Number', org: baseOrg, describes: [account] }).results.find((x) => x.key === 'field:Account.AccountNumber');
+  assert.ok(n.steps.includes('Step 2 page: find "Account Number", change it, then Save'));
+});
