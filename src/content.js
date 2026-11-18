@@ -207,8 +207,15 @@
     for (const r of p.results || []) list.append(card(r));
     panel.append(list);
 
-    if (p.droppedPartial) panel.append(el('div', 'muted', `${p.droppedPartial} weaker partial matches hidden.`));
-    if (p.hiddenManaged) panel.append(el('div', 'muted', `${p.hiddenManaged} more managed-package labels with the same text hidden.`));
+    if (p.more?.length) {
+      const n = p.more.length;
+      panel.append(
+        button(`Show ${n} more match${n === 1 ? '' : 'es'}`, 'link', 'Show the other places this text appears', (ev) => {
+          ev.currentTarget.remove();
+          for (const r of p.more) list.append(card(r));
+        })
+      );
+    }
     if (p.notFoundHelp) {
       const nf = el('div', 'card');
       nf.append(el('div', 'card-title', 'No match found'));
@@ -413,8 +420,7 @@
       '',
       'Results shown:',
       ...(p.results || []).map((r, i) => `  ${i + 1}. ${r.confidence} | ${r.source} | ${r.title}`),
-      p.droppedPartial ? `  (+${p.droppedPartial} weaker matches hidden)` : null,
-      p.hiddenManaged ? `  (+${p.hiddenManaged} same-text managed labels hidden)` : null,
+      p.more?.length ? `  (+${p.more.length} more behind "Show more")` : null,
       ...(p.warnings || []).map((w) => `Warning: ${w}`),
       '',
       `Extension version: ${chrome.runtime.getManifest?.().version || '?'}`,
@@ -715,7 +721,7 @@
             qa.dispatchEvent(new Event('change', { bubbles: true }));
             await quiet();
           }
-          if (opts.length > 1) warnings.push(`${opts.length} actions are named "${p.rows[0]}". Picked the first in Quick Action Selection; if the row is wrong, pick the other one.`);
+          if (opts.length > 1) warnings.push(`${opts.length} actions are named "${p.rows[0]}". Picked the first in Quick Action Selection; the other is in the same list.`);
         }
       }
     }

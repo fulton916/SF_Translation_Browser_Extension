@@ -226,6 +226,7 @@ test('screenshot 3: "Activity" on a Lightning page tab shows one answer, partial
   const out = runLead('Activity', { tags: ['a', 'lightning-tab-bar', 'flexipage-tab2'] });
   assert.deepEqual(out.results.map((r) => r.key), ['area:lightningPageTab']);
   assert.equal(out.droppedPartial, 1); // "Last Activity" field label
+  assert.equal(out.more.length, 1); // still available behind "Show more"
 });
 
 test('only partials → at most 3 shown', () => {
@@ -233,6 +234,8 @@ test('only partials → at most 3 shown', () => {
   const out = locate({ text: 'Activity', org: many, describes: [] });
   assert.equal(out.results.length, 3);
   assert.equal(out.droppedPartial, 5);
+  assert.equal(out.more.length, 5);
+  assert.ok(out.more.every((r) => r.confidence === 'partial'));
 });
 
 test('Rename Tabs steps name the real row on the page', () => {

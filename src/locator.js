@@ -1065,7 +1065,7 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
       const d = describes.find((x) => x.name === sn.object);
       if (sn.object !== 'Global' && d?.quickActions?.length && !d.quickActions.some((q) => q.name === name)) {
         r.confidence = 'exact';
-        r.notes = [`${name} is not in the ${d.label} action list, so it may be a Salesforce standard action.`, ...r.notes];
+        r.notes = [`${name} is not in the ${d.label} action list. It is a Salesforce standard action.`, ...r.notes];
       }
       out.push(r);
     }
@@ -1907,7 +1907,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     for (const r of results) {
       if (r.source !== SOURCE.CUSTOM_LABEL) continue;
       r.confidence = 'partial';
-      r.notes = ['Same words only. Setup pages do not show custom labels, so this is probably not the text you clicked.', ...(r.notes || [])];
+      r.notes = ['Same words only. Setup pages do not show custom labels.', ...(r.notes || [])];
     }
     add(setupTextResult());
   }
@@ -1949,16 +1949,18 @@ function finalize(results, areas) {
       a.title.localeCompare(b.title)
   );
   let hiddenManaged = 0;
+  const more = [];
   if (unique.some((r) => r.confidence === 'confirmed')) {
     let shown = 0;
     unique = unique.filter((r) => {
       if (!isManagedLabel(r) || r.confidence !== 'exact') return true;
       if (++shown <= MAX_MANAGED_WITH_CONFIRMED) return true;
       hiddenManaged++;
+      more.push(r);
       return false;
     });
   }
-  // Partial matches are guesses. Show them only when nothing better exists.
+  // Partial matches go behind "Show more" when a closer match exists.
   const hasBetter = unique.some((r) => r.confidence !== 'partial');
   const limit = hasBetter ? 0 : MAX_PARTIAL;
   let partialCount = 0;
@@ -1967,6 +1969,7 @@ function finalize(results, areas) {
     if (r.confidence !== 'partial') return true;
     if (++partialCount <= limit) return true;
     droppedPartial++;
+    more.push(r);
     return false;
   });
   const notFoundHelp = unique.length
@@ -1976,7 +1979,7 @@ function finalize(results, areas) {
         'Other places to check in Translation Workbench: Layout Section, Flow, Lookup Filter, Button and Link Label, Report, Dashboard.',
         'Text typed into custom components is not translatable until a developer moves it into a Custom Label.',
       ];
-  return { results: unique, droppedPartial, hiddenManaged, notFoundHelp, areas: [...areas] };
+  return { results: unique, more, droppedPartial, hiddenManaged, notFoundHelp, areas: [...areas] };
 }
 
 // ---------- helpers ----------
