@@ -811,7 +811,37 @@ function pathStepResult(org, step, where, describes, confidence) {
   };
 }
 
-function pathResults(org, needle, areas, describes, add, rawText) {
+const id15 = (id) => String(id || '').slice(0, 15);
+const MASTER_RECORD_TYPE = '012000000000000';
+
+/**
+ * Active paths of `object` that a record of that object shows. A path belongs to one record type
+ * (DV2, Nov 2026: Open_Opportunity → Sales, Specification_Path → Specification), so a record shows
+ * only its own record type's path. record.recordTypeId: undefined = not known (every active path),
+ * null = no record type (master). A record type without its own path falls back to a path with no
+ * record type.
+ */
+export function pathsForRecord(paths, object, record) {
+  const active = (paths || []).filter((p) => p.IsActive !== false && p.SobjectType === object);
+  if (!record || record.object !== object || record.recordTypeId === undefined) return active;
+  const rt = id15(record.recordTypeId);
+  if (rt && rt !== MASTER_RECORD_TYPE) {
+    const own = active.filter((p) => p.RecordTypeId && id15(p.RecordTypeId) === rt);
+    if (own.length) return own;
+  }
+  return active.filter((p) => !p.RecordTypeId || id15(p.RecordTypeId) === MASTER_RECORD_TYPE);
+}
+
+/** False when the record type of the open record is known and this path is not the one it shows. */
+export function pathAppliesToRecord(p, record, paths) {
+  if (!p || !record || record.object !== p.SobjectType || record.recordTypeId === undefined) return true;
+  return pathsForRecord(paths, p.SobjectType, record).includes(p);
+}
+
+const recordTypeName = (describes, object, rtId) =>
+  describes.find((d) => d.name === object)?.recordTypeInfos?.find((rt) => rt.recordTypeId && id15(rt.recordTypeId) === id15(rtId))?.name || null;
+
+function pathResults(org, needle, areas, describes, add, rawText, record) {
   const pageObjects = new Set(describes.map((d) => d.name));
   for (const step of org.pathSteps || []) {
     const mt = pathStepMatch(needle, step.Info, rawText);
@@ -819,10 +849,17 @@ function pathResults(org, needle, areas, describes, add, rawText) {
     const where = pathOfStep(step.DeveloperName, org.paths, org.objects);
     // A path for another object can share a line ("Who else needs to be contacted?"): never confirm it.
     const otherObject = where.object && pageObjects.size && !pageObjects.has(where.object);
+    // A path of another record type is not on this page (DV2: Specification Path guidance confirmed on a Sales Opportunity).
+    const otherRecordType = !otherObject && where.path && !pathAppliesToRecord(where.path, record, org.paths);
     let confidence = mt;
-    if (!otherObject && (areas.has('pathGuidance') || (areas.has('path') && mt === 'exact'))) confidence = 'confirmed';
+    if (!otherObject && !otherRecordType && (areas.has('pathGuidance') || (areas.has('path') && mt === 'exact'))) confidence = 'confirmed';
     else if (otherObject) confidence = 'partial';
-    add(pathStepResult(org, step, where, describes, confidence));
+    const r = pathStepResult(org, step, where, describes, confidence);
+    if (otherRecordType) {
+      const rtName = recordTypeName(describes, where.path.SobjectType, where.path.RecordTypeId);
+      r.notes = [`This guidance is for ${rtName ? `record type ${rtName}` : 'another record type'}, not this record.`, ...r.notes];
+    }
+    add(r);
   }
 }
 
@@ -1115,14 +1152,21 @@ function applyPageComponent(org, results, add, pc) {
   return true;
 }
 
-function confirmPathValues(org, describes, results) {
-  const pageObjects = new Set(describes.map((d) => d.name));
-  const paths = (org.paths || []).filter((p) => p.IsActive !== false && pageObjects.has(p.SobjectType));
+function confirmPathValues(org, describes, results, record) {
+  const paths = describes.flatMap((d) => pathsForRecord(org.paths, d.name, record));
+  const hitsOf = (p) => results.filter((r) => r.key.startsWith(`picklist:${p.SobjectType}.${p.SobjectProcessField}.`) && r.confidence === 'exact');
+  const withHits = paths.filter((p) => hitsOf(p).length);
+  // Record type not known and steps of several paths match (e.g. "Connect" is a StageName and a Sub Stage
+  // value): the page shows one of them only, so confirm none.
+  const unknown = !record || record.recordTypeId === undefined;
+  const ambiguous = unknown && new Set(withHits.map((p) => `${p.SobjectType}.${p.SobjectProcessField}`)).size > 1;
   let confirmed = false;
-  for (const p of paths) {
-    const prefix = `picklist:${p.SobjectType}.${p.SobjectProcessField}.`;
-    for (const r of results) {
-      if (!r.key.startsWith(prefix) || r.confidence !== 'exact') continue;
+  for (const p of withHits) {
+    for (const r of hitsOf(p)) {
+      if (ambiguous) {
+        r.notes = [`A step of the path "${p.MasterLabel || p.DeveloperName}" (field ${p.SobjectProcessField}), if this record shows that path.`, ...(r.notes || [])];
+        continue;
+      }
       r.confidence = 'confirmed';
       r.notes = [`This is a step of the path "${p.MasterLabel || p.DeveloperName}" (field ${p.SobjectProcessField}).`, ...(r.notes || [])];
       confirmed = true;
@@ -1344,11 +1388,11 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     }
 
     // 6c. Path guidance ("Guidance for Success")
-    pathResults(org, needle, areas, describes, add, text);
+    pathResults(org, needle, areas, describes, add, text, record);
   }
 
   // Path chevrons show the path field's picklist values (UAT2: Sub Stage "Connect" ranked below maps__MA_Connect).
-  if (areas.has('path') && !areas.has('pathGuidance')) confirmPathValues(org, describes, results);
+  if (areas.has('path') && !areas.has('pathGuidance')) confirmPathValues(org, describes, results, record);
 
   // Navigation bar items are object, tab and app names, never custom labels.
   if (areas.has('navTab')) confirmNames(results, /^(object|tab|app):/, 'navigation bar items show object, tab and app names, not custom labels.');
