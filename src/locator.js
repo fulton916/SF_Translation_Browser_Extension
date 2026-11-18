@@ -196,6 +196,14 @@ export function detectAreas(hints = {}) {
   const aura = hints.auraClasses || [];
   if (has(/(^lightning-path|pathassistant)/) || aura.some((a) => /pathassistant/i.test(a))) areas.add('path');
   if (aura.some((a) => /pathassistantPathAssistantInfo/i.test(a)) || has(/pathassistant-?info/i)) areas.add('pathGuidance');
+  // Calendar page (DV2 /lightning/o/Event/home, checked live): Salesforce's own Aura calendar. Header buttons
+  // (button.new-event-button carries no action name: it is not the NewEvent global action), day headers
+  // (forceCalendarDayHeader) and the sidebar (calendarListPanel > calendarListItem). Event boxes
+  // (runtime_calendar-timed-event; all-day strip runtime_calendar-horizontal-layout-display) show record data.
+  if (aura.some((a) => /^(forceCalendar|calendarHome)/.test(a)) && !has(/^runtime_calendar-/)) {
+    areas.add('calendar');
+    if (aura.includes('calendarListItem')) areas.add('calendarList');
+  }
   const custom = tags.filter((t) => /^c-/.test(t));
   if (custom.length || (hints.auraCustom || []).length) areas.add('customComponent');
   return areas;
@@ -1308,7 +1316,44 @@ const STANDARD_AREAS = {
   feed: { title: 'Salesforce Chatter feed text', what: 'the Chatter feed' },
   reportChart: { title: 'Salesforce report chart text', what: 'the report chart' },
   path: { title: 'Salesforce path text', what: 'the path (heading and buttons)' },
+  calendar: { title: 'Salesforce calendar text', what: 'the Calendar page (header buttons, views, day headers, My Calendars)' },
 };
+
+// Calendar list entries Salesforce names itself (English; add other languages when seen). Any other
+// entry is a calendar a user created (from a list view, or a user's or resource's calendar).
+const SF_CALENDAR_NAMES = ['my events', 'my calendars', 'other calendars'];
+
+function userCalendarResult() {
+  return {
+    key: 'sfdctext:calendarName',
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'context',
+    title: 'Calendar name created by a user (not translatable)',
+    subtitle: 'An entry in My Calendars / Other Calendars',
+    steps: [
+      'A user named this calendar when creating it (or it is a person\'s or resource\'s name). It is not translated.',
+      'To change it: click the arrow next to the calendar → Edit (only its owner can).',
+    ],
+    url: null,
+    notes: [],
+  };
+}
+
+/** Calendar page: Salesforce's own text. Same-text labels, quick actions and objects are coincidences. */
+function addCalendarResults(needle, areas, results, add) {
+  demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.calendar.what}.`);
+  for (const r of results) {
+    if (!/^(qa|object):/.test(r.key) || r.confidence === 'confirmed' || r.confidence === 'partial') continue;
+    r.confidence = 'partial';
+    r.notes = ['Same words only: the Calendar page buttons are Salesforce text. The "New Event" button is not the NewEvent global action.', ...(r.notes || [])];
+  }
+  if (areas.has('calendarList') && needle && !SF_CALENDAR_NAMES.includes(needle)) {
+    add(userCalendarResult());
+    return;
+  }
+  const orgName = results.some((r) => r.confidence === 'confirmed' || r.confidence === 'exact');
+  add(standardTextResult('calendar', orgName ? 'context' : 'confirmed'));
+}
 
 function standardTextResult(area, confidence) {
   const a = STANDARD_AREAS[area];
@@ -1400,6 +1445,10 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
       }
       return;
     }
+  }
+  if (areas.has('calendar')) {
+    addCalendarResults(needle, areas, results, add);
+    return;
   }
   for (const area of ['activityTimeline', 'duplicates', 'feed', 'reportChart']) {
     if (!areas.has(area)) continue;
