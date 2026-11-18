@@ -71,16 +71,38 @@
     // tabRole: 'tab' when the click was on a tab's label, 'tabpanel' when inside its content.
     // auraClasses: data-aura-class values on the path, e.g. runtime_sales_pathassistantPathAssistantInfo
     // (Path "Guidance for Success" is plain Aura divs, so tag names alone do not show it).
-    const hints = { selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null };
+    // fieldPart: 'label' or 'value' of a record field (classes checked live on an Account, Nov 2026:
+    // span.test-id__field-label / span.test-id__field-value.slds-form-element__static).
+    // helpIcon: pointed at a field's (i) icon (lightning-helptext); its text is the assistive "Help <label>".
+    // listHeader: true on a related list's title bar (h2.slds-card__header-title), false inside its rows.
+    // recordTitle: the record name in the highlights panel (lightning-formatted-text slot="primaryField").
+    const hints = {
+      selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null,
+      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false,
+    };
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
+    let inField = false;
+    let headerSeen = false;
     for (const el of path.slice(0, 60)) {
       const tag = el.tagName.toLowerCase();
       hints.tags.push(tag);
+      const cls = typeof el.className === 'string' ? el.className : '';
+      if (!inField && !hints.fieldPart) {
+        if (/\btest-id__field-label\b|\bslds-form-element__label\b/.test(cls)) hints.fieldPart = 'label';
+        else if (/\btest-id__field-value\b|\bslds-form-element__static\b|\bslds-form-element__control\b/.test(cls)) hints.fieldPart = 'value';
+      }
+      if (tag === 'lightning-helptext') hints.helpIcon = true;
+      if (tag === 'h2' || /\bslds-card__header\b|\bslds-card__header-title\b/.test(cls)) headerSeen = true;
+      if (hints.listHeader === null && /^(lst-related-list|force-related-list|lst-dynamic-related-list)/.test(tag)) hints.listHeader = headerSeen;
+      if (el.getAttribute('slot') === 'primaryField' && path.some((p) => p.tagName === 'RECORDS-HIGHLIGHTS2')) hints.recordTitle = true;
       if (!hints.flexipage && tag.startsWith('forcegenerated-flexipage_')) hints.flexipage = tag.slice(0, 200);
       const role = el.getAttribute('role');
       if (!hints.tabRole && (role === 'tab' || role === 'tabpanel')) hints.tabRole = role;
       const tsn = el.getAttribute('data-target-selection-name');
-      if (tsn && /^flexipage_/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
+      if (tsn?.startsWith('sfdc:RecordField.')) inField = true;
+      // Lightning App Builder component ids, as in the page metadata: flexipage_fieldSection6,
+      // flexipage_tab2Tab (tab flexipage_tab2), lst_dynamicRelatedList16, force_relatedListSingleContainer15.
+      if (tsn && /^(flexipage_|lst_|force_)/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
       const aura = el.getAttribute('data-aura-class');
       if (aura && /^c[A-Z]/.test(aura)) hints.auraCustom.push(aura);
       if (aura && hints.auraClasses.length < 20) hints.auraClasses.push(aura.split(/\s+/)[0].slice(0, 100));
@@ -95,11 +117,22 @@
     hints.selectionNames = [...new Set(hints.selectionNames)];
     hints.tags = [...new Set(hints.tags)];
     hints.auraClasses = [...new Set(hints.auraClasses)];
-    return { text: elementText(path), hints, url: location.href };
+    let text = elementText(path);
+    // The (i) icon only holds "Help <field label>" for screen readers (the help text itself is in a
+    // popup that is not in the path). Keep the label; locator.js lists the field's help text.
+    if (hints.helpIcon) {
+      text = text.replace(/^Help\s+/i, '');
+      hints.fieldPart = null;
+    }
+    return { text, hints, url: location.href };
   }
+
+  // Screen-reader-only text (seen live: "Enable table equivalent for screen reader users" on a chart).
+  const isAssistive = (el) => /\b(slds-assistive-text|assistiveText)\b/.test(typeof el.className === 'string' ? el.className : '');
 
   function elementText(path) {
     for (const el of path.slice(0, 6)) {
+      if (isAssistive(el)) continue;
       const t = (el.innerText || '').trim();
       if (t && t.length <= 300) return t.split('\n')[0].trim();
       const label = el.getAttribute('title') || el.getAttribute('aria-label');
@@ -539,9 +572,15 @@
   async function fillRenameStage(p) {
     const stage = document.querySelector('input[name=currentStage]')?.value;
     if (!p.fieldLabel) {
-      const singular = [...document.querySelectorAll('input[type=text]')][0];
-      if (singular) mark(singular, true);
-      toast('Change the Singular and Plural names, then Save.');
+      // Step 1 inputs (checked live, Nov 2026): val___0 Singular, val___1 Plural. The page header can have its
+      // own text inputs (search), so never take "the first input".
+      const byLabel = (re) => [...document.querySelectorAll('input[type=text]')].find((i) => re.test(document.querySelector(`label[for="${i.id}"]`)?.innerText || ''));
+      const input = p.plural ? document.getElementById('val___1') || byLabel(/plural/i) : document.getElementById('val___0') || byLabel(/singular/i);
+      if (input) {
+        mark(input.closest('tr') || input, false);
+        focusInput(input);
+      }
+      toast(`Change the ${p.plural ? 'Plural' : 'Singular'} name${input ? ' (marked)' : ''}, then Save.`);
       return finish();
     }
     if (stage === '0') {
@@ -569,10 +608,29 @@
       return finish();
     }
     mark(input.closest('tr') || input, false);
-    input.focus();
-    input.select();
+    focusInput(input);
     toast(`Found "${p.fieldLabel}". Change it, then Save.`);
     finish();
+  }
+
+  /**
+   * Focus and select an input, and again after the classic page's own onload focus (setFocusOnLoad
+   * moves focus to the first input, e.g. "Action Visibility", after this script ran). Stops once the
+   * user has moved focus somewhere else themselves.
+   */
+  function focusInput(input) {
+    const go = () => {
+      input.focus();
+      input.select?.();
+    };
+    go();
+    let userActed = false;
+    const acted = () => (userActed = true);
+    document.addEventListener('mousedown', acted, { once: true, capture: true });
+    document.addEventListener('keydown', acted, { once: true, capture: true });
+    const again = () => !userActed && document.activeElement !== input && go();
+    for (const ms of [400, 1200, 2500]) setTimeout(again, ms);
+    if (document.readyState !== 'complete') window.addEventListener('load', () => setTimeout(again, 100), { once: true });
   }
 
   async function fillWorkbench(p) {
@@ -605,6 +663,25 @@
       await waitFor(() => q('assocEntSelect') && q('assocEntSelect').options.length > 1, 8000).catch(() => null);
       if (!(await choose(q, 'assocEntSelect', [p.object], [p.objectLabel]))) {
         warnings.push(`Object "${p.objectLabel || p.object}" is not listed for ${p.componentLabel}.`);
+      }
+    }
+    // Action: a "Quick Action Selection" list appears after the object (checked live, Nov 2026). Its option values
+    // are 09D Ids that do not equal the Tooling QuickActionDefinition Ids, and labels can repeat
+    // (the same label twice), so pick by label and say when there is more than one.
+    if (p.component === 'QuickActionDefinition' && p.rows?.[0]) {
+      const qa = await waitFor(() => q('quickActionSelect'), 5000).catch(() => null);
+      if (qa) {
+        const want = norm(p.rows[0]);
+        const opts = [...qa.options].filter((o) => norm(o.text) === want);
+        if (!opts.length) warnings.push(`Action "${p.rows[0]}" is not in the Quick Action Selection list for ${p.objectLabel || 'this object'}.`);
+        else {
+          if (!opts.some((o) => o.value === qa.value)) {
+            qa.value = opts[0].value;
+            qa.dispatchEvent(new Event('change', { bubbles: true }));
+            await quiet();
+          }
+          if (opts.length > 1) warnings.push(`${opts.length} actions are named "${p.rows[0]}". Picked the first in Quick Action Selection; if the row is wrong, pick the other one.`);
+        }
       }
     }
     if (p.aspect) {

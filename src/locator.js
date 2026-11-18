@@ -58,9 +58,15 @@ export function buildGotoUrl(goto, lang, orgDefault) {
     // Standard objects open their Edit page directly. Custom objects only appear in a
     // non-default language, so start from the list and let content.js click Edit.
     if (goto.object && !goto.custom) {
-      return { path: DEEP.renameEdit(goto.object, l), autofill: goto.fieldLabel ? { page: 'renameStage', lang: l, fieldLabel: goto.fieldLabel, fieldName: goto.fieldName || null } : null };
+      // Object names: Step 1 marks the Singular or Plural input (bug: Plural was never marked).
+      return {
+        path: DEEP.renameEdit(goto.object, l),
+        autofill: goto.fieldLabel
+          ? { page: 'renameStage', lang: l, fieldLabel: goto.fieldLabel, fieldName: goto.fieldName || null }
+          : { page: 'renameStage', lang: l, fieldLabel: null, plural: !!goto.plural },
+      };
     }
-    return { path: SETUP.renameTabs, autofill: { page: 'renameHome', lang: l, tabLabel: goto.tabLabel, fieldLabel: goto.fieldLabel || null, fieldName: goto.fieldName || null } };
+    return { path: SETUP.renameTabs, autofill: { page: 'renameHome', lang: l, tabLabel: goto.tabLabel, fieldLabel: goto.fieldLabel || null, fieldName: goto.fieldName || null, plural: !!goto.plural } };
   }
   if (goto.page === 'workbench' || goto.page === 'override') {
     return { path: goto.page === 'override' ? SETUP.override : SETUP.workbench, autofill: { ...goto, page: 'workbench', lang: lang || null } };
@@ -147,7 +153,13 @@ export function detectAreas(hints = {}) {
   }
   // Dynamic Forms field section header (not a field inside it).
   if (has(/^flexipage-field-section/) && !has(/^(flexipage-field$|record_flexipage-record-field)/)) areas.add('fieldSection');
-  if (has(/^(lst-related-list|force-related-list)/)) areas.add('relatedList');
+  // A related list's title bar only; rows and cells inside the list are record data or child fields
+  // (bug: a role name in Opportunity Team got the "Related list title" card).
+  // hints.listHeader is null/undefined from older content.js: keep the old behaviour then.
+  if (has(/^(lst-related-list|force-related-list)/)) areas.add(hints.listHeader === false ? 'relatedListRow' : 'relatedList');
+  // Record highlights panel (records-highlights2): the object name above the record name, or the record name.
+  if (has(/^records-(lwc-)?highlights/)) areas.add(hints.recordTitle ? 'recordTitle' : 'highlights');
+  if (hints.helpIcon) areas.add('helpIcon');
   // Path: the guidance is in Aura divs (no custom tag names), so read their data-aura-class too.
   // Verified live on an Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
   const aura = hints.auraClasses || [];
@@ -316,7 +328,7 @@ function objectResult(org, obj, confidence, plural, tab) {
       `Step 1 page: change the ${plural ? 'Plural' : 'Singular'} name, then Save`,
     ],
     url: SETUP.renameTabs,
-    goto: { page: 'rename', object: obj.name, custom: obj.custom, tabLabel: tab?.Label || obj.labelPlural },
+    goto: { page: 'rename', object: obj.name, custom: obj.custom, tabLabel: tab?.Label || obj.labelPlural, plural: !!plural },
     copy: obj.name,
     notes,
   };
@@ -434,6 +446,25 @@ function picklistResult(org, d, f, pv, confidence) {
       ...workbench(org, { component: address, row: pv.label, rows: [pv.label, pv.value] }),
       copy: pv.value,
       notes: ['One translation for the whole org: it applies to every address field.', 'Master name: Setup → State and Country/Territory Picklists.'],
+    };
+  }
+  // Field uses a Global Value Set (sfApi.loadValueSet; e.g. Demo_Language__c → "Demo Languages").
+  // TW → Global Value Set is a tree of value set labels with their values under them (checked live).
+  const vs = org.valueSets?.[`${d.name}.${f.name}`];
+  if (vs?.name) {
+    const vsLabel = vs.label || vs.name;
+    return {
+      key: `picklist:${d.name}.${f.name}.${pv.value}`,
+      confidence,
+      title: `Global value set ${vsLabel}: picklist value`,
+      subtitle: `"${pv.label}" (API value: ${pv.value}), used by ${d.name}.${f.name}`,
+      ...workbench(org, { component: 'Global Value Set', row: `${pv.label} (value set: ${vsLabel})`, rows: [pv.label, pv.value], pkg: vs.namespace || null, parent: vsLabel }),
+      copy: pv.value,
+      notes: [
+        'One translation for every field that uses this value set.',
+        'Setup Component "Picklist Value" does not list values of a global value set.',
+        ...(isDefaultLanguage(org) ? [`Master label: Setup → Picklist Value Sets → ${vsLabel} → Values → Edit.`] : []),
+      ],
     };
   }
   const notes = ['If the field uses a Global Value Set, pick Setup Component "Global Value Set" instead.'];
@@ -790,7 +821,7 @@ function pathResults(org, needle, areas, describes, add, rawText) {
 
 // ---------- hint-only results (from page metadata, no text match needed) ----------
 
-function hintResults(org, hints, describes, areas, text) {
+function hintResults(org, hints, describes, areas, text, pageHandled = false) {
   const out = [];
   const objLabel = (o) => describes.find((d) => d.name === o)?.label || o;
 
@@ -823,7 +854,7 @@ function hintResults(org, hints, describes, areas, text) {
         notes: [],
       });
     } else if (sn.kind === 'QuickAction') {
-      out.push(quickActionResult(org, sn.object, sn.object ? objLabel(sn.object) : 'Global', { name: sn.object ? `${sn.object}.${sn.name}` : sn.name, label: text }, 'confirmed'));
+      out.push(quickActionResult(org, sn.object || 'Global', sn.object ? objLabel(sn.object) : 'Global', { name: sn.object ? `${sn.object}.${sn.name}` : sn.name, label: text }, 'confirmed'));
     }
   }
 
@@ -855,7 +886,8 @@ function hintResults(org, hints, describes, areas, text) {
       notes: ['Flow labels referencing {!$Label...} are translated in Custom Labels instead.'],
     });
   }
-  if (areas.has('lightningPageTab')) {
+  // Tab title read from the page metadata: that answer replaces the generic card.
+  if (areas.has('lightningPageTab') && !pageHandled) {
     out.push({
       key: 'area:lightningPageTab',
       source: SOURCE.NOT_TRANSLATABLE,
@@ -871,7 +903,7 @@ function hintResults(org, hints, describes, areas, text) {
       notes: [],
     });
   }
-  if (areas.has('relatedList')) {
+  if (areas.has('relatedList') && !pageHandled) {
     out.push({
       key: 'area:relatedList',
       confidence: 'context',
@@ -946,7 +978,10 @@ export const PAGE_COMPONENT_KINDS = {
   'flexipage:fieldSection': { prop: 'label', what: 'Field section label', part: 'section', field: 'Label' },
   'lst:dynamicRelatedList': { prop: 'relatedListLabel', what: 'Related list label', part: 'related list', field: 'Related List Label' },
   'flexipage:tab': { prop: 'title', what: 'Tab label', part: 'tab', field: 'Label' },
+  // Classic related list component: no label property, only relatedListApiName.
+  'force:relatedListSingleContainer': { prop: 'relatedListLabel', what: 'Related list label', part: 'related list', field: 'Related List Label' },
 };
+const RELATED_LIST_COMPONENTS = new Set(['lst:dynamicRelatedList', 'force:relatedListSingleContainer']);
 const pcKind = (pc) => PAGE_COMPONENT_KINDS[pc.component] || { prop: 'label', what: 'Component label', part: 'component', field: 'Label' };
 
 /** Label typed as plain text in Lightning App Builder: never translated. */
@@ -1005,11 +1040,44 @@ function demoteSameTextLabels(results, why) {
   }
 }
 
+/**
+ * Related list with no label of its own (Files = AttachedContentDocuments, Account Team,
+ * Opportunities). A custom relationship (…__r) keeps the generic Translation Workbench card.
+ */
+function standardRelatedList(results, add, pc) {
+  const api = String(pc.props?.relatedListApiName || '');
+  if (!api || /__r$/.test(api)) return false;
+  // Object-backed lists (Opportunities, Contacts, Cases) show the object's plural name.
+  const obj = results.find((r) => r.key.startsWith('object:') && r.confidence !== 'partial');
+  if (obj) {
+    obj.confidence = 'confirmed';
+    obj.notes = [`Standard related list ${api}: its title is the object's plural name.`, ...(obj.notes || [])];
+  } else {
+    add({
+      key: `stdlist:${api}`,
+      source: SOURCE.NOT_TRANSLATABLE,
+      confidence: 'confirmed',
+      title: 'Salesforce standard related list',
+      subtitle: `${api} on the Lightning page ${pc.page}`,
+      steps: [
+        'Salesforce names this related list and translates its title itself. No action needed.',
+        `To show different text: in Lightning App Builder → ${pc.page}, use a Dynamic Related List – Single and set its Related List Label to {!$Label.c.Your_Label}, then translate that label.`,
+      ],
+      url: SETUP.customLabels,
+      copy: api,
+      notes: [],
+    });
+  }
+  demoteSameTextLabels(results, 'this related list title comes from Salesforce, not from a custom label.');
+  return true;
+}
+
 /** Returns true when the component's text was explained (so generic area cards are not needed). */
 function applyPageComponent(org, results, add, pc) {
   const text = String(pc.label ?? '').trim();
   const kind = pcKind(pc);
-  // No text set (e.g. a related list that keeps its default title): the generic cards still apply.
+  if (!text && RELATED_LIST_COMPONENTS.has(pc.component)) return standardRelatedList(results, add, pc);
+  // No text set: the generic cards still apply.
   if (!text && pc.component !== 'flexipage:fieldSection') return false;
   const token = SFDC_TOKEN.exec(text);
   const std = STANDARD_TAB.exec(text);
@@ -1056,14 +1124,37 @@ function confirmPathValues(org, describes, results) {
   if (confirmed) demoteSameTextLabels(results, 'path steps show picklist values, not custom labels.');
 }
 
-function confirmNavItems(results) {
-  const nav = results.filter((r) => /^(object|tab|app):/.test(r.key) && r.confidence === 'exact');
-  if (!nav.length) return;
-  for (const r of nav) r.confidence = 'confirmed';
+/** Areas that only ever show object, tab or app names: confirm those, demote same-text custom labels. */
+function confirmNames(results, keyRe, why) {
+  const hits = results.filter((r) => keyRe.test(r.key) && r.confidence === 'exact');
+  if (!hits.length) return;
+  for (const r of hits) r.confidence = 'confirmed';
   for (const r of results) {
     if (r.source !== SOURCE.CUSTOM_LABEL) continue;
     r.confidence = 'partial';
-    r.notes = ['Same words only: navigation bar items show object, tab and app names, not custom labels.', ...(r.notes || [])];
+    r.notes = [`Same words only: ${why}`, ...(r.notes || [])];
+  }
+}
+
+function addHelpIconResults(org, describes, confirmedFields, results, add) {
+  const fieldOf = (o, n) => {
+    const d = describes.find((x) => x.name === o);
+    return { d, f: d?.fields?.find((x) => x.name === n) };
+  };
+  const fields = confirmedFields.map((cf) => fieldOf(...cf.split('.'))).filter((x) => x.f);
+  // No field in the path: the field whose label is the text (the icon's text is "Help <label>").
+  const byText = results
+    .filter((r) => r.key.startsWith('field:') && r.confidence === 'exact')
+    .map((r) => fieldOf(...r.key.slice(6).split('.')))
+    .filter((x) => x.f?.inlineHelpText);
+  const confidence = fields.length ? 'confirmed' : 'exact';
+  for (const { d, f } of fields.length ? fields : byText) {
+    const r = helpTextResult(org, d, f, confidence);
+    if (!f.inlineHelpText) r.subtitle = 'Help text of this field';
+    r.notes = ["You pointed at this field's help (i) icon.", ...r.notes];
+    add(r);
+    const label = results.find((x) => x.key === `field:${d.name}.${f.name}`);
+    if (label) label.confidence = 'context';
   }
 }
 
@@ -1162,7 +1253,8 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
         // Object actions are "Account.Demo_New_Case"; a name without a dot is a global action
         // (bug: Demo_Service_Task was shown as Object: Account).
         const global = !String(qa.name || '').includes('.');
-        if (mt) add(quickActionResult(org, global ? null : d.name, global ? 'Global' : d.label, qa, mt));
+        // TW → Action has an Object option "Global" (value Global) for these.
+        if (mt) add(quickActionResult(org, global ? 'Global' : d.name, global ? 'Global' : d.label, qa, mt));
       }
     }
 
@@ -1186,13 +1278,17 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   if (areas.has('path') && !areas.has('pathGuidance')) confirmPathValues(org, describes, results);
 
   // Navigation bar items are object, tab and app names, never custom labels.
-  if (areas.has('navTab')) confirmNavItems(results);
+  if (areas.has('navTab')) confirmNames(results, /^(object|tab|app):/, 'navigation bar items show object, tab and app names, not custom labels.');
+  // The object name above the record name in the highlights panel (bug: "Account" ranked below custom labels).
+  if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');
 
   // 7. Page metadata (buttons, sections, flows, custom components)
   // Clicked a Lightning App Builder component whose label was read from the page metadata.
   const labelHits = results.filter((r) => r.source === SOURCE.CUSTOM_LABEL);
-  if (pageComponent) applyPageComponent(org, results, add, pageComponent);
-  else if (areas.has('fieldSection') && labelHits.length) {
+  const pageHandled = pageComponent ? applyPageComponent(org, results, add, pageComponent) : false;
+  if (pageHandled) {
+    // The page metadata explained the text.
+  } else if (areas.has('fieldSection') && labelHits.length) {
     // Page metadata not readable: no extra card (it confused testers). Say why the label is likely.
     for (const r of labelHits) r.notes = ['Likely the source: Dynamic Forms section headers usually use a custom label.', ...(r.notes || [])];
   } else if (areas.has('fieldSection')) {
@@ -1211,7 +1307,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     });
   }
 
-  for (const r of hintResults(org, hints, describes, areas, String(text || '').trim())) {
+  for (const r of hintResults(org, hints, describes, areas, String(text || '').trim(), pageHandled)) {
     const existing = results.find((x) => x.key === r.key);
     if (existing) existing.confidence = 'confirmed';
     else add(r);
@@ -1226,6 +1322,18 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   for (const r of results) {
     if (r.confidence === 'exact' && confirmedFields.some((cf) => aboutField(r, cf))) r.confidence = 'confirmed';
   }
+  // Help (i) icon of a field: its help text, not the label (bug: "Help Demo Title" matched labels only).
+  if (areas.has('helpIcon')) addHelpIconResults(org, describes, confirmedFields, results, add);
+  // The record name in the highlights panel is the Name field's value.
+  if (areas.has('recordTitle')) {
+    const d = describes.find((x) => x.name === record?.object) || describes[0];
+    const f = d?.fields?.find((x) => x.name === 'Name');
+    if (f) {
+      addRecordValueResults(org, d, f, results, add);
+      results.find((r) => r.key === `value:${d.name}.Name`)?.notes.push('This is the record name shown at the top of the page.');
+    }
+  }
+
   // Clicked a record value in a field that supports Data Translation (never for a click on the label).
   const onLabel = hints.fieldPart === 'label';
   for (const cf of onLabel ? [] : confirmedFields) {

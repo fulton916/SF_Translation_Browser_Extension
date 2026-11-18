@@ -140,7 +140,8 @@ test('M-07: a record count "(n)" after a card title is ignored', () => {
 test('M-08: a quick action without an object prefix is global', () => {
   const g = run('Demo Service Task').results.find((x) => x.key === 'qa:Demo_Service_Task');
   assert.ok(g.steps.includes('Object: Global'));
-  assert.equal(g.goto.object, null);
+  // TW → Action lists an Object option "Global" (value Global), checked live.
+  assert.equal(g.goto.object, 'Global');
   const o = run('New Case').results.find((x) => x.key === 'qa:Account.Demo_New_Case');
   assert.ok(o.steps.includes('Object: Account'));
   assert.equal(o.goto.object, 'Account');
