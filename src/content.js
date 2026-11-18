@@ -326,7 +326,7 @@
 
   function confidenceText(c) {
     // "Same text" (not "Exact match"): equal words do not prove this is where the text comes from.
-    return { confirmed: 'Confirmed by page', exact: 'Same text', partial: 'Similar text', context: 'From page area' }[c] || c;
+    return { confirmed: 'Confirmed Location', exact: 'Same text', partial: 'Similar text', context: 'From page area' }[c] || c;
   }
 
   function langName(code) {
