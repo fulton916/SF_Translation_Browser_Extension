@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadValueSet } from './sfApi.js';
+import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadValueSet, loadRecordTypeId } from './sfApi.js';
 import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
@@ -191,6 +191,10 @@ async function lookup({ text, hints, urls, refresh = false }) {
     });
   }
   const record = rec ? { object: rec[1], id: rec[2] } : null;
+  // Paths belong to one record type: read the record's type only when it can matter (one REST call, cached).
+  if (record && (org.paths || []).some((p) => p.IsActive !== false && p.SobjectType === record.object && p.RecordTypeId)) {
+    record.recordTypeId = await loadRecordTypeId(session, record.object, record.id, { refresh });
+  }
   // Lightning App Builder text read from the page metadata: a Dynamic Forms field section label, a
   // related list title (header only, not its rows), or a record page tab title. The nearest component
   // id is the clicked one (content.js lists them nearest first).

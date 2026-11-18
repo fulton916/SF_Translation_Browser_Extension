@@ -273,6 +273,24 @@ export function loadValueSet(session, objectName, fieldName) {
   return promise;
 }
 
+const recordTypeCache = new Map();
+
+/**
+ * RecordTypeId of one record: an Id, null (no record type), or undefined when it could not be read.
+ * Paths belong to one record type, so the open record's type decides which path the page shows.
+ */
+export function loadRecordTypeId(session, objectName, recordId, { refresh = false } = {}) {
+  if (!/^[A-Za-z0-9_]+$/.test(objectName || '') || !/^[a-zA-Z0-9]{15,18}$/.test(recordId || '')) return Promise.resolve(undefined);
+  const key = `${session.host}|${objectName}/${recordId}`;
+  const hit = recordTypeCache.get(key);
+  if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const promise = sfFetch(session, `/services/data/${API_VERSION}/sobjects/${objectName}/${recordId}?fields=RecordTypeId`)
+    .then((r) => r?.RecordTypeId ?? null)
+    .catch(() => undefined);
+  recordTypeCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
 /** Describe + quick actions for one object. Returns null if the object is not visible. */
 export function loadDescribe(session, objectName, { refresh = false } = {}) {
   const key = `${session.host}|${objectName}`;
@@ -298,7 +316,7 @@ export function loadDescribe(session, objectName, { refresh = false } = {}) {
         inlineHelpText: f.inlineHelpText,
         picklistValues: (f.picklistValues || []).map((p) => ({ label: p.label, value: p.value, active: p.active })),
       })),
-      recordTypeInfos: (d.recordTypeInfos || []).map((rt) => ({ name: rt.name, developerName: rt.developerName, master: rt.master })),
+      recordTypeInfos: (d.recordTypeInfos || []).map((rt) => ({ name: rt.name, developerName: rt.developerName, master: rt.master, recordTypeId: rt.recordTypeId })),
       quickActions: (Array.isArray(qa) ? qa : []).map((a) => ({ label: a.label, name: a.name, type: a.type })),
       // Org-built translation objects, e.g. Demo_Translations__c (not the standard *DataTranslation).
       translationChildren: (d.childRelationships || [])
