@@ -160,6 +160,7 @@ const contact = {
   quickActions: [
     { label: 'New Contact', name: 'NewContact', type: 'Create' },
     { label: 'Log a Visit', name: 'Contact.Log_Visit', type: 'Create' },
+    { label: 'Example Visit', name: 'Example_Visit', type: 'Create' },
   ],
 };
 
@@ -183,12 +184,28 @@ test('DV2-04: an object action missing from the loaded action list is not confir
   assert.equal(listed.results[0].confidence, 'confirmed');
 });
 
-test('DV2-10: a global action shows once (Global.NewContact and NewContact are the same action)', () => {
-  const out = locate({ text: 'New Contact', org: baseOrg, describes: [contact], hints: { selectionNames: ['sfdc:QuickAction.Global.NewContact'] } });
+test('DV2-10: a custom global action shows once (Global.Example_Visit and Example_Visit are the same action)', () => {
+  const out = locate({ text: 'Example Visit', org: baseOrg, describes: [contact], hints: { selectionNames: ['sfdc:QuickAction.Global.Example_Visit'] } });
   const qas = out.results.filter((r) => r.key.startsWith('qa:'));
   assert.equal(qas.length, 1);
   assert.equal(qas[0].confidence, 'confirmed');
   assert.equal(qas[0].goto.object, 'Global');
+});
+
+test('DV2-10 review: a standard global action (New Contact) is Salesforce\'s, not a TW Action row', () => {
+  // DV2: TW → Action, Object Global lists only custom actions; NewContact, NewTask, NewCase, LogACall are missing.
+  const out = locate({ text: 'New Contact', org: baseOrg, describes: [contact], hints: { selectionNames: ['sfdc:QuickAction.Global.NewContact'] } });
+  assert.equal(out.results[0].key, 'stdaction:Global.NewContact');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.ok(out.results[0].steps.some((s) => /create a custom global action/.test(s)));
+  assert.ok(!out.results.some((r) => r.key.startsWith('qa:')), 'no TW Action card');
+  assert.equal(out.results.filter((r) => r.key === 'stdaction:Global.NewContact').length, 1, 'once');
+  // Text only (no page metadata): the same card, not confirmed.
+  const text = locate({ text: 'New Contact', org: baseOrg, describes: [contact], hints: {} }).results;
+  const r = text.find((x) => x.key === 'stdaction:Global.NewContact');
+  assert.equal(r.confidence, 'exact');
+  assert.ok(!text.some((x) => x.key.startsWith('qa:')));
 });
 
 // ---------- DV2-05: the path's generic "Closed" step ----------
