@@ -200,6 +200,12 @@ export function detectAreas(hints = {}) {
   // (button.new-event-button carries no action name: it is not the NewEvent global action), day headers
   // (forceCalendarDayHeader) and the sidebar (calendarListPanel > calendarListItem). Event boxes
   // (runtime_calendar-timed-event; all-day strip runtime_calendar-horizontal-layout-display) show record data.
+  // Global header (checked live): header[data-aura-class=oneHeader] holds search, notifications and the
+  // event reminder popup (div[data-aura-class=unsCardQueue]). The nav bar and app name are not part of it.
+  if (!areas.has('navTab') && !areas.has('appName') && (aura.some((a) => /^(oneHeader|unsCardQueue|forceSearchDesktopHeader)$/.test(a)) || has(/^(one-header|search_dialog-)/))) {
+    areas.add('globalHeader');
+    if (aura.some((a) => /^(unsCardQueue|unsNotificationCardFrame)$/.test(a))) areas.add('headerNotification');
+  }
   if (aura.some((a) => /^(forceCalendar|calendarHome)/.test(a)) && !has(/^runtime_calendar-/)) {
     areas.add('calendar');
     if (aura.includes('calendarListItem')) areas.add('calendarList');
@@ -1363,6 +1369,7 @@ const STANDARD_AREAS = {
   reportChart: { title: 'Salesforce report chart text', what: 'the report chart' },
   path: { title: 'Salesforce path text', what: 'the path (heading and buttons)' },
   calendar: { title: 'Salesforce calendar text', what: 'the Calendar page (header buttons, views, day headers, My Calendars)' },
+  globalHeader: { title: 'Salesforce header text', what: 'the global header (search, reminders, notifications)' },
 };
 
 // Calendar list entries Salesforce names itself (English; add other languages when seen). Any other
@@ -1496,8 +1503,17 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
     addCalendarResults(needle, areas, results, add);
     return;
   }
-  for (const area of ['activityTimeline', 'duplicates', 'feed', 'reportChart']) {
+  for (const area of ['activityTimeline', 'duplicates', 'feed', 'reportChart', 'globalHeader']) {
     if (!areas.has(area)) continue;
+    // Reminder and notification cards also show org text (event subjects, custom notification types):
+    // say whose text the card frame is, without confirming the clicked words.
+    if (area === 'globalHeader' && areas.has('headerNotification')) {
+      demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS[area].what}.`);
+      const r = standardTextResult(area, 'context');
+      r.notes = ['Headings like "Event Reminder Notification" are Salesforce text. Event subjects and custom notification text in these cards come from your org.'];
+      add(r);
+      return;
+    }
     if (area !== 'reportChart') demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS[area].what}.`);
     // Pointed at the report chart's own title (a heading): typed in App Builder, not Salesforce text.
     if (area === 'reportChart' && (hints.tags || []).some((t) => /^h[1-6]$/.test(t))) {
