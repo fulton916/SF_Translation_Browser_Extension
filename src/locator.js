@@ -1551,6 +1551,23 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
 
   // Navigation bar items are object, tab and app names, never custom labels.
   if (areas.has('navTab')) confirmNames(results, /^(object|tab|app):/, 'navigation bar items show object, tab and app names, not custom labels.');
+  // The Home tab (a test sandbox nav item: data-id="home", sfdc:TabDefinition.standard-home) is Salesforce's own tab:
+  // not in Rename Tabs and Labels when TabDefinition does not list it.
+  const homeTab = (hints.selectionNames || []).includes('sfdc:TabDefinition.standard-home') || hints.attrs?.['data-id'] === 'home';
+  if (areas.has('navTab') && homeTab && !results.some((r) => /^(object|tab|app):/.test(r.key) && ['confirmed', 'exact'].includes(r.confidence))) {
+    add({
+      key: 'sfdctab:home',
+      source: SOURCE.NOT_TRANSLATABLE,
+      confidence: 'confirmed',
+      title: 'Salesforce standard tab (Home)',
+      subtitle: 'Found in page metadata: standard-home',
+      steps: ['Salesforce names the Home tab and translates it into every language. No action needed.'],
+      url: null,
+      copy: 'standard-home',
+      notes: [],
+    });
+    demoteLabelsToPartial(results, 'the Home tab is named by Salesforce, not by a custom label.');
+  }
   // The object name above the record name in the highlights panel (bug: "Account" ranked below custom labels).
   if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');
 
