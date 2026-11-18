@@ -9,7 +9,7 @@ export const SOURCE = {
   OVERRIDE: 'Workbench Override (package)',
   DATA: 'Data Translation (record data)',
   CUSTOM_OBJECT: 'Custom translation object',
-  NOT_TRANSLATABLE: 'Work required to translate',
+  NOT_TRANSLATABLE: 'Admin work required to translate',
   SALESFORCE: 'Owned by Salesforce',
   CONTEXT: 'Page context',
 };

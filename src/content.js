@@ -249,7 +249,7 @@
 
   function card(r) {
     // A confirmed "not translatable" result is the right answer but has no translation location.
-    const conf = r.confidence === 'confirmed' && (r.source === 'Work required to translate' || r.source === 'Owned by Salesforce') ? 'confirmed-none' : r.confidence;
+    const conf = r.confidence === 'confirmed' && (r.source === 'Admin work required to translate' || r.source === 'Owned by Salesforce') ? 'confirmed-none' : r.confidence;
     const c = el('div', `card card-${conf}`);
     const top = el('div', 'card-top');
     top.append(el('span', `badge ${badgeClass(r.source)}`, r.source), el('span', `conf ${conf}`, confidenceText(conf)));
@@ -343,7 +343,7 @@
         'Workbench Override (package)': 'b-override',
         'Data Translation (record data)': 'b-data',
         'Custom translation object': 'b-data',
-        'Work required to translate': 'b-none',
+        'Admin work required to translate': 'b-none',
         'Owned by Salesforce': 'b-none',
       }[source] || 'b-context'
     );
