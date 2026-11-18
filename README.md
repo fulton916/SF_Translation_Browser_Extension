@@ -17,7 +17,7 @@ screen and fills in the language and filters. You type the translation and click
 5. Pin the extension (puzzle-piece menu). Its toolbar icon opens the test log.
 6. Reload any open Salesforce tabs.
 7. In Salesforce, highlight a word, right-click, and choose **Find Salesforce translation for "..."**.
-   You can also right-click text without highlighting it.
+   You can also right-click text without highlighting it, or point at it and press **Alt + Shift + T**.
 
 After you update the code: click reload on the extension in `chrome://extensions`, then press F5 on
 your Salesforce tabs. Panels left open from before the reload stop working.

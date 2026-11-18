@@ -37,6 +37,23 @@
     true
   );
 
+  // Keyboard shortcut Alt+Shift+T: same lookup as the right-click menu, for the element under the mouse
+  // (or the highlighted text). A page listener, not chrome.commands, so automated key presses reach it too.
+  let pointerPath = null;
+  document.addEventListener('mousemove', (e) => (pointerPath = e.composedPath()), { capture: true, passive: true });
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!(e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyT') || !window.__sftlAlive()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      lastTarget = { path: (pointerPath || []).filter((n) => n instanceof Element), at: Date.now() };
+      const selectionText = String(window.getSelection() || '').trim();
+      chrome.runtime.sendMessage({ type: 'sftl:shortcut', selectionText }, () => void chrome.runtime.lastError);
+    },
+    true
+  );
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'sftl:getTarget') {
       sendResponse(describeTarget());
@@ -168,7 +185,7 @@
   }
 
   function card(r) {
-    const c = el('div', 'card');
+    const c = el('div', `card ${r.confidence === 'confirmed' ? 'card-confirmed' : ''}`);
     const top = el('div', 'card-top');
     top.append(el('span', `badge ${badgeClass(r.source)}`, r.source), el('span', `conf ${r.confidence}`, confidenceText(r.confidence)));
     c.append(top, el('div', 'card-title', r.title));
@@ -403,7 +420,10 @@
       .badge { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 10px; color: #fff; }
       .b-label { background: #0b5cab; } .b-rename { background: #2e844a; } .b-workbench { background: #7526e3; }
       .b-none { background: #747474; } .b-override { background: #a43ec0; } .b-data { background: #0d7d8c; } .b-context { background: #a96404; }
-      .conf { font-size: 11px; color: #5c5c5c; } .conf.confirmed, .conf.exact { color: #2e844a; font-weight: 600; }
+      .conf { font-size: 11px; color: #5c5c5c; } .conf.exact { color: #2e844a; font-weight: 600; }
+      .card-confirmed { border: 2px solid #2e844a; background: #f3faf5; box-shadow: 0 0 0 3px rgba(46,132,74,.15); }
+      .conf.confirmed { font-size: 12px; font-weight: 700; color: #fff; background: #2e844a; padding: 2px 8px; border-radius: 10px; }
+      .conf.confirmed::before { content: '\\2713  '; }
       .steps { margin: 6px 0 4px 18px; padding: 0; } .steps li { margin: 1px 0; }
       .notes { margin: 4px 0 0 16px; padding: 0; color: #5c5c5c; font-size: 12px; }
       .actions { display: flex; gap: 6px; margin-top: 6px; }
