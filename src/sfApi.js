@@ -1,3 +1,5 @@
+import { PAGE_COMPONENT_KINDS, namespaceOf } from './locator.js';
+
 // Salesforce API access from the extension service worker.
 // Session: reuse the browser's existing login (sid cookie), the same approach
 // Salesforce Inspector uses. Nothing is stored outside memory.
@@ -216,17 +218,59 @@ export async function loadFlexiPageComponent(session, flexipageTag, componentId,
     }
     const page = (await hit.promise)[0];
     if (!page) continue;
-    for (const region of page.Metadata?.flexiPageRegions || []) {
-      for (const item of region.itemInstances || []) {
-        const ci = item.componentInstance;
-        if (ci?.identifier !== componentId) continue;
-        const label = (ci.componentInstanceProperties || []).find((p) => p.name === 'label')?.value ?? null;
-        return { page: page.MasterLabel || page.DeveloperName, id: componentId, component: ci.componentName, label };
+    // A tab's page element is "flexipage_tab2Tab" for the component "flexipage_tab2" (UAT2, Nov 2026).
+    const ids = /Tab$/.test(componentId) ? [componentId, componentId.slice(0, -3)] : [componentId];
+    for (const id of ids) {
+      for (const region of page.Metadata?.flexiPageRegions || []) {
+        for (const item of region.itemInstances || []) {
+          const ci = item.componentInstance;
+          if (ci?.identifier !== id) continue;
+          const props = Object.fromEntries((ci.componentInstanceProperties || []).filter((p) => p.name).map((p) => [p.name, p.value ?? null]));
+          // The property that holds the shown text depends on the component (label, relatedListLabel, title).
+          const prop = PAGE_COMPONENT_KINDS[ci.componentName]?.prop || 'label';
+          const label = props[prop] ?? props.label ?? props.title ?? null;
+          return { page: page.MasterLabel || page.DeveloperName, id, component: ci.componentName, label, props };
+        }
       }
     }
     return null;
   }
   return null;
+}
+
+const valueSetCache = new Map();
+
+/**
+ * The Global Value Set a custom picklist field uses, or null (REST describe does not say).
+ * Tooling CustomField Metadata can only be read one row at a time, so: find the Id, then read it.
+ * Checked in UAT2 (Nov 2026): Account.Market_Unit_MST__c → valueSetName "Market_Unit_LST" (label "Market Unit").
+ * Returns { name, label, namespace } or null.
+ */
+export function loadValueSet(session, objectName, fieldName) {
+  const m = /^(?:([A-Za-z0-9]+)__)?([A-Za-z0-9_]+?)__c$/.exec(fieldName || '');
+  if (!m || !/^[A-Za-z0-9_]+$/.test(objectName || '')) return Promise.resolve(null);
+  const key = `${session.host}|${objectName}.${fieldName}`;
+  const hit = valueSetCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const [, ns, dev] = m;
+  const promise = (async () => {
+    const nsWhere = ns ? `NamespacePrefix = '${ns}'` : 'NamespacePrefix = null';
+    const rows = await queryAll(
+      session,
+      `SELECT Id FROM CustomField WHERE EntityDefinition.QualifiedApiName = '${objectName}' AND DeveloperName = '${dev}' AND ${nsWhere} LIMIT 1`,
+      { tooling: true }
+    );
+    if (!rows[0]?.Id) return null;
+    const full = await queryAll(session, `SELECT Metadata FROM CustomField WHERE Id = '${rows[0].Id}'`, { tooling: true });
+    const name = full[0]?.Metadata?.valueSet?.valueSetName;
+    if (!name || !/^[A-Za-z0-9_]+$/.test(name)) return null;
+    const vsNs = namespaceOf(name);
+    const dn = vsNs ? name.slice(vsNs.length + 2) : name;
+    const gvs = await queryAll(session, `SELECT MasterLabel, NamespacePrefix FROM GlobalValueSet WHERE DeveloperName = '${dn}' LIMIT 1`, { tooling: true }).catch(() => []);
+    return { name, label: gvs[0]?.MasterLabel || name, namespace: gvs[0]?.NamespacePrefix || vsNs || null };
+  })().catch(() => null);
+  valueSetCache.set(key, { at: Date.now(), promise });
+  return promise;
 }
 
 /** Describe + quick actions for one object. Returns null if the object is not visible. */

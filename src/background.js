@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent } from './sfApi.js';
+import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadValueSet } from './sfApi.js';
 import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
@@ -191,15 +191,40 @@ async function lookup({ text, hints, urls, refresh = false }) {
     });
   }
   const record = rec ? { object: rec[1], id: rec[2] } : null;
-  // Dynamic Forms field section: read its label from the Lightning page metadata.
+  // Lightning App Builder text read from the page metadata: a Dynamic Forms field section label, a
+  // related list title (header only, not its rows), or a record page tab title. The nearest component
+  // id is the clicked one (content.js lists them nearest first).
   let pageComponent = null;
-  if (detectAreas(hints).has('fieldSection') && hints.flexipage && hints.componentIds?.length) {
+  const areas = detectAreas(hints);
+  const wantsPage = areas.has('fieldSection') || areas.has('relatedList') || areas.has('lightningPageTab');
+  if (wantsPage && hints.flexipage && hints.componentIds?.length) {
     pageComponent = await loadFlexiPageComponent(session, hints.flexipage, hints.componentIds[0], objects).catch((e) => {
       warnings.push(`Lightning page not read: ${e.message}`);
       return null;
     });
+    // A component of another kind (e.g. the tab set around a field section) says nothing about this text.
+    const expect = areas.has('fieldSection') ? /^flexipage:fieldSection$/ : areas.has('relatedList') ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/ : /^flexipage:tab$/;
+    if (pageComponent && !expect.test(pageComponent.component || '')) pageComponent = null;
   }
-  const located = locate({ text, hints, org: { ...org, labelTranslations }, describes: describes.filter(Boolean), dataTranslations, record, pageUrls: urls, pageComponent });
+  // Global Value Sets: only for the custom picklists this text can be about (each costs 2-3 Tooling queries).
+  const valueSets = {};
+  const liveDescribes = describes.filter(Boolean);
+  const hinted = new Set((hints.selectionNames || []).map((s) => /^sfdc:RecordField\.(.+)$/.exec(s)?.[1]).filter(Boolean));
+  const picklistFields = [];
+  for (const d of liveDescribes) {
+    for (const f of d.fields || []) {
+      if (!f.custom || !/picklist/.test(f.type || '')) continue;
+      if (hinted.has(`${d.name}.${f.name}`) || (f.picklistValues || []).some((pv) => matchType(needle, pv.label) === 'exact')) picklistFields.push([d.name, f.name]);
+    }
+  }
+  await Promise.all(
+    picklistFields.slice(0, 4).map(([o, f]) =>
+      loadValueSet(session, o, f).then((vs) => {
+        if (vs) valueSets[`${o}.${f}`] = vs;
+      })
+    )
+  );
+  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent });
   return {
     ...located,
     hints,
