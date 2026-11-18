@@ -66,24 +66,24 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
 | Standard field help text | **Translation Workbench** → Standard Field Help | Yes (current object) |
 | Picklist value | **Translation Workbench** → Picklist Value, or → Global Value Set (tree: value set label → values) when the field uses one | Yes (current object). The value set is read from Tooling `CustomField.Metadata` for matching custom picklists |
-| Path step chevron | The path field's picklist value (above) | Confirmed for the active paths of the object |
+| Path step chevron | The path field's picklist value (above); the generic last "Closed" step is Salesforce text | Confirmed for the active path of the record's record type (read from the record) |
 | Record type | **Translation Workbench** → Record Type | Yes (current object) |
-| Quick action | **Translation Workbench** → Action | Yes (current object) |
+| Quick action | **Translation Workbench** → Action; feed actions (`FeedItem.*`, e.g. New Note) are Salesforce text | Yes (current object) |
 | Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects) |
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
 | Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Auto-fill opens every layout and lists each copy of the section |
 | Flow screen text | **Translation Workbench** → Flow | From page metadata only |
-| Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance |
+| Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance of the record's own path |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
 | Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
 | Record data: Product / Product Category Name and Description, plus enabled custom fields | **Data Translation**: the record's Translations tab (an admin adds it in Lightning App Builder) | Yes, on record pages; says how to enable it if off |
 | Record data in an org-built translation object (e.g. `Product_Translations__c`) | That object's related list on the record | Yes: any custom child object with "Translat" in its name |
 | Standard button (Edit, Delete) | Not translatable (Salesforce translates it) | Flagged |
 | Text typed into a custom LWC/Aura or Lightning App Builder | Not translatable until moved into a Custom Label | Flagged |
-| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → not translatable | Read from the FlexiPage for the clicked section, list header or tab |
-| Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), or currency name (Salesforce) | When you point at the value, not the label |
+| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → not translatable | Read from the FlexiPage for the clicked section, list header or tab. A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field |
+| Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), auto-number (Salesforce), a value missing from the picklist, or currency name (Salesforce). Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel) |
 | Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart | Not translatable (Salesforce translates it) | Flagged from the page area |
 
 Language rule: if you are viewing Salesforce in the org default language, the text is the
