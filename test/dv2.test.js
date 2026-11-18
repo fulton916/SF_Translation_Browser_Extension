@@ -588,3 +588,25 @@ test('Calendar: an event box shows record data, not Salesforce calendar text', (
   assert.ok(!out.areas.includes('calendar'));
   assert.ok(!out.results.some((r) => r.key === 'sfdctext:calendar'));
 });
+
+// ---------- R-11 / R-69: global header (search box, reminders) ----------
+
+test('R-69: the global search box text is Salesforce header text, not managed placeholder labels', () => {
+  const org = { ...baseOrg, customLabels: [lbl('101D00000000040', 'Search_Placeholder', 'Search...', 'maps')] };
+  const hints = { tags: ['span', 'button', 'div', 'header'], auraClasses: ['forceSearchDesktopHeader', 'oneHeader'] };
+  const out = locate({ text: 'Search...', org, describes: [], hints });
+  assert.ok(out.areas.includes('globalHeader'));
+  assert.equal(out.results[0].key, 'sfdctext:globalHeader');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
+});
+
+test('R-11: the event reminder popup gets a header-text card, without confirming event subjects', () => {
+  // Real path (DV2): div[unsCardQueue] < ... < header[oneHeader].
+  const hints = { tags: ['h2', 'div', 'a', 'div', 'section', 'div', 'div', 'li', 'ul', 'div', 'span', 'div', 'header'], auraClasses: ['unsNotificationCardFrame', 'forceVisualMessageQueue', 'unsCardQueue', 'oneHeader'] };
+  const head = locate({ text: 'Event Reminder Notification:', org: baseOrg, describes: [], hints }).results;
+  assert.equal(head[0].key, 'sfdctext:globalHeader');
+  assert.equal(head[0].confidence, 'context');
+  // The nav bar is never the global header.
+  assert.ok(!locate({ text: 'Accounts', org: baseOrg, describes: [], hints: { tags: ['span', 'one-app-nav-bar-item-root', 'one-app-nav-bar', 'one-appnav', 'header'], auraClasses: ['oneHeader'] } }).areas.includes('globalHeader'));
+});
