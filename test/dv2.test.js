@@ -175,6 +175,22 @@ test('DV2-04: a FeedItem action (New Note) is a Salesforce standard action, not 
   assert.deepEqual(contextObjects([], { selectionNames: ['sfdc:QuickAction.Global.NewContact'] }), []);
 });
 
+test('DV2-04 review: feed actions in the describe give no TW Action card (R-20, R-21)', () => {
+  const withFeed = { ...contact, quickActions: [...contact.quickActions, { label: 'Post', name: 'FeedItem.TextPost', type: 'Post' }, { label: 'New Note', name: 'FeedItem.ContentNote', type: 'Create' }] };
+  // "Post" tab: content.js maps FeedItem.TextPostTab to this selection name.
+  const post = locate({ text: 'Post', org: baseOrg, describes: [withFeed], hints: { selectionNames: ['sfdc:QuickAction.FeedItem.TextPost'] } }).results;
+  assert.equal(post.length, 1);
+  assert.equal(post[0].key, 'stdaction:FeedItem.TextPost');
+  assert.equal(post[0].confidence, 'confirmed');
+  const note = locate({ text: 'New Note', org: baseOrg, describes: [withFeed], hints: { selectionNames: ['sfdc:QuickAction.FeedItem.ContentNote'] } }).results;
+  assert.equal(note[0].key, 'stdaction:FeedItem.ContentNote');
+  assert.ok(!note.some((r) => r.key.startsWith('qa:')));
+  // Text only: still the standard action, not a TW Action.
+  const plain = locate({ text: 'New Note', org: baseOrg, describes: [withFeed], hints: {} }).results;
+  assert.equal(plain.find((r) => r.key === 'stdaction:FeedItem.ContentNote').confidence, 'exact');
+  assert.ok(!plain.some((r) => r.key.startsWith('qa:')));
+});
+
 test('DV2-04: an object action missing from the loaded action list is not confirmed', () => {
   const out = locate({ text: 'Send Survey', org: baseOrg, describes: [contact], hints: { selectionNames: ['sfdc:QuickAction.Contact.Send_Survey'] } });
   const r = out.results.find((x) => x.key === 'qa:Contact.Send_Survey');
