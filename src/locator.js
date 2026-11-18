@@ -176,7 +176,10 @@ export function detectAreas(hints = {}) {
   // hints.listHeader is null/undefined from older content.js: keep the old behaviour then.
   if (has(/^(lst-related-list|force-related-list)/)) areas.add(hints.listHeader === false ? 'relatedListRow' : 'relatedList');
   // Record highlights panel (records-highlights2): the object name above the record name, or the record name.
-  if (has(/^records-(lwc-)?highlights/)) areas.add(hints.recordTitle ? 'recordTitle' : 'highlights');
+  // A field (label or value) in the highlights panel is 'highlightsField' (DV2: "Account Number" there).
+  if (has(/^records-(lwc-)?highlights/)) {
+    areas.add(hints.recordTitle ? 'recordTitle' : has(/^records-highlights-details-item$/) ? 'highlightsField' : 'highlights');
+  }
   if (hints.helpIcon) areas.add('helpIcon');
   // Salesforce's own components on a record page (component ids seen in the UAT2 Account page DOM).
   const comps = [...(hints.componentIds || []), ...(hints.sfComponents || [])];
@@ -1269,6 +1272,15 @@ function demoteLabelsToPartial(results, why) {
   }
 }
 
+/** "Object.Field" of the one field of the record's object that shows this label, else null. */
+function fieldByShownLabel(describes, record, label) {
+  const n = normalize(label);
+  const d = describes.find((x) => x.name === record?.object) || describes[0];
+  if (!n || !d) return null;
+  const hits = (d.fields || []).filter((f) => displayLabels(d, f).some((l) => normalize(l) === n));
+  return hits.length === 1 ? `${d.name}.${hits[0].name}` : null;
+}
+
 function addHelpIconResults(org, describes, confirmedFields, results, add) {
   const fieldOf = (o, n) => {
     const d = describes.find((x) => x.name === o);
@@ -1456,6 +1468,11 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     .map(parseSelectionName)
     .filter((s) => s && s.kind === 'RecordField' && s.object)
     .map((s) => `${s.object}.${s.name}`);
+  // Highlights panel fields carry no RecordField name: the item's label names the field.
+  if (areas.has('highlightsField') && !confirmedFields.length && hints.fieldPart) {
+    const cf = fieldByShownLabel(describes, record, hints.highlightsLabel || (hints.fieldPart === 'label' ? text : null));
+    if (cf) confirmedFields.push(cf);
+  }
   const aboutField = (r, cf) => r.key.endsWith(cf) || r.key.includes(cf + '.');
   for (const r of results) {
     if (r.confidence === 'exact' && confirmedFields.some((cf) => aboutField(r, cf))) r.confidence = 'confirmed';

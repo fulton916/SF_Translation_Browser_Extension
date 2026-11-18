@@ -78,11 +78,13 @@
     // recordTitle: the record name in the highlights panel (lightning-formatted-text slot="primaryField").
     const hints = {
       selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null,
-      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [],
+      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [], highlightsLabel: null,
     };
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
     let inField = false;
     let headerSeen = false;
+    let titleSeen = false;
+    let valueSeen = false;
     for (const el of path.slice(0, 60)) {
       const tag = el.tagName.toLowerCase();
       hints.tags.push(tag);
@@ -90,6 +92,16 @@
       if (!inField && !hints.fieldPart) {
         if (/\btest-id__field-label\b|\bslds-form-element__label\b/.test(cls)) hints.fieldPart = 'label';
         else if (/\btest-id__field-value\b|\bslds-form-element__static\b|\bslds-form-element__control\b/.test(cls)) hints.fieldPart = 'value';
+      }
+      // Highlights panel (compact layout) field, seen in DV2 (Nov 2026): records-highlights-details-item
+      // (shadow) > div > p.slds-text-title (label) + p.fieldComponent > slot (value). No RecordField name here,
+      // so keep the item's label text too: locator.js finds the field by it.
+      if (/\bslds-text-title\b/.test(cls)) titleSeen = true;
+      if (/\bfieldComponent\b/.test(cls)) valueSeen = true;
+      if (tag === 'records-highlights-details-item' && !hints.highlightsLabel) {
+        const t = (el.shadowRoot || el).querySelector?.('.slds-text-title');
+        hints.highlightsLabel = (t?.getAttribute('title') || t?.innerText || '').trim().slice(0, 200) || null;
+        if (!hints.fieldPart) hints.fieldPart = titleSeen ? 'label' : valueSeen ? 'value' : null;
       }
       if (tag === 'lightning-helptext') hints.helpIcon = true;
       if (tag === 'h2' || /\bslds-card__header\b|\bslds-card__header-title\b/.test(cls)) headerSeen = true;
