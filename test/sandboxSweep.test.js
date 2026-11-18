@@ -312,6 +312,22 @@ test('SB-06: an inactive picklist value on a record → TW Picklist Value, marke
   assert.ok(!out.results.some((x) => x.key.startsWith('value:')));
 });
 
+test('R-62: a value of one field ranks its "not a value" card above another field\'s global value set value', () => {
+  const lead = {
+    name: 'Lead', label: 'Lead', labelPlural: 'Leads', custom: false, recordTypeInfos: [], quickActions: [],
+    fields: [
+      { name: 'LeadSource', label: 'Lead Source', custom: false, type: 'picklist', picklistValues: [{ label: 'Web', value: 'Web', active: true }] },
+      { name: 'Demo_Source__c', label: 'Demo Source', custom: true, type: 'picklist', picklistValues: [{ label: 'EXAMPLECLOUD', value: 'EXAMPLECLOUD', active: true }] },
+    ],
+  };
+  const org = { ...baseOrg, valueSets: { 'Lead.Demo_Source__c': { name: 'Demo_Source_List', label: 'Demo Source', namespace: null } } };
+  const rs = locate({ text: 'EXAMPLECLOUD', org, describes: [lead], hints: { selectionNames: ['sfdc:RecordField.Lead.LeadSource'], fieldPart: 'value' } });
+  assert.equal(rs.results[0].key, 'value:Lead.LeadSource');
+  const other = rs.results.find((r) => r.key === 'picklist:Lead.Demo_Source__c.EXAMPLECLOUD');
+  assert.ok(!other || other.confidence === 'partial');
+  assert.ok(rs.droppedPartial >= 1 || other?.notes[0].includes('Lead Source'));
+});
+
 test('SB-09: a value that is in no picklist list is flagged as record data', () => {
   // Standard field, only active values known: not an active value (could still be inactive).
   const std = locate({ text: 'Example Referral', org: teamOrg, describes: [contactTeam], hints: contactField('LeadSource') }).results[0];
