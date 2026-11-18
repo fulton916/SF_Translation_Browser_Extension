@@ -2,7 +2,7 @@
 // made-up names and Ids.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { locate, pathsForRecord, SOURCE } from '../src/locator.js';
+import { locate, pathsForRecord, buildGotoUrl, renameFieldCandidates, SOURCE } from '../src/locator.js';
 
 const lbl = (Id, Name, Value, NamespacePrefix = null) => ({ Id, Name, MasterLabel: Name, NamespacePrefix, Value, Language: 'en_US' });
 
@@ -95,4 +95,24 @@ test('SB-01: guidance of another record type\'s path is not confirmed', () => {
   const spec2 = full.find((r) => r.key === 'path:1CF000000000012');
   assert.equal(spec2.confidence, 'exact');
   assert.match(spec2.notes[0], /record type Design, not this record/);
+});
+
+// ---------- SB-02: Rename Tabs Step 2 shows the master label, not the renamed one ----------
+
+test('SB-02: Go to translation for a renamed standard field also looks for its master label on Step 2', () => {
+  const account = {
+    name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
+    fields: [
+      { name: 'BillingAddress', label: 'Billing Address/Main Address', custom: false, type: 'address', picklistValues: [] },
+      { name: 'ParentId', label: 'Parent Account ID', custom: false, type: 'reference', picklistValues: [] },
+    ],
+  };
+  const r = locate({ text: 'Billing Address/Main Address', org: baseOrg, describes: [account] }).results.find((x) => x.key === 'field:Account.BillingAddress');
+  const b = buildGotoUrl(r.goto, 'de', 'en_US');
+  assert.equal(b.autofill.page, 'renameStage');
+  assert.deepEqual(b.autofill.candidates, ['Billing Address/Main Address', 'BillingAddress', 'Billing Address', 'Main Address']);
+  // Step 2's first column says "Billing Address": one of the candidates equals it.
+  assert.ok(b.autofill.candidates.some((c) => c.toLowerCase() === 'billing address'));
+  assert.deepEqual(renameFieldCandidates('Parent Account ID', 'ParentId'), ['Parent Account ID', 'ParentId', 'Parent Id', 'Parent']);
+  assert.deepEqual(renameFieldCandidates('Account Number', 'AccountNumber'), ['Account Number', 'AccountNumber']);
 });

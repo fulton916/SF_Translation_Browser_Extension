@@ -600,16 +600,27 @@
       return;
     }
     const inputs = [...document.querySelectorAll('input[type=text]')];
+    const firstCell = (i) => norm(i.closest('tr')?.cells[0]?.innerText);
     // Row = <th>master label</th><td><input value="current translation"></td>…gender options.
-    // Try the label first, then the API name (Lead.Name is "Full Name" in the API, "Name" here).
-    const input = [p.fieldLabel, p.fieldName]
-      .filter(Boolean)
-      .map(norm)
-      .reduce(
-        (found, want) =>
-          found || inputs.find((i) => norm(i.closest('tr')?.cells[0]?.innerText) === want) || inputs.find((i) => norm(i.value) === want),
-        null
-      );
+    // Try the label first, then the API name (Lead.Name is "Full Name" in the API, "Name" here), then
+    // the other candidates from locator.js: the first column is the Salesforce master label, so a renamed
+    // label ("Billing Address/Account Address") is found by its parts or its API name in words.
+    const wants = [...new Set((p.candidates?.length ? p.candidates : [p.fieldLabel, p.fieldName]).filter(Boolean).map(norm))];
+    let input = wants.reduce(
+      (found, want) => found || inputs.find((i) => firstCell(i) === want) || inputs.find((i) => norm(i.value) === want),
+      null
+    );
+    // Last resort: a row whose master label starts the wanted label at a word break ("billing address" in
+    // "billing address/account address"); the longest such label wins.
+    if (!input) {
+      const label = norm(p.fieldLabel);
+      input = inputs
+        .filter((i) => {
+          const c = firstCell(i);
+          return c.length >= 4 && label.startsWith(c) && !/[\p{L}\p{N}]/u.test(label[c.length] || ' ');
+        })
+        .sort((a, b) => firstCell(b).length - firstCell(a).length)[0] || null;
+    }
     if (!input) {
       toast(`Could not find the "${p.fieldLabel}" field on Step 2. Look for it in the list.`, true);
       return finish();
