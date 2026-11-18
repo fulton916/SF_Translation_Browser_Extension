@@ -266,7 +266,9 @@ export function loadValueSet(session, objectName, fieldName) {
     const name = meta?.valueSetName;
     if (!name) {
       // The field's own values, inactive ones included (REST describe lists active values only;
-      // a test sandbox: Contact Demo Team "AC WEST" is inactive). fullName can be URL-encoded.
+      // a test sandbox: Contact Demo Team "AC WEST" is inactive). Tooling names the value valueName (a test sandbox keys:
+      // color, default, description, isActive, label, urls, valueName); the Metadata API names it fullName.
+      // Either can be URL-encoded. Active values come back with isActive null.
       const decode = (s) => {
         try {
           return decodeURIComponent(String(s ?? ''));
@@ -275,8 +277,9 @@ export function loadValueSet(session, objectName, fieldName) {
         }
       };
       const values = (meta?.valueSetDefinition?.value || [])
-        .filter((v) => v?.fullName)
-        .map((v) => ({ value: decode(v.fullName), label: v.label ?? decode(v.fullName), active: v.isActive !== false }));
+        .map((v) => ({ v, name: v?.valueName ?? v?.fullName }))
+        .filter(({ name }) => name)
+        .map(({ v, name }) => ({ value: decode(name), label: v.label ?? decode(name), active: v.isActive !== false }));
       return values.length ? { name: null, values } : null;
     }
     if (!/^[A-Za-z0-9_]+$/.test(name)) return null;

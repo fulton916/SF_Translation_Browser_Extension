@@ -281,19 +281,38 @@ test('SB-09: a partial highlight of a real picklist value is not flagged as "not
   assert.ok(!std.some((x) => x.key.startsWith('value:')));
 });
 
-test('SB-06: loadValueSet returns the local values of a field, inactive ones included', async () => {
+const mockValueSet = (value) => {
   globalThis.fetch = async (u) => {
     const url = decodeURIComponent(u);
     const records = /SELECT Id FROM CustomField/.test(url)
       ? [{ Id: '00N000000000001AAA' }]
-      : [{ Metadata: { valueSet: { valueSetName: null, valueSetDefinition: { value: [
-          { fullName: 'EX_NORTH', label: 'Example Unit North', isActive: null },
-          { fullName: 'EX%20WEST', label: null, isActive: false },
-        ] } } } }];
+      : [{ Metadata: { valueSet: { valueSetName: null, valueSetDefinition: { value } } } }];
     return { ok: true, json: async () => ({ done: true, records }) };
   };
+};
+
+test('SB-06: loadValueSet returns the local values of a field, inactive ones included (Tooling valueName)', async () => {
+  // The shape Tooling really returns (R-16/R-17): valueName, no fullName.
+  mockValueSet([
+    { color: null, default: false, description: null, isActive: null, label: 'Example Unit North', urls: null, valueName: 'EX_NORTH' },
+    { color: null, default: false, description: null, isActive: false, label: null, urls: null, valueName: 'EX%20WEST' },
+  ]);
   const vs = await loadValueSet({ host: 'sandbox-test.my.salesforce.com', sid: 's' }, 'Contact', 'Demo_Team__c');
   assert.deepEqual(vs, { name: null, values: [{ value: 'EX_NORTH', label: 'Example Unit North', active: true }, { value: 'EX WEST', label: 'EX WEST', active: false }] });
+});
+
+test('SB-06: loadValueSet also reads the Metadata API shape (fullName)', async () => {
+  mockValueSet([
+    { fullName: 'EX_NORTH', label: 'Example Unit North', isActive: null },
+    { fullName: 'EX%20WEST', label: null, isActive: false },
+  ]);
+  const vs = await loadValueSet({ host: 'sandbox-test-meta.my.salesforce.com', sid: 's' }, 'Contact', 'Demo_Team__c');
+  assert.deepEqual(vs, { name: null, values: [{ value: 'EX_NORTH', label: 'Example Unit North', active: true }, { value: 'EX WEST', label: 'EX WEST', active: false }] });
+});
+
+test('SB-06/R-18: one word of an inactive value ("WEST") is part of the picklist, not "not a value"', () => {
+  const rs = locate({ text: 'WEST', org: teamOrg, describes: [contactTeam], hints: contactField('Demo_Team__c') }).results;
+  assert.ok(!rs.some((x) => x.key.startsWith('value:')));
 });
 
 // ---------- SB-07 / SB-08: related lists of custom lookups, and labels inside their rows ----------
