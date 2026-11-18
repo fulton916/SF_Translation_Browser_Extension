@@ -200,7 +200,7 @@ test('SB-04: a FeedItem action (New Note) is a Salesforce standard action, not a
   assert.deepEqual(contextObjects([], hints), ['Contact']);
   const out = locate({ text: 'New Note', org: baseOrg, describes: [contact], hints });
   assert.equal(out.results[0].key, 'stdaction:FeedItem.ContentNote');
-  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(out.results[0].source, SOURCE.SALESFORCE);
   assert.equal(out.results[0].confidence, 'confirmed');
   assert.ok(!out.results.some((r) => r.key.startsWith('qa:')));
   assert.deepEqual(contextObjects([], { selectionNames: ['sfdc:QuickAction.Global.NewContact'] }), []);
@@ -244,7 +244,7 @@ test('SB-10 review: a standard global action (New Contact) is Salesforce\'s, not
   const out = locate({ text: 'New Contact', org: baseOrg, describes: [contact], hints: { selectionNames: ['sfdc:QuickAction.Global.NewContact'] } });
   assert.equal(out.results[0].key, 'stdaction:Global.NewContact');
   assert.equal(out.results[0].confidence, 'confirmed');
-  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(out.results[0].source, SOURCE.SALESFORCE);
   assert.ok(out.results[0].steps.some((s) => /create a custom global action/.test(s)));
   assert.ok(!out.results.some((r) => r.key.startsWith('qa:')), 'no TW Action card');
   assert.equal(out.results.filter((r) => r.key === 'stdaction:Global.NewContact').length, 1, 'once');
@@ -271,7 +271,7 @@ test('SB-05: the Closed chevron is Salesforce path text; same-word labels, field
   const rs = locate({ text: 'Closed', org, describes: [o], hints: chevron, record: oppRecord(RT_RETAIL) }).results;
   assert.equal(rs[0].key, 'sfdctext:pathClosed');
   assert.equal(rs[0].confidence, 'confirmed');
-  assert.equal(rs[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(rs[0].source, SOURCE.SALESFORCE);
   assert.ok(!rs.some((r) => r.source === SOURCE.CUSTOM_LABEL || r.key.startsWith('rt:') || r.key === 'field:Opportunity.IsClosed'), 'coincidences hidden');
   // A path whose field really has a "Closed" value: that value is the step.
   const withValue = { ...o, fields: o.fields.map((f) => (f.name === 'StageName' ? { ...f, picklistValues: [...f.picklistValues, { label: 'Closed', value: 'Closed', active: true }] } : f)) };
@@ -556,7 +556,7 @@ test('Calendar: "New Event" is Salesforce calendar text, not the managed labels 
   assert.ok(out.areas.includes('calendar'));
   assert.equal(out.results[0].key, 'sfdctext:calendar');
   assert.equal(out.results[0].confidence, 'confirmed');
-  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(out.results[0].source, SOURCE.SALESFORCE);
   assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL), 'same-text labels are partial and hidden');
   assert.ok(!out.results.some((r) => r.key.startsWith('qa:')), 'the global action is partial and hidden');
 });

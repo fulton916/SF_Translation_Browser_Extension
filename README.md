@@ -81,11 +81,11 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
 | Record data: Product / Product Category Name and Description, plus enabled custom fields | **Data Translation**: the record's Translations tab (an admin adds it in Lightning App Builder) | Yes, on record pages; says how to enable it if off |
 | Record data in an org-built translation object (e.g. `Demo_Translations__c`) | That object's related list on the record | Yes: any custom child object with "Translat" in its name |
-| Standard button (Edit, Delete) | Not translatable (Salesforce translates it) | Flagged |
+| Standard button (Edit, Delete) | Owned by Salesforce (Salesforce translates it) | Flagged |
 | Text typed into a custom LWC/Aura or Lightning App Builder | Not translatable until moved into a Custom Label | Flagged |
 | Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → not translatable | Read from the FlexiPage for the clicked section, list header or tab. A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field |
 | Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), auto-number (Salesforce), a value missing from the picklist, or currency name (Salesforce). Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel) |
-| Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart, Calendar page (New Event, Today, day headers, My Calendars), global header (search, reminders) | Not translatable (Salesforce translates it) | Flagged from the page area |
+| Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart, Calendar page (New Event, Today, day headers, My Calendars), global header (search, reminders) | Owned by Salesforce (Salesforce translates it) | Flagged from the page area |
 
 Language rule: if you are viewing Salesforce in the org default language, the text is the
 **master label**. Change it in Object Manager (or the label itself). Translations go into the
