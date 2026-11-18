@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { locate, pathsForRecord, buildGotoUrl, renameFieldCandidates, contextObjects, SOURCE } from '../src/locator.js';
+import { loadValueSet } from '../src/sfApi.js';
 
 const lbl = (Id, Name, Value, NamespacePrefix = null) => ({ Id, Name, MasterLabel: Name, NamespacePrefix, Value, Language: 'en_US' });
 
@@ -214,4 +215,67 @@ test('SB-05: the Closed chevron is Salesforce path text; same-word labels, field
   assert.equal(rv[0].key, 'picklist:Opportunity.StageName.Closed');
   assert.equal(rv[0].confidence, 'confirmed');
   assert.ok(!rv.some((r) => r.key === 'sfdctext:pathClosed'));
+});
+
+// ---------- SB-06 / SB-09: inactive values and values that are not in the picklist ----------
+
+const contactTeam = {
+  name: 'Contact', label: 'Contact', labelPlural: 'Contacts', custom: false, recordTypeInfos: [], quickActions: [],
+  fields: [
+    { name: 'Demo_Team__c', label: 'Demo Team', custom: true, type: 'picklist', picklistValues: [{ label: 'Example Unit North', value: 'EX_NORTH', active: true }] },
+    { name: 'LeadSource', label: 'Lead Source', custom: false, type: 'picklist', picklistValues: [{ label: 'Web', value: 'Web', active: true }] },
+    { name: 'Demo_Colors__c', label: 'Demo Colors', custom: true, type: 'multipicklist', picklistValues: [{ label: 'Blue', value: 'Blue', active: true }] },
+  ],
+};
+const teamOrg = {
+  ...baseOrg,
+  valueSets: {
+    'Contact.Demo_Team__c': {
+      name: null,
+      values: [{ value: 'EX_NORTH', label: 'Example Unit North', active: true }, { value: 'EX_WEST', label: 'Example Unit WEST', active: false }],
+    },
+  },
+};
+const contactField = (name, fieldPart = 'value') => ({ selectionNames: [`sfdc:RecordField.Contact.${name}`], fieldPart });
+
+test('SB-06: an inactive picklist value on a record → TW Picklist Value, marked inactive, confirmed', () => {
+  const out = locate({ text: 'Example Unit WEST', org: teamOrg, describes: [contactTeam], hints: contactField('Demo_Team__c') });
+  const r = out.results[0];
+  assert.equal(r.key, 'picklist:Contact.Demo_Team__c.EX_WEST');
+  assert.equal(r.confidence, 'confirmed');
+  assert.ok(r.notes.includes('This value is inactive.'));
+  assert.ok(r.steps.includes('Setup Component: Picklist Value'));
+  assert.ok(!out.results.some((x) => x.key.startsWith('value:')));
+});
+
+test('SB-09: a value that is in no picklist list is flagged as record data', () => {
+  // Standard field, only active values known: not an active value (could still be inactive).
+  const std = locate({ text: 'Example Referral', org: teamOrg, describes: [contactTeam], hints: contactField('LeadSource') }).results[0];
+  assert.equal(std.key, 'value:Contact.LeadSource');
+  assert.equal(std.source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(std.confidence, 'exact');
+  assert.match(std.title, /^Not an active value of the picklist Contact → Lead Source/);
+  // Custom field with every value known (inactive ones too): confirmed.
+  const custom = locate({ text: 'Imported Unit', org: teamOrg, describes: [contactTeam], hints: contactField('Demo_Team__c') }).results[0];
+  assert.equal(custom.key, 'value:Contact.Demo_Team__c');
+  assert.equal(custom.confidence, 'confirmed');
+  assert.match(custom.steps[0], /not a value of this picklist/);
+  // Multi-select: unchanged, no record-data card.
+  const multi = locate({ text: 'Blue; Green', org: teamOrg, describes: [contactTeam], hints: contactField('Demo_Colors__c') }).results;
+  assert.ok(!multi.some((x) => x.key.startsWith('value:')));
+});
+
+test('SB-06: loadValueSet returns the local values of a field, inactive ones included', async () => {
+  globalThis.fetch = async (u) => {
+    const url = decodeURIComponent(u);
+    const records = /SELECT Id FROM CustomField/.test(url)
+      ? [{ Id: '00N000000000001AAA' }]
+      : [{ Metadata: { valueSet: { valueSetName: null, valueSetDefinition: { value: [
+          { fullName: 'EX_NORTH', label: 'Example Unit North', isActive: null },
+          { fullName: 'EX%20WEST', label: null, isActive: false },
+        ] } } } }];
+    return { ok: true, json: async () => ({ done: true, records }) };
+  };
+  const vs = await loadValueSet({ host: 'sandbox-test.my.salesforce.com', sid: 's' }, 'Contact', 'Demo_Team__c');
+  assert.deepEqual(vs, { name: null, values: [{ value: 'EX_NORTH', label: 'Example Unit North', active: true }, { value: 'EX WEST', label: 'EX WEST', active: false }] });
 });

@@ -575,6 +575,33 @@ function recordValueResult(d, f) {
   };
 }
 
+/**
+ * A picklist field's value on the record that matched none of its values. `allKnown`: the full value
+ * list, inactive values included, was read from the field metadata; otherwise only active values are known.
+ */
+function notInPicklistResult(d, f, allKnown) {
+  return {
+    key: `value:${d.name}.${f.name}`,
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: allKnown ? 'confirmed' : 'exact',
+    title: `${allKnown ? 'Not a value' : 'Not an active value'} of the picklist ${d.label} → ${f.label}`,
+    subtitle: 'This value is stored on the record',
+    steps: allKnown
+      ? [
+          'This value is stored on the record but is not a value of this picklist (unrestricted picklist, or imported data).',
+          'Add it as a picklist value or fix the data. It cannot be translated as-is.',
+        ]
+      : [
+          'This value is stored on the record but is not an active value of this picklist.',
+          'If it is an inactive value, translate it in Translation Workbench → Picklist Value (inactive values are listed there).',
+          'Otherwise it was saved in an unrestricted picklist or imported: add it as a picklist value or fix the data. It cannot be translated as-is.',
+        ],
+    url: SETUP.objectFields(d.name),
+    copy: `${d.name}.${f.name}`,
+    notes: [],
+  };
+}
+
 function dataOffResult(object, fieldName) {
   return {
     key: `data:${object}.${fieldName}`,
@@ -1366,8 +1393,14 @@ function addHelpIconResults(org, describes, confirmedFields, results, add) {
 function addRecordValueResults(org, d, f, results, add) {
   const key = `${d.name}.${f.name}`;
   if (results.some((r) => r.key.startsWith(`picklist:${key}.`) && r.confidence !== 'partial')) return;
-  // A picklist value that did not match (e.g. several values of a multi-select): not typed data.
-  if (/picklist/.test(f.type || '') && f.name !== 'CurrencyIsoCode') return;
+  // Several values of a multi-select do not match one value: not typed data.
+  if (f.type === 'multipicklist') return;
+  // A single-select value that is not a value of the picklist (e.g. Lead Source "Example Referral").
+  if (/picklist/.test(f.type || '') && f.name !== 'CurrencyIsoCode') {
+    add(notInPicklistResult(d, f, !!org.valueSets?.[key]?.values));
+    demoteSameTextLabels(results, 'you pointed at a value on the record, not at a label.');
+    return;
+  }
   // Data Translation is on for this field: that is the answer.
   const dt = results.find((r) => r.key === `data:${key}` && !r.off);
   if (dt) dt.confidence = 'confirmed';
@@ -1447,6 +1480,12 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
         for (const pv of f.picklistValues || []) {
           const pm = matchType(needle, pv.label);
           if (pm) add(picklistResult(org, d, f, pv, pm));
+        }
+        // Inactive values (from the field metadata; describe has active values only). Records still show them.
+        for (const v of org.valueSets?.[`${d.name}.${f.name}`]?.values || []) {
+          if (v.active || (f.picklistValues || []).some((pv) => pv.value === v.value)) continue;
+          const pm = matchType(needle, v.label);
+          if (pm) add(picklistResult(org, d, f, { label: v.label, value: v.value, active: false }, pm));
         }
       }
       for (const rt of d.recordTypeInfos || []) {

@@ -262,8 +262,24 @@ export function loadValueSet(session, objectName, fieldName) {
     );
     if (!rows[0]?.Id) return null;
     const full = await queryAll(session, `SELECT Metadata FROM CustomField WHERE Id = '${rows[0].Id}'`, { tooling: true });
-    const name = full[0]?.Metadata?.valueSet?.valueSetName;
-    if (!name || !/^[A-Za-z0-9_]+$/.test(name)) return null;
+    const meta = full[0]?.Metadata?.valueSet;
+    const name = meta?.valueSetName;
+    if (!name) {
+      // The field's own values, inactive ones included (REST describe lists active values only;
+      // a test sandbox: Contact Demo Team "AC WEST" is inactive). fullName can be URL-encoded.
+      const decode = (s) => {
+        try {
+          return decodeURIComponent(String(s ?? ''));
+        } catch {
+          return String(s ?? '');
+        }
+      };
+      const values = (meta?.valueSetDefinition?.value || [])
+        .filter((v) => v?.fullName)
+        .map((v) => ({ value: decode(v.fullName), label: v.label ?? decode(v.fullName), active: v.isActive !== false }));
+      return values.length ? { name: null, values } : null;
+    }
+    if (!/^[A-Za-z0-9_]+$/.test(name)) return null;
     const vsNs = namespaceOf(name);
     const dn = vsNs ? name.slice(vsNs.length + 2) : name;
     const gvs = await queryAll(session, `SELECT MasterLabel, NamespacePrefix FROM GlobalValueSet WHERE DeveloperName = '${dn}' LIMIT 1`, { tooling: true }).catch(() => []);
