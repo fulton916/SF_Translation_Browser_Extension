@@ -153,7 +153,8 @@ export function contextObjects(urls, hints = {}) {
   for (const url of urls.filter(Boolean)) {
     for (const re of OBJECT_URL_PATTERNS) push(re.exec(url)?.[1]);
   }
-  return out.filter((o) => o !== 'home').slice(0, 3);
+  // FeedItem (feed actions) and Global (global actions) are not the page's objects.
+  return out.filter((o) => !['home', 'FeedItem', 'Global'].includes(o)).slice(0, 3);
 }
 
 /** Turns raw tag names from the clicked element's path into named UI areas. */
@@ -627,7 +628,8 @@ function recordTypeResult(org, d, rt, confidence) {
 
 function quickActionResult(org, object, objectLabel, qa, confidence) {
   return {
-    key: `qa:${qa.name}`,
+    // A global action is "Global.NewContact" in page metadata and "NewContact" in the describe: one key (DV2-10).
+    key: `qa:${String(qa.name || '').replace(/^Global\./, '')}`,
     confidence,
     title: `Quick action ${qa.name}`,
     subtitle: qa.label ? `"${qa.label}"` : '',
@@ -918,8 +920,33 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
         copy: sn.name,
         notes: [],
       });
+    } else if (sn.kind === 'QuickAction' && sn.object === 'FeedItem') {
+      // Salesforce's own feed actions (DV2: FeedItem.ContentNote "New Note"; also TextPost, LinkPost,
+      // PollPost, QuestionPost). QuickActionDefinition has no row for them, so TW → Action does not list them.
+      out.push({
+        key: `stdaction:${sn.object}.${sn.name}`,
+        source: SOURCE.NOT_TRANSLATABLE,
+        confidence: 'confirmed',
+        title: `Salesforce standard action ${sn.object}.${sn.name}`,
+        subtitle: 'Found in page metadata',
+        steps: [
+          'Salesforce names this standard feed action and translates its label itself.',
+          'Translation Workbench → Action does not list it. To show different text, use a custom quick action instead, then translate that.',
+        ],
+        url: null,
+        copy: `${sn.object}.${sn.name}`,
+        notes: [],
+      });
     } else if (sn.kind === 'QuickAction') {
-      out.push(quickActionResult(org, sn.object || 'Global', sn.object ? objLabel(sn.object) : 'Global', { name: sn.object ? `${sn.object}.${sn.name}` : sn.name, label: text }, 'confirmed'));
+      const name = sn.object ? `${sn.object}.${sn.name}` : sn.name;
+      const r = quickActionResult(org, sn.object || 'Global', sn.object ? objLabel(sn.object) : 'Global', { name, label: text }, 'confirmed');
+      // An object action missing from that object's loaded action list is not proven to be in TW → Action.
+      const d = describes.find((x) => x.name === sn.object);
+      if (sn.object !== 'Global' && d?.quickActions?.length && !d.quickActions.some((q) => q.name === name)) {
+        r.confidence = 'exact';
+        r.notes = [`${name} is not in the ${d.label} action list, so it may be a Salesforce standard action.`, ...r.notes];
+      }
+      out.push(r);
     }
   }
 
@@ -1459,8 +1486,8 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
 
   for (const r of hintResults(org, hints, describes, areas, String(text || '').trim(), pageHandled)) {
     const existing = results.find((x) => x.key === r.key);
-    if (existing) existing.confidence = 'confirmed';
-    else add(r);
+    if (!existing) add(r);
+    else if (CONFIDENCE_RANK[r.confidence] < CONFIDENCE_RANK[existing.confidence]) existing.confidence = r.confidence;
   }
 
   // Boost matches confirmed by the clicked element (e.g. sfdc:RecordField.Account.Industry)
