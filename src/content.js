@@ -125,6 +125,9 @@
         const v = el.getAttribute(a);
         if (!v) continue;
         if (a === 'data-target-selection-name' && v.startsWith('sfdc:')) hints.selectionNames.push(v);
+        // Publisher tabs carry no sfdc: prefix (R-21: "Post" is FeedItem.TextPostTab): the feed action.
+        const feedTab = a === 'data-target-selection-name' && /^FeedItem\.(\w+?)Tab$/.exec(v);
+        if (feedTab) hints.selectionNames.push(`sfdc:QuickAction.FeedItem.${feedTab[1]}`);
         if (a === 'object-api-name') hints.objectApiNames.push(v);
         if (!(a in hints.attrs)) hints.attrs[a] = v.slice(0, 200);
       }

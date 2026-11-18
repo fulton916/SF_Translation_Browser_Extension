@@ -1642,6 +1642,8 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
         if (!mt) continue;
         // Salesforce's standard global actions are not listed in TW → Action (SB-10 review).
         if (global && isStandardGlobalAction(qa.name)) add(standardActionResult('Global', String(qa.name).replace(/^Global\./, ''), mt, qa.label));
+        // Feed actions in the describe (Contact: FeedItem.TextPost, ContentNote...): Salesforce's own (SB-04, R-20).
+        else if (String(qa.name).startsWith('FeedItem.')) add(standardActionResult('FeedItem', String(qa.name).slice(9), mt, qa.label));
         // TW → Action has an Object option "Global" (value Global) for these.
         else add(quickActionResult(org, global ? 'Global' : d.name, global ? 'Global' : d.label, qa, mt));
       }
