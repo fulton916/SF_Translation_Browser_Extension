@@ -2,7 +2,7 @@
 // made-up names and Ids.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { locate, pathsForRecord, buildGotoUrl, renameFieldCandidates, SOURCE } from '../src/locator.js';
+import { locate, pathsForRecord, buildGotoUrl, renameFieldCandidates, contextObjects, SOURCE } from '../src/locator.js';
 
 const lbl = (Id, Name, Value, NamespacePrefix = null) => ({ Id, Name, MasterLabel: Name, NamespacePrefix, Value, Language: 'en_US' });
 
@@ -150,4 +150,42 @@ test('SB-03: a highlights panel value is record data of that field', () => {
   const out = locate({ text: 'A-100200', org: hlOrg, describes: [hlAccount], hints: hlHints('value', 'Account Number'), record: hlRecord });
   assert.equal(out.results[0].key, 'value:Account.AccountNumber');
   assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+});
+
+// ---------- SB-04 / SB-10: quick actions from page metadata ----------
+
+const contact = {
+  name: 'Contact', label: 'Contact', labelPlural: 'Contacts', custom: false, recordTypeInfos: [], fields: [],
+  quickActions: [
+    { label: 'New Contact', name: 'NewContact', type: 'Create' },
+    { label: 'Log a Visit', name: 'Contact.Demo_Log_Visit', type: 'Create' },
+  ],
+};
+
+test('SB-04: a FeedItem action (New Note) is a Salesforce standard action, not a TW Action', () => {
+  const hints = { selectionNames: ['sfdc:QuickAction.FeedItem.ContentNote'], objectApiNames: ['Contact'] };
+  assert.deepEqual(contextObjects([], hints), ['Contact']);
+  const out = locate({ text: 'New Note', org: baseOrg, describes: [contact], hints });
+  assert.equal(out.results[0].key, 'stdaction:FeedItem.ContentNote');
+  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.ok(!out.results.some((r) => r.key.startsWith('qa:')));
+  assert.deepEqual(contextObjects([], { selectionNames: ['sfdc:QuickAction.Global.NewContact'] }), []);
+});
+
+test('SB-04: an object action missing from the loaded action list is not confirmed', () => {
+  const out = locate({ text: 'Send Demo Note', org: baseOrg, describes: [contact], hints: { selectionNames: ['sfdc:QuickAction.Contact.Demo_Send_Note'] } });
+  const r = out.results.find((x) => x.key === 'qa:Contact.Demo_Send_Note');
+  assert.equal(r.confidence, 'exact');
+  const listed = locate({ text: 'Log a Visit', org: baseOrg, describes: [contact], hints: { selectionNames: ['sfdc:QuickAction.Contact.Demo_Log_Visit'] } });
+  assert.equal(listed.results[0].key, 'qa:Contact.Demo_Log_Visit');
+  assert.equal(listed.results[0].confidence, 'confirmed');
+});
+
+test('SB-10: a global action shows once (Global.NewContact and NewContact are the same action)', () => {
+  const out = locate({ text: 'New Contact', org: baseOrg, describes: [contact], hints: { selectionNames: ['sfdc:QuickAction.Global.NewContact'] } });
+  const qas = out.results.filter((r) => r.key.startsWith('qa:'));
+  assert.equal(qas.length, 1);
+  assert.equal(qas[0].confidence, 'confirmed');
+  assert.equal(qas[0].goto.object, 'Global');
 });
