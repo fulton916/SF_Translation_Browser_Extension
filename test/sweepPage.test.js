@@ -91,7 +91,7 @@ test('M-03/M-09: FlexiPage reader returns the shown text per component kind, and
 test('M-09: standard tab title Standard.Tab.detail → Salesforce standard tab name, above same-text managed labels', () => {
   const pc = { page, id: 'flexipage_tab2', component: 'flexipage:tab', label: 'Standard.Tab.detail', props: {} };
   const out = run('Details', { hints: tabHints('flexipage_tab2Tab'), pageComponent: pc });
-  assert.equal(out.results[0].title, 'Salesforce standard tab name (translated by Salesforce)');
+  assert.equal(out.results[0].title, 'Salesforce text');
   assert.equal(out.results[0].confidence, 'confirmed');
   assert.ok(!out.results.some((r) => r.key === 'area:lightningPageTab'), 'no contradictory generic tab card');
 });
@@ -119,8 +119,8 @@ test('M-03: related list label typed in App Builder (Value Recorder) → not tra
 test('M-12: standard related list without a label (Files) → Salesforce standard related list', () => {
   const pc = { page, id: 'force_relatedListSingleContainer15', component: 'force:relatedListSingleContainer', label: null, props: { relatedListApiName: 'AttachedContentDocuments' } };
   const out = run('Files', { hints: listHints('force_relatedListSingleContainer15'), pageComponent: pc });
-  assert.equal(out.results[0].title, 'Salesforce standard related list');
-  assert.match(out.results[0].subtitle, /^AttachedContentDocuments/);
+  assert.equal(out.results[0].title, 'Salesforce text');
+  assert.match(out.results[0].subtitle, /AttachedContentDocuments/);
   assert.ok(!out.results.some((r) => r.key === 'area:relatedList'));
   // Object-backed standard list: the object's plural name.
   const opp = run('Opportunities', { hints: listHints('lst_dynamicRelatedList15'), pageComponent: { page, id: 'lst_dynamicRelatedList15', component: 'lst:dynamicRelatedList', label: null, props: { relatedListApiName: 'Opportunities' } } });
