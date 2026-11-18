@@ -63,13 +63,13 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Custom object name | **Rename Tabs and Labels** → Custom Tabs (master label: Object Manager) | Yes |
 | Standard field label | **Rename Tabs and Labels** → object → Edit → Next (step 2) | Yes (current object) |
 | Standard tab (Chatter and others TabDefinition lists) | **Rename Tabs and Labels** | Yes |
-| Nav bar Home tab | Salesforce text, not translatable, unless TabDefinition lists `standard-home` (then **Rename Tabs and Labels**) | From page metadata (nav item `data-id="home"`) |
+| Nav bar standard tab with no object/tab name match (Home, Calendar) | Salesforce text, not translatable, unless TabDefinition lists it with that name (then **Rename Tabs and Labels**) | From page metadata (`sfdc:TabDefinition.standard-<X>`, nav item `data-id="home"`) |
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
 | Standard field help text | **Translation Workbench** → Standard Field Help | Yes (current object) |
 | Picklist value | **Translation Workbench** → Picklist Value, or → Global Value Set (tree: value set label → values) when the field uses one | Yes (current object). The value set is read from Tooling `CustomField.Metadata` for matching custom picklists |
 | Path step chevron | The path field's picklist value (above); the generic last "Closed" step is Salesforce text | Confirmed for the active path of the record's record type (read from the record) |
 | Record type | **Translation Workbench** → Record Type | Yes (current object) |
-| Quick action | **Translation Workbench** → Action; feed actions (`FeedItem.*`, e.g. New Note) are Salesforce text | Yes (current object) |
+| Quick action | **Translation Workbench** → Action; feed actions (`FeedItem.*`, e.g. New Note, Post) and standard global actions (NewTask, NewContact, NewCase, NewEvent, LogACall…) are Salesforce text: TW → Action does not list them | Yes (current object) |
 | Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects) |
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
@@ -85,7 +85,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Text typed into a custom LWC/Aura or Lightning App Builder | Not translatable until moved into a Custom Label | Flagged |
 | Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → not translatable | Read from the FlexiPage for the clicked section, list header or tab. A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field |
 | Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), auto-number (Salesforce), a value missing from the picklist, or currency name (Salesforce). Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel) |
-| Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart | Not translatable (Salesforce translates it) | Flagged from the page area |
+| Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart, Calendar page (New Event, Today, day headers, My Calendars), global header (search, reminders) | Not translatable (Salesforce translates it) | Flagged from the page area |
 
 Language rule: if you are viewing Salesforce in the org default language, the text is the
 **master label**. Change it in Object Manager (or the label itself). Translations go into the
