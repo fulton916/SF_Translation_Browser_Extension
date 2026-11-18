@@ -163,6 +163,8 @@ export function detectAreas(hints = {}) {
   const has = (re) => tags.some((t) => re.test(t));
   const areas = new Set();
   if (has(/^one-app-nav-bar/)) areas.add('navTab');
+  // The app name left of the nav items (h1.appName inside one-appnav, outside one-app-nav-bar).
+  else if (has(/^one-appnav$/)) areas.add('appName');
   if (has(/layout-section$/) && !has(/layout-item$/)) areas.add('layoutSection');
   if (has(/^(flowruntime-|lightning-flow)/)) areas.add('flow');
   // A tab's own label, not anything inside its content (bug: a field section inside the
@@ -1458,6 +1460,8 @@ function addHelpIconResults(org, describes, confirmedFields, results, add) {
 function addRecordValueResults(org, d, f, results, add) {
   const key = `${d.name}.${f.name}`;
   if (results.some((r) => r.key.startsWith(`picklist:${key}.`) && r.confidence !== 'partial')) return;
+  // A record type name is metadata (TW → Record Type), not typed data.
+  if (f.name === 'RecordTypeId' && results.some((r) => r.key.startsWith(`rt:${d.name}.`) && r.confidence !== 'partial')) return;
   // Several values of a multi-select do not match one value: not typed data.
   if (f.type === 'multipicklist') return;
   // A single-select value that is not a value of the picklist (e.g. Lead Source "Example Referral").
@@ -1589,6 +1593,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
 
   // Navigation bar items are object, tab and app names, never custom labels.
   if (areas.has('navTab')) confirmNames(results, /^(object|tab|app):/, 'navigation bar items show object, tab and app names, not custom labels.');
+  if (areas.has('appName')) confirmNames(results, /^app:/, 'the app name comes from the app, not from a custom label.');
   // The Home tab (a test sandbox nav item: data-id="home", sfdc:TabDefinition.standard-home) is Salesforce's own tab:
   // not in Rename Tabs and Labels when TabDefinition does not list it.
   const homeTab = (hints.selectionNames || []).includes('sfdc:TabDefinition.standard-home') || hints.attrs?.['data-id'] === 'home';
@@ -1668,6 +1673,16 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   const aboutField = (r, cf) => r.key.endsWith(cf) || r.key.includes(cf + '.');
   for (const r of results) {
     if (r.confidence === 'exact' && confirmedFields.some((cf) => aboutField(r, cf))) r.confidence = 'confirmed';
+  }
+  // The value of the Record Type field is a record type name (e.g. "Example Accounts" under Account Record Type).
+  for (const cf of hints.fieldPart === 'label' ? [] : confirmedFields) {
+    const [o, fName] = cf.split('.');
+    if (fName !== 'RecordTypeId') continue;
+    for (const r of results) {
+      if (!r.key.startsWith(`rt:${o}.`) || r.confidence !== 'exact') continue;
+      r.confidence = 'confirmed';
+      r.notes = ["You pointed at this record's Record Type.", ...(r.notes || [])];
+    }
   }
   // Help (i) icon of a field: its help text, not the label (bug: "Help Demo Title" matched labels only).
   if (areas.has('helpIcon')) addHelpIconResults(org, describes, confirmedFields, results, add);
