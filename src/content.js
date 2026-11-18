@@ -226,9 +226,11 @@
   }
 
   function card(r) {
-    const c = el('div', `card ${r.confidence === 'confirmed' ? 'card-confirmed' : ''}`);
+    // A confirmed "not translatable" result is the right answer but has no translation location.
+    const conf = r.confidence === 'confirmed' && r.source === 'Not translatable as-is' ? 'confirmed-none' : r.confidence;
+    const c = el('div', `card card-${conf}`);
     const top = el('div', 'card-top');
-    top.append(el('span', `badge ${badgeClass(r.source)}`, r.source), el('span', `conf ${r.confidence}`, confidenceText(r.confidence)));
+    top.append(el('span', `badge ${badgeClass(r.source)}`, r.source), el('span', `conf ${conf}`, confidenceText(conf)));
     c.append(top, el('div', 'card-title', r.title));
     if (r.subtitle) c.append(el('div', 'muted', r.subtitle));
     const ol = el('ol', 'steps');
@@ -326,7 +328,7 @@
 
   function confidenceText(c) {
     // "Same text" (not "Exact match"): equal words do not prove this is where the text comes from.
-    return { confirmed: 'Confirmed Location', exact: 'Same text', partial: 'Similar text', context: 'From page area' }[c] || c;
+    return { confirmed: 'Confirmed Location', 'confirmed-none': 'Confirmed: not translatable', exact: 'Same text', partial: 'Similar text', context: 'From page area' }[c] || c;
   }
 
   function langName(code) {
@@ -466,6 +468,8 @@
       .card-confirmed { border: 2px solid #2e844a; background: #f3faf5; box-shadow: 0 0 0 3px rgba(46,132,74,.15); }
       .conf.confirmed { font-size: 12px; font-weight: 700; color: #fff; background: #2e844a; padding: 2px 8px; border-radius: 10px; }
       .conf.confirmed::before { content: '\\2713  '; }
+      .card-confirmed-none { border: 2px solid #747474; background: #f6f6f6; }
+      .conf.confirmed-none { font-size: 12px; font-weight: 700; color: #fff; background: #747474; padding: 2px 8px; border-radius: 10px; }
       .steps { margin: 6px 0 4px 18px; padding: 0; } .steps li { margin: 1px 0; }
       .notes { margin: 4px 0 0 16px; padding: 0; color: #5c5c5c; font-size: 12px; }
       .actions { display: flex; gap: 6px; margin-top: 6px; }
