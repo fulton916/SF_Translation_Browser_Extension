@@ -687,6 +687,36 @@ function quickActionResult(org, object, objectLabel, qa, confidence) {
   };
 }
 
+// Global actions Salesforce creates with every org. Translation Workbench → Action does not list them
+// (checked live, Object Global: every row is custom; none of these), and Salesforce translates their labels.
+const STANDARD_GLOBAL_ACTIONS = new Set(['NewTask', 'NewContact', 'NewCase', 'NewEvent', 'NewAccount', 'NewLead', 'NewOpportunity', 'LogACall', 'NewNote', 'NewGroup', 'SendEmail']);
+
+const isStandardGlobalAction = (name) => STANDARD_GLOBAL_ACTIONS.has(String(name || '').replace(/^Global\./, ''));
+
+/** A Salesforce standard action (global or feed) that TW → Action does not list. */
+function standardActionResult(object, name, confidence, label) {
+  const feed = object === 'FeedItem';
+  return {
+    key: `stdaction:${object}.${name}`,
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence,
+    title: `Salesforce standard ${feed ? '' : 'global '}action ${object}.${name}`,
+    subtitle: confidence === 'confirmed' ? 'Found in page metadata' : label ? `"${label}"` : '',
+    steps: feed
+      ? [
+          'Salesforce names this standard feed action and translates its label itself.',
+          'Translation Workbench → Action does not list it. To show different text, use a custom quick action instead, then translate that.',
+        ]
+      : [
+          'Salesforce standard global action; Salesforce translates its label.',
+          'Translation Workbench → Action does not list it. To show different text, create a custom global action and translate that.',
+        ],
+    url: null,
+    copy: `${object}.${name}`,
+    notes: [],
+  };
+}
+
 function validationResult(org, vr, confidence, objLabel) {
   const obj = vr.EntityDefinition?.QualifiedApiName || '';
   return {
@@ -971,20 +1001,10 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
     } else if (sn.kind === 'QuickAction' && sn.object === 'FeedItem') {
       // Salesforce's own feed actions (FeedItem.ContentNote "New Note"; also TextPost, LinkPost,
       // PollPost, QuestionPost). QuickActionDefinition has no row for them, so TW → Action does not list them.
-      out.push({
-        key: `stdaction:${sn.object}.${sn.name}`,
-        source: SOURCE.NOT_TRANSLATABLE,
-        confidence: 'confirmed',
-        title: `Salesforce standard action ${sn.object}.${sn.name}`,
-        subtitle: 'Found in page metadata',
-        steps: [
-          'Salesforce names this standard feed action and translates its label itself.',
-          'Translation Workbench → Action does not list it. To show different text, use a custom quick action instead, then translate that.',
-        ],
-        url: null,
-        copy: `${sn.object}.${sn.name}`,
-        notes: [],
-      });
+      out.push(standardActionResult('FeedItem', sn.name, 'confirmed'));
+    } else if (sn.kind === 'QuickAction' && (!sn.object || sn.object === 'Global') && isStandardGlobalAction(sn.name)) {
+      // Standard global actions (Global.NewContact, NewTask, NewCase, LogACall) are not in TW → Action.
+      out.push(standardActionResult('Global', sn.name, 'confirmed'));
     } else if (sn.kind === 'QuickAction') {
       const name = sn.object ? `${sn.object}.${sn.name}` : sn.name;
       const r = quickActionResult(org, sn.object || 'Global', sn.object ? objLabel(sn.object) : 'Global', { name, label: text }, 'confirmed');
@@ -1343,7 +1363,7 @@ function userCalendarResult() {
 function addCalendarResults(needle, areas, results, add) {
   demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.calendar.what}.`);
   for (const r of results) {
-    if (!/^(qa|object):/.test(r.key) || r.confidence === 'confirmed' || r.confidence === 'partial') continue;
+    if (!/^(qa|stdaction|object):/.test(r.key) || r.confidence === 'confirmed' || r.confidence === 'partial') continue;
     r.confidence = 'partial';
     r.notes = ['Same words only: the Calendar page buttons are Salesforce text. The "New Event" button is not the NewEvent global action.', ...(r.notes || [])];
   }
@@ -1619,8 +1639,11 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
         // Object actions are "Account.Demo_New_Case"; a name without a dot is a global action
         // (bug: Demo_Service_Task was shown as Object: Account).
         const global = !String(qa.name || '').includes('.');
+        if (!mt) continue;
+        // Salesforce's standard global actions are not listed in TW → Action (SB-10 review).
+        if (global && isStandardGlobalAction(qa.name)) add(standardActionResult('Global', String(qa.name).replace(/^Global\./, ''), mt, qa.label));
         // TW → Action has an Object option "Global" (value Global) for these.
-        if (mt) add(quickActionResult(org, global ? 'Global' : d.name, global ? 'Global' : d.label, qa, mt));
+        else add(quickActionResult(org, global ? 'Global' : d.name, global ? 'Global' : d.label, qa, mt));
       }
     }
 

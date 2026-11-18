@@ -56,7 +56,8 @@ const accountDescribe = {
     { name: 'Partner Account', developerName: 'Partner', master: false },
     { name: 'Master', developerName: 'Master', master: true },
   ],
-  quickActions: [{ label: 'Log a Call', name: 'LogACall', type: 'LogACall' }],
+  // A custom global action (standard ones like LogACall are not in TW → Action).
+  quickActions: [{ label: 'Log a Call', name: 'Example_Log_Call', type: 'LogACall' }],
 };
 
 const run = (text, extra = {}) => locate({ text, org, describes: [accountDescribe], ...extra });
