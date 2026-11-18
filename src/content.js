@@ -69,7 +69,9 @@
     // componentIds: Lightning App Builder component ids (e.g. flexipage_fieldSection6), nearest first.
     // flexipage: the record page's generated tag, which carries its developer name.
     // tabRole: 'tab' when the click was on a tab's label, 'tabpanel' when inside its content.
-    const hints = { selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null };
+    // auraClasses: data-aura-class values on the path, e.g. runtime_sales_pathassistantPathAssistantInfo
+    // (Path "Guidance for Success" is plain Aura divs, so tag names alone do not show it).
+    const hints = { selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null };
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
     for (const el of path.slice(0, 60)) {
       const tag = el.tagName.toLowerCase();
@@ -81,6 +83,7 @@
       if (tsn && /^flexipage_/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
       const aura = el.getAttribute('data-aura-class');
       if (aura && /^c[A-Z]/.test(aura)) hints.auraCustom.push(aura);
+      if (aura && hints.auraClasses.length < 20) hints.auraClasses.push(aura.split(/\s+/)[0].slice(0, 100));
       for (const a of HINT_ATTRS) {
         const v = el.getAttribute(a);
         if (!v) continue;
@@ -91,6 +94,7 @@
     }
     hints.selectionNames = [...new Set(hints.selectionNames)];
     hints.tags = [...new Set(hints.tags)];
+    hints.auraClasses = [...new Set(hints.auraClasses)];
     return { text: elementText(path), hints, url: location.href };
   }
 
@@ -616,8 +620,12 @@
       row = hits[0]?.row || null;
       if (hits.length > 1) warnings.push(`Also in: ${hits.slice(1).map((h) => h.place).join(', ')}. Each layout has its own copy, so translate each one.`);
     } else if (p.rows?.length) {
-      row = isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows);
+      row = isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows, p.rowMatch === 'richText' ? richTextMatcher(p.rows) : null);
     }
+    const shown = (r) => {
+      const t = (r.querySelector('.x-grid3-col-masterLabel, .x-tree-node-anchor')?.innerText || p.rows[0]).trim();
+      return p.rowMatch === 'richText' ? p.rowLabel || t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : t;
+    };
     if (row) {
       mark(row, false);
       const cell = row.querySelector('.x-grid3-td-translation .x-grid3-cell-inner, .x-grid3-td-translation, .x-tree-col.translation');
@@ -626,9 +634,9 @@
           cell.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
         }
       }
-      toast(`Found "${(row.querySelector('.x-grid3-col-masterLabel, .x-tree-node-anchor')?.innerText || p.rows[0]).trim()}". Type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
+      toast(`Found "${shown(row)}". Type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
     } else {
-      toast(`Filters are set. ${p.rows?.length ? `Row "${p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
+      toast(`Filters are set. ${p.rows?.length ? `Row "${p.rowLabel || p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
     }
     finish();
   }
@@ -736,14 +744,53 @@
     return hits;
   }
 
-  async function findGridRow(candidates) {
+  /**
+   * Path Step Rich Text: the master cell shows the guidance as raw HTML (in UAT2 it equals Info exactly).
+   * Fallback when the exact compare misses: compare the text without tags, entities and spaces, and
+   * accept a prefix either way (a cut-off cell, or a shortened candidate). Returns a row scorer.
+   */
+  function richTextMatcher(candidates) {
+    // Same entity rules as htmlLines() in locator.js (no innerHTML: Salesforce pages may enforce Trusted Types).
+    const ENT = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+    const decode = (s) =>
+      s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) =>
+        e[0] === '#' ? cp(/^#x/i.test(e) ? parseInt(e.slice(2), 16) : Number(e.slice(1)), m) : ENT[e.toLowerCase()] ?? m
+      );
+    const cp = (n, m) => (n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m);
+    const key = (s) =>
+      decode(String(s ?? '').replace(/<[^>]*>/g, ' ').replace(/<[^>]*$/, ' '))
+        .replace(/(\.\.\.|…)\s*$/, '')
+        .replace(/[\s\u200B-\u200D\uFEFF]+/g, '')
+        .toLowerCase();
+    const want = candidates.filter(Boolean).map(key).filter(Boolean);
+    return (row) => {
+      const c = key(row.querySelector('.x-grid3-col-masterLabel')?.innerText);
+      if (!c) return 0;
+      if (want.includes(c)) return 3;
+      if (c.length >= 12 && want.some((w) => w.startsWith(c))) return 2;
+      if (want.some((w) => w.length >= 12 && c.startsWith(w))) return 1;
+      return 0;
+    };
+  }
+
+  async function findGridRow(candidates, scorer = null) {
     const want = candidates.filter(Boolean).map(norm);
     await waitFor(() => document.querySelector('.x-grid3-row'), 10000).catch(() => null);
+    const bestBy = (rows) => {
+      let top = null;
+      let topScore = 0;
+      for (const r of rows) {
+        const s = scorer(r);
+        if (s > topScore) [top, topScore] = [r, s];
+      }
+      return top;
+    };
     for (let page = 0; page < 40; page++) {
       const rows = [...document.querySelectorAll('.x-grid3-row')];
       const hit =
         rows.find((r) => want.includes(norm(r.querySelector('.x-grid3-col-masterLabel')?.innerText))) ||
-        rows.find((r) => [...r.querySelectorAll('.x-grid3-cell-inner')].some((c) => want.includes(norm(c.innerText))));
+        rows.find((r) => [...r.querySelectorAll('.x-grid3-cell-inner')].some((c) => want.includes(norm(c.innerText)))) ||
+        (scorer && bestBy(rows));
       if (hit) return hit;
       // Workbench pager: <table id="nextBtn" class="x-btn ..."><button>. Verified in a 238-row grid (Nov 2026).
       const nextWrap = document.querySelector('#nextBtn') || document.querySelector('.x-tbar-page-next')?.closest('table');

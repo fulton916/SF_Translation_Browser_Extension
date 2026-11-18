@@ -102,6 +102,16 @@ const ORG_SOURCES = {
         tooling: true,
       }),
   },
+  // Path "Guidance for Success" (rich text HTML, one row per step) and the paths they belong to.
+  pathSteps: {
+    what: 'Path guidance',
+    load: (s) => queryAll(s, 'SELECT Id, DeveloperName, MasterLabel, Language, Info FROM PathAssistantStepInfo', { tooling: true }),
+  },
+  paths: {
+    what: 'Paths',
+    load: (s) =>
+      queryAll(s, 'SELECT Id, DeveloperName, MasterLabel, SobjectType, SobjectProcessField, RecordTypeId, IsActive FROM PathAssistant', { tooling: true }),
+  },
   userLanguage: {
     what: 'Your language',
     load: (s) => sfFetch(s, '/services/oauth2/userinfo').then((u) => u.language || null),
