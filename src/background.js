@@ -44,11 +44,19 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id || ![MENU_SELECTION, MENU_ELEMENT].includes(info.menuItemId)) return;
-  const frameId = info.frameId ?? 0;
+  findTranslation(tab, info.frameId ?? 0, info.selectionText, info.frameUrl);
+});
+
+// Alt+Shift+T in the page (content.js): same lookup as the right-click menu.
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type === 'sftl:shortcut' && sender.tab?.id) findTranslation(sender.tab, sender.frameId ?? 0, msg.selectionText, sender.url);
+});
+
+async function findTranslation(tab, frameId, selectionText, frameUrl) {
   const target = (await sendToFrame(tab.id, frameId, { type: 'sftl:getTarget' })) || {};
-  const text = (info.selectionText || target.text || '').trim();
+  const text = (selectionText || target.text || '').trim();
 
   if (!text) {
     log('warn', 'lookup', 'No text found under the right-click', { page: pathOf(tab.url) });
@@ -57,14 +65,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
   await showPanel(tab.id, { state: 'loading', text });
   try {
-    const result = await lookup({ text, hints: target.hints || {}, urls: [tab.url, info.frameUrl, target.url] });
+    const result = await lookup({ text, hints: target.hints || {}, urls: [tab.url, frameUrl, target.url] });
     logLookup(text, tab.url, target.hints, result);
     await showPanel(tab.id, { state: 'results', text, ...result });
   } catch (e) {
     log('error', 'lookup', e.message || String(e), { page: pathOf(tab.url), details: { text, hints: target.hints }, stack: e.stack });
     await showPanel(tab.id, { state: 'error', text, message: e.message || String(e) });
   }
-});
+}
 
 // ---------- "Go to translation": open the exact page, then content.js auto-fills it ----------
 
