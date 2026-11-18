@@ -281,19 +281,38 @@ test('DV2-09: a partial highlight of a real picklist value is not flagged as "no
   assert.ok(!std.some((x) => x.key.startsWith('value:')));
 });
 
-test('DV2-06: loadValueSet returns the local values of a field, inactive ones included', async () => {
+const mockValueSet = (value) => {
   globalThis.fetch = async (u) => {
     const url = decodeURIComponent(u);
     const records = /SELECT Id FROM CustomField/.test(url)
       ? [{ Id: '00N000000000001AAA' }]
-      : [{ Metadata: { valueSet: { valueSetName: null, valueSetDefinition: { value: [
-          { fullName: 'EX_NORTH', label: 'Example Unit North', isActive: null },
-          { fullName: 'EX%20EMEA', label: null, isActive: false },
-        ] } } } }];
+      : [{ Metadata: { valueSet: { valueSetName: null, valueSetDefinition: { value } } } }];
     return { ok: true, json: async () => ({ done: true, records }) };
   };
+};
+
+test('DV2-06: loadValueSet returns the local values of a field, inactive ones included (Tooling valueName)', async () => {
+  // The shape Tooling really returns (DV2 R-16/R-17): valueName, no fullName.
+  mockValueSet([
+    { color: null, default: false, description: null, isActive: null, label: 'Example Unit North', urls: null, valueName: 'EX_NORTH' },
+    { color: null, default: false, description: null, isActive: false, label: null, urls: null, valueName: 'EX%20EMEA' },
+  ]);
   const vs = await loadValueSet({ host: 'dv2-test.my.salesforce.com', sid: 's' }, 'Contact', 'Business_Unit_LST__c');
   assert.deepEqual(vs, { name: null, values: [{ value: 'EX_NORTH', label: 'Example Unit North', active: true }, { value: 'EX EMEA', label: 'EX EMEA', active: false }] });
+});
+
+test('DV2-06: loadValueSet also reads the Metadata API shape (fullName)', async () => {
+  mockValueSet([
+    { fullName: 'EX_NORTH', label: 'Example Unit North', isActive: null },
+    { fullName: 'EX%20EMEA', label: null, isActive: false },
+  ]);
+  const vs = await loadValueSet({ host: 'dv2-test-meta.my.salesforce.com', sid: 's' }, 'Contact', 'Business_Unit_LST__c');
+  assert.deepEqual(vs, { name: null, values: [{ value: 'EX_NORTH', label: 'Example Unit North', active: true }, { value: 'EX EMEA', label: 'EX EMEA', active: false }] });
+});
+
+test('DV2-06/R-18: one word of an inactive value ("EMEA") is part of the picklist, not "not a value"', () => {
+  const rs = locate({ text: 'EMEA', org: buOrg, describes: [contactBu], hints: contactField('Business_Unit_LST__c') }).results;
+  assert.ok(!rs.some((x) => x.key.startsWith('value:')));
 });
 
 // ---------- DV2-07 / DV2-08: related lists of custom lookups, and labels inside their rows ----------
