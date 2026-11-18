@@ -1163,9 +1163,10 @@ function demoteSameTextLabels(results, why) {
  * Related list with no label of its own (UAT2: Files = AttachedContentDocuments, Account Team,
  * Opportunities). A custom relationship (…__r) keeps the generic Translation Workbench card.
  */
-function standardRelatedList(results, add, pc) {
+function standardRelatedList(org, results, add, pc) {
   const api = String(pc.props?.relatedListApiName || '');
-  if (!api || /__r$/.test(api)) return false;
+  if (/__r$/.test(api)) return customRelatedList(org, results, add, pc);
+  if (!api) return false;
   // Object-backed lists (Opportunities, Contacts, Cases) show the object's plural name.
   const obj = results.find((r) => r.key.startsWith('object:') && r.confidence !== 'partial');
   if (obj) {
@@ -1191,11 +1192,37 @@ function standardRelatedList(results, add, pc) {
   return true;
 }
 
+/**
+ * Related list of a custom lookup (…__r) with no label of its own: the title is the lookup field's
+ * Related List Label on the child object. pc.child comes from background.js (parent describe
+ * childRelationships + child describe). Without it the generic card stays.
+ */
+function customRelatedList(org, results, add, pc) {
+  const c = pc.child;
+  if (!c?.childSObject || !c.field) return false;
+  const objectLabel = c.objectLabel || (org.objects || []).find((o) => o.name === c.childSObject)?.label || c.childSObject;
+  const fieldLabel = c.fieldLabel || c.field;
+  add({
+    key: `rellist:${c.childSObject}.${c.field}`,
+    confidence: 'confirmed',
+    title: `Related list label of ${c.childSObject}.${c.field}`,
+    subtitle: `${pc.props.relatedListApiName} on the Lightning page ${pc.page}`,
+    ...workbench(org, { component: 'Custom Field', object: c.childSObject, objectLabel, aspect: 'Related List Label', row: fieldLabel, rows: [fieldLabel, c.field], pkg: namespaceOf(c.field) }),
+    copy: `${c.childSObject}.${c.field}`,
+    notes: [
+      `The title comes from the lookup field ${fieldLabel} on ${objectLabel}: its Related List Label.`,
+      ...(isDefaultLanguage(org) ? [`Master text: Object Manager → ${objectLabel} → Fields → ${fieldLabel} → Edit → Related List Label.`] : []),
+    ],
+  });
+  demoteSameTextLabels(results, 'this related list title comes from a lookup field, not from a custom label.');
+  return true;
+}
+
 /** Returns true when the component's text was explained (so generic area cards are not needed). */
 function applyPageComponent(org, results, add, pc) {
   const text = String(pc.label ?? '').trim();
   const kind = pcKind(pc);
-  if (!text && RELATED_LIST_COMPONENTS.has(pc.component)) return standardRelatedList(results, add, pc);
+  if (!text && RELATED_LIST_COMPONENTS.has(pc.component)) return standardRelatedList(org, results, add, pc);
   // No text set: the generic cards still apply.
   if (!text && pc.component !== 'flexipage:fieldSection') return false;
   const token = SFDC_TOKEN.exec(text);
@@ -1408,7 +1435,7 @@ function addRecordValueResults(org, d, f, results, add) {
   demoteSameTextLabels(results, 'you pointed at a value on the record, not at a label.');
 }
 
-export function locate({ text, hints = {}, org = {}, describes = [], dataTranslations = [], record = null, pageUrls = [], pageComponent = null }) {
+export function locate({ text, hints = {}, org = {}, describes = [], dataTranslations = [], record = null, pageUrls = [], pageComponent = null, listObject = null }) {
   const needle = normalize(text);
   const results = [];
   const add = (r) => r && results.push(r);
@@ -1526,6 +1553,18 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   if (areas.has('navTab')) confirmNames(results, /^(object|tab|app):/, 'navigation bar items show object, tab and app names, not custom labels.');
   // The object name above the record name in the highlights panel (UAT2: "Account" ranked below 3 labels).
   if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');
+
+  // A field label in a related list row ("Stage:" in an Opportunities tile): the child object's field.
+  const onRowLabel = hints.fieldPart === 'label' || (hints.tags || []).includes('dt');
+  if (areas.has('relatedListRow') && listObject && onRowLabel) {
+    const hits = results.filter((r) => r.key.startsWith(`field:${listObject}.`) && r.confidence === 'exact');
+    if (hits.length === 1) {
+      hits[0].confidence = 'confirmed';
+      hits[0].notes = [`A field shown in the ${listObject} related list rows.`, ...(hits[0].notes || [])];
+      demoteSameTextLabels(results, 'related list rows show field labels, not custom labels.');
+      for (const r of results) if (r.key.startsWith('vr:')) r.confidence = 'partial';
+    }
+  }
 
   // Salesforce's own text in standard record page components.
   addStandardTextResults(org, needle, areas, describes, results, add, record);

@@ -279,3 +279,43 @@ test('DV2-06: loadValueSet returns the local values of a field, inactive ones in
   const vs = await loadValueSet({ host: 'dv2-test.my.salesforce.com', sid: 's' }, 'Contact', 'Business_Unit_LST__c');
   assert.deepEqual(vs, { name: null, values: [{ value: 'EX_NORTH', label: 'Example Unit North', active: true }, { value: 'EX EMEA', label: 'EX EMEA', active: false }] });
 });
+
+// ---------- DV2-07 / DV2-08: related lists of custom lookups, and labels inside their rows ----------
+
+const FLEXI = 'forcegenerated-flexipage_example_record_page_opportunity__view_js___lmt___1';
+const listHints = (id, header) => ({
+  tags: header ? ['span', 'a', 'h2', 'div', 'lst-related-list-view-manager', 'lst-dynamic-related-list', 'flexipage-component2', FLEXI] : ['dt', 'article', 'lst-related-preview-card', 'lst-related-list-view-manager', 'lst-dynamic-related-list', 'flexipage-component2', FLEXI],
+  listHeader: header, componentIds: [id], flexipage: FLEXI,
+});
+
+test('DV2-07: a custom lookup related list title → TW Custom Field, Related List Label of the child field', () => {
+  const org = { ...baseOrg, objects: [...baseOrg.objects, { name: 'SalesAgreement', label: 'Sales Agreement', labelPlural: 'Sales Agreements', custom: false }], tabs: [...baseOrg.tabs, { Name: 'standard-SalesAgreement', Label: 'Sales Agreements', IsCustom: false, SobjectName: 'SalesAgreement' }] };
+  const pc = {
+    page: 'Example Record Page', id: 'lst_dynamicRelatedList3', component: 'lst:dynamicRelatedList', label: null,
+    props: { relatedListApiName: 'SalesAgreements__r' },
+    child: { childSObject: 'SalesAgreement', field: 'Opportunity_ID_LUR__c', relationshipName: 'SalesAgreements__r', fieldLabel: 'Opportunity ID', objectLabel: 'Sales Agreement' },
+  };
+  const out = locate({ text: 'Sales Agreements (0)', org, describes: [opp], hints: listHints('lst_dynamicRelatedList3', true), pageComponent: pc });
+  const r = out.results[0];
+  assert.equal(r.key, 'rellist:SalesAgreement.Opportunity_ID_LUR__c');
+  assert.equal(r.confidence, 'confirmed');
+  assert.ok(r.steps.includes('Aspect: Related List Label'));
+  assert.equal(r.goto.object, 'SalesAgreement');
+  assert.equal(r.goto.aspect, 'relationshiplabel');
+  assert.deepEqual(r.goto.rows, ['Opportunity ID', 'Opportunity_ID_LUR__c']);
+  assert.ok(!out.results.some((x) => x.key === 'area:relatedList'));
+  assert.equal(out.results.find((x) => x.key === 'object:SalesAgreement').confidence, 'exact');
+  // Without the child relationship (older background): the generic card as before.
+  const old = locate({ text: 'Sales Agreements (0)', org, describes: [opp], hints: listHints('lst_dynamicRelatedList3', true), pageComponent: { ...pc, child: undefined } });
+  assert.ok(old.results.some((x) => x.key === 'area:relatedList'));
+});
+
+test('DV2-08: "Stage:" in an Opportunities related list row on an Account → Opportunity.StageName', () => {
+  const account = { name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [], fields: [] };
+  const org = { ...baseOrg, validationRules: [{ Id: '03d000000000001', ValidationName: 'Example_Stage_Rule', ErrorMessage: 'Stage cannot go back once the opportunity is won', EntityDefinition: { QualifiedApiName: 'Opportunity' } }] };
+  const out = locate({ text: 'Stage:', org, describes: [account, opp], hints: listHints('lst_dynamicRelatedList15', false), listObject: 'Opportunity', record: { object: 'Account', id: '001000000000001AAA' } });
+  assert.ok(out.areas.includes('relatedListRow'));
+  assert.equal(out.results[0].key, 'field:Opportunity.StageName');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.ok(!out.results.some((r) => r.key.startsWith('vr:')));
+});
