@@ -597,7 +597,9 @@
       // Step 1 inputs (checked live, Nov 2026): val___0 Singular, val___1 Plural. The page header can have its
       // own text inputs (search), so never take "the first input".
       const byLabel = (re) => [...document.querySelectorAll('input[type=text]')].find((i) => re.test(document.querySelector(`label[for="${i.id}"]`)?.innerText || ''));
-      const input = p.plural ? document.getElementById('val___1') || byLabel(/plural/i) : document.getElementById('val___0') || byLabel(/singular/i);
+      // German (checked live, a3-13): one input per case, val___0-n / val___1-n (nominative) / -a / -g / -d.
+      const byId = (i) => document.getElementById(`val___${i}`) || document.getElementById(`val___${i}-n`);
+      const input = p.plural ? byId(1) || byLabel(/plural/i) : byId(0) || byLabel(/singular/i);
       if (input) {
         mark(input.closest('tr') || input, false);
         focusInput(input);
