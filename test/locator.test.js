@@ -271,7 +271,7 @@ test('buildGotoUrl: standard field → Rename edit page + Step 2 auto-fill', () 
     decodeURIComponent(b.path),
     '/lightning/setup/RenameTab/page?address=/_ui/common/i18n/RenameTabStageManager?id=Account&l=de&setupid=RenameTab'
   );
-  assert.deepEqual(b.autofill, { page: 'renameStage', lang: 'de', fieldLabel: 'Industry', fieldName: 'Industry' });
+  assert.deepEqual(b.autofill, { page: 'renameStage', lang: 'de', fieldLabel: 'Industry', fieldName: 'Industry', candidates: ['Industry'] });
 });
 
 test('buildGotoUrl: no language chosen → rename uses org default', () => {

@@ -62,11 +62,12 @@ export function buildGotoUrl(goto, lang, orgDefault) {
       return {
         path: DEEP.renameEdit(goto.object, l),
         autofill: goto.fieldLabel
-          ? { page: 'renameStage', lang: l, fieldLabel: goto.fieldLabel, fieldName: goto.fieldName || null }
+          ? { page: 'renameStage', lang: l, fieldLabel: goto.fieldLabel, fieldName: goto.fieldName || null, candidates: renameFieldCandidates(goto.fieldLabel, goto.fieldName) }
           : { page: 'renameStage', lang: l, fieldLabel: null, plural: !!goto.plural },
       };
     }
-    return { path: SETUP.renameTabs, autofill: { page: 'renameHome', lang: l, tabLabel: goto.tabLabel, fieldLabel: goto.fieldLabel || null, fieldName: goto.fieldName || null, plural: !!goto.plural } };
+    const candidates = goto.fieldLabel ? { candidates: renameFieldCandidates(goto.fieldLabel, goto.fieldName) } : {};
+    return { path: SETUP.renameTabs, autofill: { page: 'renameHome', lang: l, tabLabel: goto.tabLabel, fieldLabel: goto.fieldLabel || null, fieldName: goto.fieldName || null, plural: !!goto.plural, ...candidates } };
   }
   if (goto.page === 'workbench' || goto.page === 'override') {
     return { path: goto.page === 'override' ? SETUP.override : SETUP.workbench, autofill: { ...goto, page: 'workbench', lang: lang || null } };
@@ -75,6 +76,23 @@ export function buildGotoUrl(goto, lang, orgDefault) {
     return { path: SETUP.record(goto.object, goto.recordId), autofill: { page: 'dataTranslation', lang: lang || null } };
   }
   return null;
+}
+
+/**
+ * Texts to look for in the first column of Rename Tabs Step 2, best first. That column shows the
+ * Salesforce master label, which differs from a renamed describe label (DV2: Account.BillingAddress
+ * is "Billing Address/Account Address" in the describe, "Billing Address" on Step 2).
+ */
+export function renameFieldCandidates(fieldLabel, fieldName) {
+  const out = [fieldLabel, fieldName];
+  for (const part of String(fieldLabel || '').split('/')) out.push(part);
+  // API name as words: BillingAddress → Billing Address, AccountId → Account Id → Account.
+  const words = String(fieldName || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+  out.push(words);
+  if (/ Id$/.test(words)) out.push(words.slice(0, -3));
+  return [...new Set(out.map((s) => String(s || '').trim()).filter(Boolean))];
 }
 
 // ---------- text matching ----------
