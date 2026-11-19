@@ -1,10 +1,11 @@
 {
   "name": "sf-translation-locator",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "description": "Chrome extension: find where a Salesforce label is translated.",
   "scripts": {
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "dev": "node dev/reload-server.mjs"
   }
 }

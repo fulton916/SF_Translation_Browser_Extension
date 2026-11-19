@@ -31,7 +31,48 @@ const MENU_SELECTION = 'sftl-selection';
 const MENU_ELEMENT = 'sftl-element';
 const SF_PAGES = ['https://*.force.com/*', 'https://*.my.salesforce.com/*', 'https://*.my.salesforce-setup.com/*'];
 
+// ---------- dev only: reload after a code change (`npm run dev`, see dev/reload-server.mjs) ----------
+// Off unless the dev server wrote dev.json next to manifest.json: that file is gitignored and not in
+// the zip, so a normal install never polls anything.
+const DEV_ALARM = 'sftl-dev-reload';
+async function devVersion() {
+  try {
+    const { port } = await (await fetch(chrome.runtime.getURL('dev.json'), { cache: 'no-store' })).json();
+    return (await (await fetch(`http://127.0.0.1:${port}/__version`, { cache: 'no-store' })).json()).v || null;
+  } catch {
+    return null;
+  }
+}
+async function devCheck() {
+  const v = await devVersion();
+  if (!v) return chrome.alarms.clear(DEV_ALARM);
+  const { devV } = await chrome.storage.session.get('devV');
+  if (!devV) return chrome.storage.session.set({ devV: v });
+  if (devV !== v) {
+    await log('info', 'dev', 'Code changed on disk: reloading the extension');
+    chrome.runtime.reload();
+  }
+}
+// Alarms survive the worker going idle (a timer would not). Minimum period is 30 s.
+devVersion().then(async (v) => {
+  if (v && !(await chrome.alarms.get(DEV_ALARM))) chrome.alarms.create(DEV_ALARM, { periodInMinutes: 0.5 });
+});
+chrome.alarms.onAlarm.addListener((a) => a.name === DEV_ALARM && devCheck());
+// After a reload: remember the loaded version, and give open Salesforce tabs the new content script
+// without refreshing them (a refresh could lose what someone typed). content.js skips a live copy.
+async function devAfterReload() {
+  const v = await devVersion();
+  if (!v) return;
+  await chrome.storage.session.set({ devV: v });
+  for (const t of await chrome.tabs.query({ url: SF_PAGES })) {
+    chrome.scripting
+      .executeScript({ target: { tabId: t.id, allFrames: true }, files: ['src/pointerTarget.js', 'src/content.js'] })
+      .catch(() => {});
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
+  devAfterReload();
   // Callbacks read lastError so a failure is logged, not listed as "Unchecked runtime.lastError".
   const checked = (what) => () => {
     const err = chrome.runtime.lastError;
