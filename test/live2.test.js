@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { locate, SOURCE } from '../src/locator.js';
+import { locate, matchType, SOURCE } from '../src/locator.js';
 import { loadValueSet } from '../src/sfApi.js';
 
 const lbl = (Id, Name, Value, NamespacePrefix = null) => ({ Id, Name, MasterLabel: Name, NamespacePrefix, Value, Language: 'en_US' });
@@ -116,4 +116,33 @@ test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed ac
   // Text in the feed that matched nothing else still gets the page-area card.
   const other = locate({ text: 'updated this record.', org, describes: [contact], hints: { sfComponents: ['forceChatter_exampleFeedPublisher'] } }).results;
   assert.equal(other[0].key, 'sfdctext:feed');
+});
+
+// ---------- ISS-04: part of a picklist value highlighted ----------
+
+test('ISS-04: highlighting "ANZ" in the value "EX ANZ" puts that value card first, ahead of similar labels', () => {
+  const account = {
+    name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
+    fields: [{ name: 'Business_Unit_LST__c', label: 'Business Unit', custom: true, type: 'picklist', picklistValues: [{ label: 'EX NORTH', value: 'EX NORTH', active: true }] }],
+  };
+  const org = {
+    ...baseOrg,
+    customLabels: Array.from({ length: 30 }, (_, i) => lbl(`101D0000000${String(100 + i)}`, `Example_${i}`, `Example ganz text ${i}`)),
+    valueSets: { 'Account.Business_Unit_LST__c': { name: null, values: [{ value: 'EX NORTH', label: 'EX NORTH', active: true }, { value: 'EX ANZ', label: 'EX ANZ', active: false }] } },
+  };
+  const out = locate({ text: 'ANZ', org, describes: [account], hints: { selectionNames: ['sfdc:RecordField.Account.Business_Unit_LST__c'], fieldPart: 'value' } });
+  const r = out.results[0];
+  assert.equal(r.key, 'picklist:Account.Business_Unit_LST__c.EX ANZ');
+  assert.equal(r.confidence, 'context');
+  assert.equal(r.notes[0], 'You highlighted part of this value.');
+  assert.ok(!out.results.some((x) => x.source === SOURCE.CUSTOM_LABEL), 'similar labels stay behind "Show more"');
+  assert.ok(!out.results.some((x) => x.key.startsWith('value:')));
+});
+
+test('ISS-04: a highlight under 5 characters matches whole words only', () => {
+  assert.equal(matchType('anz', 'EX ANZ'), 'partial');
+  assert.equal(matchType('anz', 'Ganz anz'), 'partial');
+  assert.equal(matchType('anz', 'Example ganz text'), null);
+  assert.equal(matchType('emea', 'EX EMEA (old)'), 'partial');
+  assert.equal(matchType('portal', 'Welcome to the portals'), 'partial', '5+ characters still match inside words');
 });

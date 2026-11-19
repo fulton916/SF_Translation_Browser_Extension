@@ -116,18 +116,21 @@ export function matchType(needle, candidate) {
   const c = normalize(candidate);
   if (!c || !needle) return null;
   if (c === needle) return 'exact';
-  if (needle.length >= 3 && c.includes(needle)) return 'partial';
+  // A short highlight ("ANZ") only matches whole words: inside other words ("ganz") it is noise (DV2 R-02).
+  if (needle.length >= 3 && (needle.length >= 5 ? c.includes(needle) : wordContains(c, needle))) return 'partial';
   // Selected text contains the candidate, e.g. "Edit Industry" contains "Industry".
   if (c.length >= 4 && c.length / needle.length >= 0.4 && wordContains(needle, c)) return 'partial';
   return null;
 }
 
 function wordContains(haystack, word) {
-  const i = haystack.indexOf(word);
-  if (i < 0) return false;
-  const before = i === 0 ? ' ' : haystack[i - 1];
-  const after = i + word.length >= haystack.length ? ' ' : haystack[i + word.length];
-  return !/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after);
+  // Every occurrence: "ganz anz" holds the word "anz" at its second one.
+  for (let i = haystack.indexOf(word); i >= 0; i = haystack.indexOf(word, i + 1)) {
+    const before = i === 0 ? ' ' : haystack[i - 1];
+    const after = i + word.length >= haystack.length ? ' ' : haystack[i + word.length];
+    if (!/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after)) return true;
+  }
+  return false;
 }
 
 // ---------- page context ----------
@@ -1780,6 +1783,21 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       if (!r.key.startsWith('picklist:') || confirmedFields.some((cf) => r.key.startsWith(`picklist:${cf}.`)) || ['partial', 'confirmed'].includes(r.confidence)) continue;
       r.confidence = 'partial';
       r.notes = [`Same words only: you pointed at the ${shown} field.`, ...(r.notes || [])];
+    }
+    // Part of this field's value highlighted (DV2 R-02: "ANZ" of "EX ANZ"): its value card is the answer,
+    // not one of hundreds of similar texts.
+    // Only values that contain the highlighted text ("USD - U.S. Dollar" contains a value: not this case).
+    const prefix = `picklist:${confirmedFields[0]}.`;
+    const fieldDesc = describes.find((x) => x.name === o)?.fields?.find((x) => x.name === fName);
+    const values = [...(fieldDesc?.picklistValues || []), ...(org.valueSets?.[confirmedFields[0]]?.values || [])];
+    const own = (r) => r.key.startsWith(prefix);
+    const holdsNeedle = (r) => values.some((v) => v.value === r.key.slice(prefix.length) && normalize(v.label).includes(needle));
+    if (needle && !results.some((r) => own(r) && r.confidence !== 'partial')) {
+      for (const r of results) {
+        if (!own(r) || !holdsNeedle(r)) continue;
+        r.confidence = 'context';
+        r.notes = ['You highlighted part of this value.', ...(r.notes || [])];
+      }
     }
   }
   // The value of the Record Type field is a record type name (DV2: "Buying Accounts" under Account Record Type).
