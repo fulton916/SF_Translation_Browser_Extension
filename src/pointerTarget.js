@@ -63,5 +63,13 @@ globalThis.sftlPointer = (() => {
     return path;
   }
 
-  return { composedAncestors, deepElementAt, innermostAt, shortcutPath };
+  /**
+   * True when the path is inside the element with this id (the extension's own panel host): the
+   * shortcut over the panel looked up the panel's own text (C-09: "No match found").
+   */
+  function insideId(path, id) {
+    return Boolean(id) && (path || []).some((n) => n && n.nodeType === 1 && n.id === id);
+  }
+
+  return { composedAncestors, deepElementAt, innermostAt, shortcutPath, insideId };
 })();
