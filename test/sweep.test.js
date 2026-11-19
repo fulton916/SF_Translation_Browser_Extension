@@ -89,7 +89,7 @@ test('M-04: a partial card for the hinted field is replaced by the clicked-field
   const r = out.results.find((x) => x.key === 'field:Account.MobilePhone__c');
   assert.ok(r, 'field card kept');
   assert.equal(r.confidence, 'context');
-  assert.match(r.notes[0], /You clicked inside this field/);
+  assert.match(r.notes[0], /You pointed inside this field/);
 });
 
 test('M-05: Lightning display labels (Account Owner, Account Name, Opportunity Name, Created By) find the field', () => {

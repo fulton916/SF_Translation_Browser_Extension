@@ -68,8 +68,11 @@ test('ISS-02: loadValueSet reads a standard picklist from its StandardValueSet (
   globalThis.fetch = async (u) => {
     const url = decodeURIComponent(u);
     urls.push(url);
-    const records = /SELECT Id, MasterLabel FROM StandardValueSet/.test(url)
-      ? [{ attributes: {}, Id: '0s8000000000001AAA', MasterLabel: 'LeadSource' }]
+    // DV2 (live, v62.0): every StandardValueSet row carries this placeholder Id, and a Metadata
+    // query filtered by Id fails with MALFORMED_QUERY.
+    if (/FROM StandardValueSet WHERE Id/.test(url)) return { ok: false, status: 400, text: async () => '[{"message":"StandardValueSet: filtered column Id not found","errorCode":"MALFORMED_QUERY"}]' };
+    const records = /SELECT (Id, )?MasterLabel FROM StandardValueSet/.test(url)
+      ? [{ attributes: {}, Id: '000000000000000AAA', MasterLabel: 'LeadSource' }]
       : [{ attributes: {}, Metadata: { sorted: false, standardValue: [
           { valueName: 'Web', label: 'Web', isActive: null, default: false },
           { valueName: 'Old%20Fair', label: 'Old Fair', isActive: false, default: false },
@@ -79,7 +82,8 @@ test('ISS-02: loadValueSet reads a standard picklist from its StandardValueSet (
   const vs = await loadValueSet({ host: 'live2-std.my.salesforce.com', sid: 's' }, 'Opportunity', 'LeadSource');
   assert.deepEqual(vs, { name: null, values: [{ value: 'Web', label: 'Web', active: true }, { value: 'Old Fair', label: 'Old Fair', active: false }] });
   assert.match(urls[0], /\/tooling\/query\/.*WHERE MasterLabel IN \('OpportunityLeadSource','LeadSource'\)/);
-  assert.match(urls[1], /SELECT Metadata FROM StandardValueSet WHERE Id = '0s8000000000001AAA'/);
+  assert.match(urls[1], /SELECT Metadata FROM StandardValueSet WHERE MasterLabel = 'LeadSource'/);
+  assert.ok(!urls.some((u) => /StandardValueSet WHERE Id/.test(u)), 'never filters StandardValueSet Metadata by Id');
   // Known names first: StageName is in the OpportunityStage set.
   await loadValueSet({ host: 'live2-std.my.salesforce.com', sid: 's' }, 'Opportunity', 'StageName');
   assert.match(urls[2], /MasterLabel IN \('OpportunityStage','OpportunityStageName','StageName'\)/);
@@ -98,6 +102,22 @@ test('ISS-02: a standard picklist value in no value list is confirmed "Not a val
   assert.ok(inactive.some((x) => x.key === 'picklist:Opportunity.LeadSource.Old Fair'));
 });
 
+// ---------- RANK-01: a custom label holding a URL or path is not a similar text ----------
+
+test('RANK-01: a label whose value is a path does not partly match page text', () => {
+  const org = {
+    ...baseOrg,
+    customLabels: [lbl('101D00000000090', 'Example_Redirect_URL', '/lightning/page/home'), lbl('101D00000000091', 'Example_Link', 'https://example.com/home'), lbl('101D00000000092', 'Example_Home_Title', 'Home page')],
+  };
+  const out = locate({ text: 'Home', org, describes: [] });
+  const keys = [...out.results, ...out.more].map((r) => r.title + ' ' + (r.subtitle || '') + ' ' + r.key).join('\n');
+  assert.doesNotMatch(keys, /Example_Redirect_URL|Example_Link/);
+  assert.match(keys, /Example_Home_Title/);
+  // The exact value still matches.
+  const exact = locate({ text: '/lightning/page/home', org, describes: [] });
+  assert.match(JSON.stringify(exact.results), /Example_Redirect_URL/);
+});
+
 // ---------- ISS-03: one "Salesforce text" card, not a second bare page-area card ----------
 
 test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed action)', () => {
@@ -113,6 +133,21 @@ test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed ac
     assert.equal(sf[0].key, 'stdaction:FeedItem.TextPost');
     assert.equal(sf[0].subtitle, 'Standard feed action FeedItem.TextPost');
   }
+  // UI-03: the publisher inside a page's Chatter tab (real DV2 path: the publisher's own a[role=tab] inside
+  // flexipage-tab2[role=tabpanel]) is not a "Lightning page tab label".
+  const inChatterTab = {
+    selectionNames: ['sfdc:QuickAction.FeedItem.TextPost'],
+    sfComponents: ['forceChatter_recordFeedContainer'],
+    tabRole: 'tab',
+    tags: ['span', 'a', 'li', 'ul', 'div', 'div', 'div', 'div', 'flexipage-aura-wrapper', 'slot', 'flexipage-component2', 'slot', 'flexipage-tab2', 'slot', 'slot', 'div', 'lightning-tabset', 'div', 'flexipage-tabset2'],
+    componentIds: ['forceChatter_recordFeedContainer', 'flexipage_tabset'],
+  };
+  const tabOut = locate({ text: 'Post', org, describes: [contact], hints: inChatterTab });
+  assert.equal(tabOut.results[0].key, 'stdaction:FeedItem.TextPost');
+  assert.ok(![...tabOut.results, ...tabOut.more].some((r) => r.key === 'area:lightningPageTab'), JSON.stringify(tabOut.results.map((r) => r.key)));
+  // The page tab label itself (a[role=tab] < li < ul < lightning-tab-bar < ... < flexipage-tabset2) still is.
+  const tabLabel = locate({ text: 'Example Tab', org, describes: [contact], hints: { tabRole: 'tab', tags: ['a', 'li', 'ul', 'lightning-tab-bar', 'div', 'lightning-tabset', 'div', 'flexipage-tabset2'] } });
+  assert.ok(tabLabel.results.some((r) => r.key === 'area:lightningPageTab'));
   // Text in the feed that matched nothing else still gets the page-area card.
   const other = locate({ text: 'updated this record.', org, describes: [contact], hints: { sfComponents: ['forceChatter_exampleFeedPublisher'] } }).results;
   assert.equal(other[0].key, 'sfdctext:feed');
@@ -261,4 +296,20 @@ test('disabled Today (pointer-events: none): the pointer hits the button contain
   assert.equal(shortcutPath({ doc, selection: noSelection, pointerPath: [controls, body, html], pointerXY: [660, 178] })[0], prev);
   // Pointer on the container's gap between buttons: the container.
   assert.equal(shortcutPath({ doc, selection: noSelection, pointerPath: [controls, body, html], pointerXY: [712, 178] })[0], controls);
+});
+
+test('UI-02: the shortcut over the extension\'s own panel is recognised (it looked up the panel text)', () => {
+  const { insideId } = globalThis.sftlPointer;
+  const panelHost = { ...el('div', body), id: 'example-panel-host' };
+  const panelShadow = { nodeType: 11, host: panelHost, parentNode: null, elementFromPoint: () => panelLine };
+  panelHost.shadowRoot = panelShadow;
+  const panelLine = el('div', panelShadow);
+  doc.at = panelHost;
+  const path = shortcutPath({ doc, selection: noSelection, pointerPath: [panelHost, body, html], pointerXY: [5, 5] });
+  assert.equal(path[0], panelLine);
+  assert.equal(insideId(path, 'example-panel-host'), true);
+  // Anywhere else on the page: not inside it.
+  doc.at = prevBtn;
+  assert.equal(insideId(shortcutPath({ doc, selection: noSelection, pointerPath: [prevBtn, body, html], pointerXY: [10, 10] }), 'example-panel-host'), false);
+  assert.equal(insideId([prevBtn], ''), false);
 });
