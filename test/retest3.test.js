@@ -72,3 +72,65 @@ test('2: the user language is read every 15 s; on a change only the language-dep
   assert.equal(d2.label, 'Gadget FR');
   assert.equal((await loadDescribe(s, 'Demo_Gadget__c', { language: 'en_US' })).label, 'Gadget');
 });
+
+// ---------- 3: a translated validation message under a field ----------
+import { locate, SOURCE } from '../src/locator.js';
+
+const BANNED = /\b(weaker|probably|may be|might|hidden|as-is)\b/i;
+const assertWording = (rs) => {
+  for (const r of rs) for (const n of [r.title, r.subtitle, ...(r.steps || []), ...(r.notes || [])]) assert.doesNotMatch(String(n ?? ''), BANNED);
+};
+const gadget = {
+  name: 'Demo_Gadget__c', label: 'Gadget', labelPlural: 'Gadgets', custom: true, quickActions: [], recordTypeInfos: [],
+  fields: [{ name: 'Demo_Color__c', label: 'Couleur du gadget', custom: true, type: 'string', picklistValues: [] }],
+};
+const vrOrg = (userLanguage) => ({
+  userLanguage, defaultLanguage: 'en_US', labelTranslations: [], customLabels: [], apps: [], tabs: [],
+  objects: [{ name: 'Demo_Gadget__c', label: 'Gadget', labelPlural: 'Gadgets', custom: true }],
+  validationRules: [
+    { Id: '03d000000000001AAA', ValidationName: 'Demo_Color_Required', ErrorMessage: 'Shipped gadgets need a coat color.', ErrorDisplayField: 'Demo_Color__c', EntityDefinition: { QualifiedApiName: 'Demo_Gadget__c' } },
+    { Id: '03d000000000002AAA', ValidationName: 'Demo_Top_Rule', ErrorMessage: 'Something else.', ErrorDisplayField: null, EntityDefinition: { QualifiedApiName: 'Demo_Gadget__c' } },
+  ],
+});
+const errorHints = { selectionNames: ['sfdc:RecordField.Demo_Gadget__c.Demo_Color__c'], fieldPart: 'error' };
+
+test('3: viewing French, the message under a field is that field\'s validation rule, not the field label', () => {
+  const rs = locate({ text: 'Les gadgets expédiés ont besoin d\'une couleur.', org: vrOrg('fr'), describes: [gadget], hints: errorHints }).results;
+  assert.equal(rs[0].key, 'vr:03d000000000001AAA');
+  assert.equal(rs[0].confidence, 'confirmed');
+  assert.equal(rs[0].source, SOURCE.WORKBENCH);
+  assert.equal(rs[0].subtitle, '"Les gadgets expédiés ont besoin d\'une couleur."');
+  assert.match(rs[0].notes[0], /^You pointed at the error message shown under the field Couleur du gadget\. This is the active rule/);
+  assert.match(rs[0].notes[1], /master text is "Shipped gadgets need a coat color\."/);
+  assert.ok(!rs.some((r) => r.key === 'vr:03d000000000002AAA'), 'a rule shown at the top of the page is not offered');
+  assert.ok(!rs.some((r) => r.key === 'field:Demo_Gadget__c.Demo_Color__c'), 'no "You pointed inside this field" card');
+  assertWording(rs);
+});
+
+test('3: validation rules are read with their error display field, and without it when that column fails', async () => {
+  const urls = [];
+  globalThis.fetch = async (u) => {
+    const url = decodeURIComponent(u);
+    urls.push(url);
+    if (/ErrorDisplayField/.test(url)) return { ok: false, status: 400, text: async () => '[{"message":"No such column"}]' };
+    if (/FROM ValidationRule/.test(url)) return { ok: true, json: async () => ({ done: true, records: [{ Id: '03d000000000001AAA', ValidationName: 'Demo_Rule' }] }) };
+    if (url.includes('/userinfo')) return { ok: true, json: async () => ({ language: 'en_US' }) };
+    if (url.endsWith('/sobjects')) return { ok: true, json: async () => ({ sobjects: [] }) };
+    return { ok: true, json: async () => ({ records: [], done: true }) };
+  };
+  const org = await loadOrgData({ host: 'retest-vr.my.salesforce.com', sid: 's' }, { refresh: true });
+  assert.equal(org.validationRules.length, 1);
+  assert.ok(!org.warnings.some((w) => w.startsWith('Validation messages')));
+  assert.ok(urls.some((u) => /SELECT Id, ValidationName, ErrorMessage, ErrorDisplayField, NamespacePrefix/.test(u)));
+});
+
+test('3: in the default language a message that is no rule\'s text is not tied to the rule', () => {
+  const rs = locate({ text: 'Complete this field.', org: vrOrg('en_US'), describes: [gadget], hints: errorHints }).results;
+  assert.ok(!rs.some((r) => r.key.startsWith('vr:') && r.confidence === 'confirmed'));
+  const field = rs.find((r) => r.key === 'field:Demo_Gadget__c.Demo_Color__c');
+  assert.match(field.notes[0], /^You pointed at an error message under this field\./);
+  // Its master text still confirms it, as before.
+  const en = locate({ text: 'Shipped gadgets need a coat color.', org: vrOrg('en_US'), describes: [gadget], hints: errorHints }).results;
+  assert.equal(en[0].key, 'vr:03d000000000001AAA');
+  assert.equal(en[0].confidence, 'confirmed');
+});

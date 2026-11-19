@@ -799,6 +799,23 @@ function validationResult(org, vr, confidence, objLabel) {
   };
 }
 
+/**
+ * Active validation rules of an object that show their message under this field (Tooling ValidationRule
+ * ErrorDisplayField; metadata names it errorDisplayField, the field's API name). Compared without case,
+ * with or without the object prefix.
+ */
+function errorRulesOfField(org, objectName, fieldName) {
+  const want = String(fieldName || '').toLowerCase();
+  return (org.validationRules || []).filter((vr) => {
+    if (vr.EntityDefinition?.QualifiedApiName !== objectName) return false;
+    const df = String(vr.ErrorDisplayField || '').toLowerCase();
+    return !!df && (df === want || df.split('.').pop() === want);
+  });
+}
+
+// Salesforce's own messages under a field (English): never a validation rule's message.
+const SF_FIELD_ERRORS = ['complete this field.', 'complete this field', 'enter a valid value.', 'this field is required.'];
+
 function tabResult(org, tab, confidence) {
   if (!tab.IsCustom) {
     return {
@@ -1998,6 +2015,24 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       r.notes = [`You pointed at the error message${shown ? ` shown under the field ${shown}` : ''}.`, ...(r.notes || [])];
       found = true;
     }
+    // Viewing another language, the message is its translation, which ErrorMessage (the master text) never
+    // holds (dev org, French): the field's own active rules are the answer. In the default language a message
+    // that differs from every rule is Salesforce's own ("Complete this field."), so nothing is added then.
+    const onField = ef ? errorRulesOfField(org, eo, ef) : [];
+    if (!found && onField.length && !isDefaultLanguage(org) && !SF_FIELD_ERRORS.includes(needle)) {
+      const objLabel = describes.find((d) => d.name === eo)?.label;
+      for (const vr of onField) {
+        const r = validationResult(org, vr, 'confirmed', objLabel);
+        r.subtitle = `"${truncate(String(text || '').trim(), 100)}"`;
+        r.notes = [
+          `You pointed at the error message shown under the field ${shown}. ${onField.length > 1 ? `This is one of the ${onField.length} active rules that show their message there.` : 'This is the active rule that shows its message there.'}`,
+          `The page shows the message in ${languageName(org.userLanguage)}; its master text is "${truncate(vr.ErrorMessage, 120)}".`,
+          ...r.notes,
+        ];
+        add(r);
+      }
+      found = true;
+    }
     if (found) demoteSameTextLabels(results, 'this is a validation rule message, not a custom label.');
   }
   // Help (i) icon of a field: its help text, not the label (bug: "Help Demo Title" matched labels only).
@@ -2055,8 +2090,10 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       demoteSameTextLabels(results, 'record page field labels come from the field, not from custom labels.');
       continue;
     }
+    // An error message whose rule was found: the field's label is not what you pointed at.
+    if (fieldPart === 'error' && results.some((x) => x.key.startsWith('vr:') && x.confidence === 'confirmed')) continue;
     const r = fieldLabelResult(org, d, f, 'context');
-    r.notes = [fieldLabelNote('You pointed inside this field.', d, f, hints), ...r.notes];
+    r.notes = [fieldLabelNote(fieldPart === 'error' ? 'You pointed at an error message under this field.' : 'You pointed inside this field.', d, f, hints), ...r.notes];
     add(r);
   }
 
