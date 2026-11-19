@@ -293,7 +293,8 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // Custom related list title (relatedListApiName …__r, no label of its own): its Related List Label is on
   // the child object's lookup field (e.g. Demo_Contracts__r → Contract.Demo_Opportunity__c).
   const api = pageComponent?.props?.relatedListApiName;
-  if (areas.has('relatedList') && !String(pageComponent?.label ?? '').trim() && /__r$/.test(api || '')) {
+  // Also with a label typed in Lightning App Builder: the card then names the title the list falls back to.
+  if (areas.has('relatedList') && /__r$/.test(api || '')) {
     const child = await relatedChild(session, parentDescribe, api, refresh, language);
     if (child) pageComponent = { ...pageComponent, child: { ...child.rel, fieldLabel: child.field?.label || null, objectLabel: child.describe?.label || null } };
   }
