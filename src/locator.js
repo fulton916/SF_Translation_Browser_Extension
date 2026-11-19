@@ -1870,6 +1870,24 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       r.notes = ["You pointed at this record's Record Type.", ...(r.notes || [])];
     }
   }
+  // A field's error message (dev org: a validation rule's message under the field in the edit form): an
+  // active rule of that object with this message is the answer; the field's label and value are not.
+  const onError = hints.fieldPart === 'error';
+  if (onError) {
+    const objs = new Set(confirmedFields.map((cf) => cf.split('.')[0]));
+    const [eo, ef] = (confirmedFields[0] || '').split('.');
+    const shown = ef ? describes.find((d) => d.name === eo)?.fields?.find((f) => f.name === ef)?.label || ef : null;
+    let found = false;
+    for (const r of results) {
+      if (!r.key.startsWith('vr:') || r.confidence !== 'exact') continue;
+      const o = r.goto?.object;
+      if (objs.size && !objs.has(o)) continue;
+      r.confidence = 'confirmed';
+      r.notes = [`You pointed at the error message${shown ? ` shown under the field ${shown}` : ''}.`, ...(r.notes || [])];
+      found = true;
+    }
+    if (found) demoteSameTextLabels(results, 'this is a validation rule message, not a custom label.');
+  }
   // Help (i) icon of a field: its help text, not the label (bug: "Help Demo Title" matched labels only).
   if (areas.has('helpIcon')) addHelpIconResults(org, describes, confirmedFields, results, add);
   // The record name in the highlights panel is the Name field's value.
@@ -1884,7 +1902,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
 
   // Clicked a record value in a field that supports Data Translation (never for a click on the label).
   const onLabel = hints.fieldPart === 'label';
-  for (const cf of onLabel ? [] : confirmedFields) {
+  for (const cf of onLabel || onError ? [] : confirmedFields) {
     if (results.some((r) => aboutField(r, cf) && r.confidence !== 'partial')) continue;
     const [o, fName] = cf.split('.');
     const dt = dataTranslations.find((x) => x.object === o);
@@ -1893,7 +1911,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     else if (!dt && DATA_TRANSLATION_FIELDS[o]?.includes(fName) && Array.isArray(org.objects)) add(dataOffResult(o, fName));
   }
   // Clicked a record value: also list org-built translation objects (e.g. Demo_Translations__c).
-  for (const cf of onLabel ? [] : confirmedFields) {
+  for (const cf of onLabel || onError ? [] : confirmedFields) {
     if (results.some((r) => aboutField(r, cf) && r.confidence !== 'partial' && !r.key.startsWith('data:'))) continue;
     const d = describes.find((x) => x.name === cf.split('.')[0]);
     for (const child of d?.translationChildren || []) {
