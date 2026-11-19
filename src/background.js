@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent } from './sfApi.js';
+import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadValueSet, loadRecordTypeId } from './sfApi.js';
 import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
@@ -44,11 +44,19 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id || ![MENU_SELECTION, MENU_ELEMENT].includes(info.menuItemId)) return;
-  const frameId = info.frameId ?? 0;
+  findTranslation(tab, info.frameId ?? 0, info.selectionText, info.frameUrl);
+});
+
+// Alt+Shift+T in the page (content.js): same lookup as the right-click menu.
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type === 'sftl:shortcut' && sender.tab?.id) findTranslation(sender.tab, sender.frameId ?? 0, msg.selectionText, sender.url);
+});
+
+async function findTranslation(tab, frameId, selectionText, frameUrl) {
   const target = (await sendToFrame(tab.id, frameId, { type: 'sftl:getTarget' })) || {};
-  const text = (info.selectionText || target.text || '').trim();
+  const text = (selectionText || target.text || '').trim();
 
   if (!text) {
     log('warn', 'lookup', 'No text found under the right-click', { page: pathOf(tab.url) });
@@ -57,14 +65,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
   await showPanel(tab.id, { state: 'loading', text });
   try {
-    const result = await lookup({ text, hints: target.hints || {}, urls: [tab.url, info.frameUrl, target.url] });
+    const result = await lookup({ text, hints: target.hints || {}, urls: [tab.url, frameUrl, target.url] });
     logLookup(text, tab.url, target.hints, result);
     await showPanel(tab.id, { state: 'results', text, ...result });
   } catch (e) {
     log('error', 'lookup', e.message || String(e), { page: pathOf(tab.url), details: { text, hints: target.hints }, stack: e.stack });
     await showPanel(tab.id, { state: 'error', text, message: e.message || String(e) });
   }
-});
+}
 
 // ---------- "Go to translation": open the exact page, then content.js auto-fills it ----------
 
@@ -176,28 +184,92 @@ async function lookup({ text, hints, urls, refresh = false }) {
   let labelTranslations = null;
   const warnings = [...(org.warnings || [])];
   if (org.customLabels) {
-    labelTranslations = await loadLabelTranslations(session, text, labelIds).catch((e) => {
+    // Drop a card's record count ("Demo Gadgets (0)"), as normalize() does.
+    labelTranslations = await loadLabelTranslations(session, text.replace(/\s*\(\d+\+?\)\s*$/, ''), labelIds).catch((e) => {
       warnings.push(`Custom label translations not searched: ${e.message || e}`);
       return null;
     });
   }
   const record = rec ? { object: rec[1], id: rec[2] } : null;
-  // Dynamic Forms field section: read its label from the Lightning page metadata.
+  // Paths belong to one record type: read the record's type only when it can matter (one REST call, cached).
+  if (record && (org.paths || []).some((p) => p.IsActive !== false && p.SobjectType === record.object && p.RecordTypeId)) {
+    record.recordTypeId = await loadRecordTypeId(session, record.object, record.id, { refresh });
+  }
+  // Lightning App Builder text read from the page metadata: a Dynamic Forms field section label, a
+  // related list title (header only, not its rows), or a record page tab title. The nearest component
+  // id is the clicked one (content.js lists them nearest first).
   let pageComponent = null;
-  if (detectAreas(hints).has('fieldSection') && hints.flexipage && hints.componentIds?.length) {
+  const areas = detectAreas(hints);
+  const wantsPage = areas.has('fieldSection') || areas.has('relatedList') || areas.has('lightningPageTab');
+  if (wantsPage && hints.flexipage && hints.componentIds?.length) {
     pageComponent = await loadFlexiPageComponent(session, hints.flexipage, hints.componentIds[0], objects).catch((e) => {
       warnings.push(`Lightning page not read: ${e.message}`);
       return null;
     });
+    // A component of another kind (e.g. the tab set around a field section) says nothing about this text.
+    const expect = areas.has('fieldSection') ? /^flexipage:fieldSection$/ : areas.has('relatedList') ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/ : /^flexipage:tab$/;
+    if (pageComponent && !expect.test(pageComponent.component || '')) pageComponent = null;
   }
-  const located = locate({ text, hints, org: { ...org, labelTranslations }, describes: describes.filter(Boolean), dataTranslations, record, pageUrls: urls, pageComponent });
+  const liveDescribes = describes.filter(Boolean);
+  const parentDescribe = liveDescribes.find((d) => d.name === record?.object) || liveDescribes[0];
+  // Custom related list title (relatedListApiName …__r, no label of its own): its Related List Label is on
+  // the child object's lookup field (e.g. Demo_Contracts__r → Contract.Demo_Opportunity__c).
+  const api = pageComponent?.props?.relatedListApiName;
+  if (areas.has('relatedList') && !String(pageComponent?.label ?? '').trim() && /__r$/.test(api || '')) {
+    const child = await relatedChild(session, parentDescribe, api, refresh);
+    if (child) pageComponent = { ...pageComponent, child: { ...child.rel, fieldLabel: child.field?.label || null, objectLabel: child.describe?.label || null } };
+  }
+  // Inside related list rows ("Stage:" in Opportunities on an Account): the rows are the child
+  // object's records, so its field labels are searched too.
+  let listObject = null;
+  const listComponentId = (hints.componentIds || []).find((c) => /^(lst_|force_relatedList)/.test(c));
+  if (areas.has('relatedListRow') && hints.flexipage && listComponentId) {
+    const pc = await loadFlexiPageComponent(session, hints.flexipage, listComponentId, objects).catch(() => null);
+    const child = pc?.props?.relatedListApiName ? await relatedChild(session, parentDescribe, pc.props.relatedListApiName, refresh) : null;
+    if (child?.describe) {
+      listObject = child.describe.name;
+      if (!liveDescribes.some((d) => d.name === listObject)) liveDescribes.push(child.describe);
+    }
+  }
+  // Global Value Sets: only for the custom picklists this text can be about (each costs 2-3 Tooling queries).
+  // A standard picklist the user pointed at: its StandardValueSet (all values, inactive ones too), so a value
+  // that is in no list is confirmed (R-07: Opportunity Lead Source "Example Referral").
+  const valueSets = {};
+  const hinted = new Set((hints.selectionNames || []).map((s) => /^sfdc:RecordField\.(.+)$/.exec(s)?.[1]).filter(Boolean));
+  const picklistFields = [];
+  for (const d of liveDescribes) {
+    for (const f of d.fields || []) {
+      if (!/picklist/.test(f.type || '') || f.name === 'CurrencyIsoCode') continue;
+      const isHinted = hinted.has(`${d.name}.${f.name}`);
+      if (!f.custom && !isHinted) continue;
+      if (isHinted || (f.picklistValues || []).some((pv) => matchType(needle, pv.label) === 'exact')) picklistFields.push([d.name, f.name]);
+    }
+  }
+  // Pointed-at fields first, so the 4-field cap never drops them.
+  picklistFields.sort((a, b) => Number(!hinted.has(a.join('.'))) - Number(!hinted.has(b.join('.'))));
+  await Promise.all(
+    picklistFields.slice(0, 4).map(([o, f]) =>
+      loadValueSet(session, o, f).then((vs) => {
+        if (vs) valueSets[`${o}.${f}`] = vs;
+      })
+    )
+  );
+  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
   return {
     ...located,
     hints,
-    contextObjects: objects,
+    contextObjects: listObject && !objects.includes(listObject) ? [...objects, listObject] : objects,
     warnings,
     language: { user: org.userLanguage, orgDefault: org.defaultLanguage },
   };
+}
+
+/** The child relationship a related list shows (relationshipName = relatedListApiName), with the child describe. */
+async function relatedChild(session, parent, relationshipName, refresh) {
+  const rel = (parent?.childRelationships || []).find((c) => c.relationshipName === relationshipName);
+  if (!rel) return null;
+  const describe = await loadDescribe(session, rel.childSObject, { refresh });
+  return { rel, describe, field: describe?.fields?.find((f) => f.name === rel.field) || null };
 }
 
 async function sendToFrame(tabId, frameId, msg) {
@@ -206,7 +278,7 @@ async function sendToFrame(tabId, frameId, msg) {
   } catch {
     // Tab was open before the extension loaded: inject the content script now.
     try {
-      await chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ['src/content.js'] });
+      await chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ['src/pointerTarget.js', 'src/content.js'] });
       return await chrome.tabs.sendMessage(tabId, msg, { frameId });
     } catch {
       return null;
