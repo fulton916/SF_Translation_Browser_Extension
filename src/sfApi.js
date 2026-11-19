@@ -465,6 +465,107 @@ export function loadRecordTypeId(session, objectName, recordId, { refresh = fals
   return promise;
 }
 
+// ---------- master-language labels (the Translation Workbench lists rows by them) ----------
+
+const XML_ENT = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
+const decodeXml = (s) =>
+  String(s).replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] !== '#') return XML_ENT[e.toLowerCase()] ?? m;
+    const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+    return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m;
+  });
+const escapeXml = (s) => String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
+const tagRe = (tag, flags) => new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`, flags);
+const xmlBlocks = (xml, tag) => [...String(xml || '').matchAll(tagRe(tag, 'g'))].map((m) => m[1]);
+const dropBlocks = (xml, tags) => tags.reduce((x, t) => x.replace(tagRe(t, 'g'), ''), String(xml || ''));
+function xmlValue(xml, tag) {
+  const m = new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([^<]*)</(?:[\\w-]+:)?${tag}>`).exec(String(xml || ''));
+  return m ? decodeXml(m[1]) : null;
+}
+
+/** One SOAP call (partner API, or the Metadata API with kind 'metadata'). Returns the response XML. */
+async function soapCall(session, kind, header, body) {
+  const v = API_VERSION.slice(1);
+  const [path, ns] = kind === 'metadata' ? [`/services/Soap/m/${v}`, 'http://soap.sforce.com/2006/04/metadata'] : [`/services/Soap/u/${v}`, 'urn:partner.soap.sforce.com'];
+  const envelope =
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    `<env:Envelope xmlns:env="http://schemas.xmlsoap.org/soap/envelope/" xmlns:s="${ns}">` +
+    `<env:Header><s:SessionHeader><s:sessionId>${escapeXml(session.sid)}</s:sessionId></s:SessionHeader>${header}</env:Header>` +
+    `<env:Body>${body}</env:Body></env:Envelope>`;
+  const res = await fetch(`https://${session.host}${path}`, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=UTF-8', SOAPAction: '""' }, body: envelope });
+  const text = await res.text();
+  if (!res.ok) throw new SfError(res.status, (xmlValue(text, 'faultstring') || text).slice(0, 300));
+  return text;
+}
+
+/**
+ * describeSObject response → the labels the Workbench shows in its first column: object label, field
+ * labels, picklist value labels and record type names. Pure, unit tested.
+ */
+export function parseSoapDescribe(xml) {
+  const fields = xmlBlocks(xml, 'fields').map((b) => {
+    const own = dropBlocks(b, ['picklistValues', 'filteredLookupInfo', 'referenceTo']);
+    return {
+      name: xmlValue(own, 'name'),
+      label: xmlValue(own, 'label'),
+      picklistValues: xmlBlocks(b, 'picklistValues').map((p) => ({ label: xmlValue(p, 'label'), value: xmlValue(p, 'value') })),
+    };
+  });
+  const recordTypeInfos = xmlBlocks(xml, 'recordTypeInfos').map((b) => ({ developerName: xmlValue(b, 'developerName'), name: xmlValue(b, 'name') }));
+  const top = dropBlocks(xml, ['fields', 'childRelationships', 'recordTypeInfos', 'supportedScopes', 'namedLayoutInfos', 'actionOverrides', 'urls']);
+  const result = xmlBlocks(top, 'result')[0] ?? top;
+  return { name: xmlValue(result, 'name'), label: xmlValue(result, 'label'), labelPlural: xmlValue(result, 'labelPlural'), fields: fields.filter((f) => f.name), recordTypeInfos };
+}
+
+const masterDescribeCache = new Map();
+
+/**
+ * An object's labels in `language` (the org default), whatever the user's language. SOAP describeSObject with
+ * the LocaleOptions header (SOAP API Developer Guide: "Specifies the language of the labels returned"); REST
+ * describe only answers in the user's language. Returns null when it cannot be read.
+ */
+export function loadMasterDescribe(session, objectName, language) {
+  if (!/^[A-Za-z0-9_]+$/.test(objectName || '') || !/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve(null);
+  const key = `${session.host}|${language}|${objectName}`;
+  const hit = masterDescribeCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const promise = soapCall(session, 'partner', `<s:LocaleOptions><s:language>${language}</s:language></s:LocaleOptions>`, `<s:describeSObject><s:sObjectType>${objectName}</s:sObjectType></s:describeSObject>`)
+    .then(parseSoapDescribe)
+    .then((d) => (d.fields.length ? d : null))
+    .catch(() => null);
+  masterDescribeCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
+/** readMetadata CustomObjectTranslation response → layout section translations [{ layout, section (master name), label }]. */
+export function parseSectionTranslations(xml) {
+  return xmlBlocks(xml, 'layouts').flatMap((b) => {
+    const layout = xmlValue(dropBlocks(b, ['sections']), 'layout');
+    return xmlBlocks(b, 'sections')
+      .map((s) => ({ layout, section: xmlValue(s, 'section'), label: xmlValue(s, 'label') }))
+      .filter((s) => s.section && s.label);
+  });
+}
+
+const sectionCache = new Map();
+
+/**
+ * Page layout section names translated into `language` for one object (Metadata API readMetadata
+ * CustomObjectTranslation "<Object>-<language>", as read in the dev org for SFTL_Widget__c-de). The
+ * Workbench Layout Section tree lists sections by their master name. Returns [] when it cannot be read.
+ */
+export function loadSectionTranslations(session, objectName, language) {
+  if (!/^[A-Za-z0-9_]+$/.test(objectName || '') || !/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve([]);
+  const key = `${session.host}|${language}|${objectName}`;
+  const hit = sectionCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const promise = soapCall(session, 'metadata', '', `<s:readMetadata><s:type>CustomObjectTranslation</s:type><s:fullNames>${objectName}-${language}</s:fullNames></s:readMetadata>`)
+    .then(parseSectionTranslations)
+    .catch(() => []);
+  sectionCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
 /**
  * Describe + quick actions for one object. Returns null if the object is not visible.
  * Its labels are in the user's language, so the cache keeps one copy per `language`.

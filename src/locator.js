@@ -266,6 +266,41 @@ function isDefaultLanguage(org) {
   return !org.userLanguage || !org.defaultLanguage || org.userLanguage === org.defaultLanguage;
 }
 
+// ---------- master labels (another language than the org default) ----------
+// Describes hold the labels of the language you view; Translation Workbench and Object Manager list items by
+// their master label (dev org, French: the row "Paint Color" holds "Couleur de peinture"). org.masterDescribes
+// (background.js, sfApi.loadMasterDescribe) holds the master labels, by object API name.
+
+const masterObject = (org, objectName) => (isDefaultLanguage(org) ? null : org.masterDescribes?.[objectName] || null);
+const masterField = (org, objectName, fieldName) => masterObject(org, objectName)?.fields?.find((x) => x.name === fieldName) || null;
+
+/** Master label of a field: its describe label in the default language, else from the master describe (or null). */
+function masterFieldLabel(org, d, f) {
+  return isDefaultLanguage(org) ? f.label : masterField(org, d.name, f.name)?.label || null;
+}
+
+/** "Label (API_Name)", or the API name alone when the label is not known. */
+const labelAndApi = (label, api) => (label && label !== api ? `${label} (${api})` : api);
+
+/**
+ * Where the master label is edited, for every language. Default language: the labels you see. Another
+ * language: master labels with API names, since the page shows translations.
+ * `d` is the object describe, `f` the field (or null), `tail` the last steps, e.g. 'Values → Edit'.
+ */
+function objectManagerNote(org, prefix, d, f, tail) {
+  if (isDefaultLanguage(org)) return `${prefix}: Object Manager → ${d.label}${f ? ` → Fields → ${f.label}` : ''} → ${tail}.`;
+  const obj = labelAndApi(masterObject(org, d.name)?.label, d.name);
+  const field = f ? ` → Fields → ${labelAndApi(masterField(org, d.name, f.name)?.label, f.name)}` : '';
+  return `${prefix.replace(/ \(default language\)$/, '')} (${languageName(org.defaultLanguage)}): Object Manager → ${obj}${field} → ${tail}.`;
+}
+
+/** Workbench row of a field: its label in the default language; else its master label and API name. */
+function fieldRow(org, d, f) {
+  if (isDefaultLanguage(org)) return { row: f.label };
+  const master = masterFieldLabel(org, d, f);
+  return { row: labelAndApi(master || f.label, f.name), rows: [master, f.name, f.label] };
+}
+
 // ---------- result builders ----------
 
 // Translate page dropdown values, read from a real org (Setup Component and Aspect <select>s).
@@ -386,9 +421,7 @@ function renameSteps(org, { custom, tabLabel }) {
 
 function objectResult(org, obj, confidence, plural, tab) {
   const notes = [];
-  if (obj.custom && isDefaultLanguage(org)) {
-    notes.push(`Master label (default language): Object Manager → ${obj.label} → Edit.`);
-  }
+  if (obj.custom) notes.push(objectManagerNote(org, 'Master label (default language)', obj, null, 'Edit'));
   return {
     key: `object:${obj.name}`,
     source: SOURCE.RENAME_TABS,
@@ -493,11 +526,14 @@ function fieldLabelResult(org, d, f, confidence) {
   // and Labels was the wrong place for them (dev org A-10, A-13). Its Name field keeps the Rename Tabs card.
   if (!f.custom && d.custom && f.name !== 'Name') return systemFieldResult(d, f, confidence, 'Standard field');
   if (!f.custom) {
+    // Step 2 lists fields by their master label: in another language, the master describe's label.
+    const shownLabel = f.label;
+    f = { ...f, label: masterFieldLabel(org, d, f) || f.label };
     return {
       key: `field:${d.name}.${f.name}`,
       source: SOURCE.RENAME_TABS,
       confidence,
-      title: `Standard field label: ${d.label} → ${f.label}`,
+      title: `Standard field label: ${d.label} → ${shownLabel}`,
       subtitle: `API name ${d.name}.${f.name}`,
       steps: [
         ...renameSteps(org, { custom: false, tabLabel: d.labelPlural || d.label }),
@@ -512,8 +548,7 @@ function fieldLabelResult(org, d, f, confidence) {
       notes: [],
     };
   }
-  const notes = [];
-  if (isDefaultLanguage(org)) notes.push(`Master label (default language): Object Manager → ${d.label} → Fields → ${f.label} → Edit.`);
+  const notes = [objectManagerNote(org, 'Master label (default language)', d, f, 'Edit')];
   if (f.type === 'reference') notes.push('Related list title for this lookup: same screen, Aspect "Related List Label".');
   return {
     key: `field:${d.name}.${f.name}`,
@@ -521,7 +556,7 @@ function fieldLabelResult(org, d, f, confidence) {
     confidence,
     title: `Custom field label: ${d.name}.${f.name}`,
     subtitle: `"${f.label}"`,
-    ...workbench(org, { component: 'Custom Field', object: d.name, objectLabel: d.label, aspect: 'Field Label', row: f.label, pkg: namespaceOf(f.name) }),
+    ...workbench(org, { component: 'Custom Field', object: d.name, objectLabel: d.label, aspect: 'Field Label', ...fieldRow(org, d, f), pkg: namespaceOf(f.name) }),
     copy: `${d.name}.${f.name}`,
     notes,
   };
@@ -529,8 +564,8 @@ function fieldLabelResult(org, d, f, confidence) {
 
 function helpTextResult(org, d, f, confidence) {
   const base = f.custom
-    ? workbench(org, { component: 'Custom Field', object: d.name, objectLabel: d.label, aspect: 'Help Text', row: f.label, pkg: namespaceOf(f.name) })
-    : workbench(org, { component: 'Standard Field Help', object: d.name, objectLabel: d.label, row: f.label });
+    ? workbench(org, { component: 'Custom Field', object: d.name, objectLabel: d.label, aspect: 'Help Text', ...fieldRow(org, d, f), pkg: namespaceOf(f.name) })
+    : workbench(org, { component: 'Standard Field Help', object: d.name, objectLabel: d.label, ...fieldRow(org, d, f) });
   return {
     key: `help:${d.name}.${f.name}`,
     confidence,
@@ -538,7 +573,7 @@ function helpTextResult(org, d, f, confidence) {
     subtitle: `"${truncate(f.inlineHelpText, 80)}"`,
     ...base,
     copy: `${d.name}.${f.name}`,
-    notes: isDefaultLanguage(org) ? [`Master text: Object Manager → ${d.label} → Fields → ${f.label} → Edit.`] : [],
+    notes: [objectManagerNote(org, 'Master text', d, f, 'Edit')],
   };
 }
 
@@ -559,6 +594,15 @@ function picklistResult(org, d, f, pv, confidence) {
   // Field uses a Global Value Set (sfApi.loadValueSet; UAT2: Preferred_Language_LST__c → "Languages").
   // TW → Global Value Set is a tree of value set labels with their values under them (checked in UAT2).
   const vs = org.valueSets?.[`${d.name}.${f.name}`];
+  // The Workbench tree lists values (and their fields) by master label: in another language, read from the
+  // master describe or the field's metadata (both master), else the API value, which is often the same.
+  const other = !isDefaultLanguage(org);
+  const pvKnown = other
+    ? masterField(org, d.name, f.name)?.picklistValues?.find((v) => v.value === pv.value)?.label || (vs?.values || []).find((v) => v.value === pv.value)?.label || null
+    : pv.label;
+  const pvMaster = pvKnown || pv.value;
+  const fieldMaster = other ? masterFieldLabel(org, d, f) || f.label : f.label;
+  const valueRows = [...new Set([pvMaster, pv.value, pv.label])];
   if (vs?.name) {
     const vsLabel = vs.label || vs.name;
     return {
@@ -566,12 +610,12 @@ function picklistResult(org, d, f, pv, confidence) {
       confidence,
       title: `Global value set ${vsLabel}: picklist value`,
       subtitle: `"${pv.label}" (API value: ${pv.value}), used by ${d.name}.${f.name}`,
-      ...workbench(org, { component: 'Global Value Set', row: `${pv.label} (value set: ${vsLabel})`, rows: [pv.label, pv.value], pkg: vs.namespace || null, parent: vsLabel }),
+      ...workbench(org, { component: 'Global Value Set', row: `${pvMaster} (value set: ${vsLabel})`, rows: valueRows, pkg: vs.namespace || null, parent: vsLabel }),
       copy: pv.value,
       notes: [
         'One translation for every field that uses this value set.',
         'Setup Component "Picklist Value" does not list values of a global value set.',
-        ...(isDefaultLanguage(org) ? [`Master label: Setup → Picklist Value Sets → ${vsLabel} → Values → Edit.`] : []),
+        `Master label${other ? ` (${languageName(org.defaultLanguage)})` : ''}: Setup → Picklist Value Sets → ${vsLabel} → Values → Edit.`,
       ],
     };
   }
@@ -579,13 +623,14 @@ function picklistResult(org, d, f, pv, confidence) {
   // a read value set without a name is the field's own (A-03, A-24).
   const notes = f.custom && !vs ? ['If the field uses a Global Value Set, pick Setup Component "Global Value Set" instead.'] : [];
   if (!pv.active) notes.push('This value is inactive.');
-  if (isDefaultLanguage(org)) notes.push(`Master label: Object Manager → ${d.label} → Fields → ${f.label} → Values → Edit.`);
+  if (other && pvKnown) notes.push(`Master label of this value: "${pvKnown}".`);
+  notes.push(objectManagerNote(org, 'Master label', d, f, 'Values → Edit'));
   return {
     key: `picklist:${d.name}.${f.name}.${pv.value}`,
     confidence,
     title: `Picklist value on ${d.name}.${f.name}`,
     subtitle: `"${pv.label}" (API value: ${pv.value})`,
-    ...workbench(org, { component: 'Picklist Value', object: d.name, objectLabel: d.label, row: `${pv.label} (field: ${f.label})`, rows: [pv.label, pv.value], pkg: namespaceOf(f.name), parent: f.label }),
+    ...workbench(org, { component: 'Picklist Value', object: d.name, objectLabel: d.label, row: `${pvMaster} (field: ${fieldMaster})`, rows: valueRows, pkg: namespaceOf(f.name), parent: fieldMaster }),
     copy: pv.value,
     notes,
   };
@@ -746,12 +791,15 @@ function customTranslationResult(d, child, record) {
 }
 
 function recordTypeResult(org, d, rt, confidence) {
+  // Another language: the Workbench row is the master name (master describe), with the API name.
+  const master = isDefaultLanguage(org) ? null : masterObject(org, d.name)?.recordTypeInfos?.find((x) => x.developerName === rt.developerName)?.name || null;
+  const row = isDefaultLanguage(org) ? { row: rt.name } : { row: labelAndApi(master || rt.name, rt.developerName), rows: [master, rt.developerName, rt.name] };
   return {
     key: `rt:${d.name}.${rt.developerName}`,
     confidence,
     title: `Record type ${d.name}.${rt.developerName}`,
     subtitle: `"${rt.name}"`,
-    ...workbench(org, { component: 'Record Type', object: d.name, objectLabel: d.label, aspect: 'Field Label', row: rt.name }),
+    ...workbench(org, { component: 'Record Type', object: d.name, objectLabel: d.label, aspect: 'Field Label', ...row }),
     copy: rt.developerName,
     notes: [],
   };
@@ -1233,13 +1281,18 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false, pa
     // A heading in the path means the header itself was clicked (not blank space in the section):
     // rank it above a field that happens to share the name (bug: "Business Unit" header → field card).
     const onHeader = (hints.tags || []).some((t) => /^h[1-6]$/.test(t));
+    // Another language: the Layout Section tree lists sections by their master name (the section's
+    // translation in CustomObjectTranslation, background.js); the name you pointed at is its translation.
+    const tr = !isDefaultLanguage(org) && text ? (org.sectionTranslations || []).filter((s) => normalize(s.label) === normalize(text)) : [];
+    const masters = [...new Set(tr.map((s) => s.section))];
     out.push({
       key: 'area:layoutSection',
       confidence: onHeader ? 'confirmed' : 'context',
       title: 'Page layout section header',
-      subtitle: 'You pointed at a record page section header',
-      ...workbench(org, { component: 'Layout Section', object: obj, objectLabel: obj ? objLabel(obj) : null, row: text || 'the section name' }),
+      subtitle: masters.length ? `You pointed at a record page section header: "${text}"` : 'You pointed at a record page section header',
+      ...workbench(org, { component: 'Layout Section', object: obj, objectLabel: obj ? objLabel(obj) : null, row: masters.join(' / ') || text || 'the section name', ...(masters.length ? { rows: [...masters, text] } : {}) }),
       notes: [
+        ...(masters.length ? [`Master name of this section: "${masters.join('", "')}" (${languageName(org.defaultLanguage)}).`] : []),
         'The same section name can be in several page layouts. Go to translation opens every layout and lists each copy.',
         'If the section comes from a Dynamic Forms field section, the label is set in Lightning App Builder and is not translatable there.',
       ],
@@ -1449,16 +1502,19 @@ function customRelatedList(org, results, add, pc) {
   if (!c?.childSObject || !c.field) return false;
   const objectLabel = c.objectLabel || (org.objects || []).find((o) => o.name === c.childSObject)?.label || c.childSObject;
   const fieldLabel = c.fieldLabel || c.field;
+  // Another language: the Workbench row is the field's master label (master describe of the child object).
+  const masterLabel = isDefaultLanguage(org) ? null : masterField(org, c.childSObject, c.field)?.label || null;
+  const row = isDefaultLanguage(org) ? fieldLabel : labelAndApi(masterLabel || fieldLabel, c.field);
   add({
     key: `rellist:${c.childSObject}.${c.field}`,
     confidence: 'confirmed',
     title: `Related list label of ${c.childSObject}.${c.field}`,
     subtitle: `${pc.props.relatedListApiName}${onPage(pc)}`,
-    ...workbench(org, { component: 'Custom Field', object: c.childSObject, objectLabel, aspect: 'Related List Label', row: fieldLabel, rows: [fieldLabel, c.field], pkg: namespaceOf(c.field) }),
+    ...workbench(org, { component: 'Custom Field', object: c.childSObject, objectLabel, aspect: 'Related List Label', row, rows: [masterLabel, fieldLabel, c.field], pkg: namespaceOf(c.field) }),
     copy: `${c.childSObject}.${c.field}`,
     notes: [
       `The title comes from the lookup field ${fieldLabel} on ${objectLabel}: its Related List Label.`,
-      ...(isDefaultLanguage(org) ? [`Master text: Object Manager → ${objectLabel} → Fields → ${fieldLabel} → Edit → Related List Label.`] : []),
+      objectManagerNote(org, 'Master text', { name: c.childSObject, label: objectLabel }, { name: c.field, label: fieldLabel }, 'Edit → Related List Label'),
     ],
   });
   demoteSameTextLabels(results, 'this related list title comes from a lookup field, not from a custom label.');
