@@ -61,6 +61,8 @@
       } catch (err) {
         logEvent('warn', 'shortcut', 'Could not read the element under the pointer', { error: String(err) });
       }
+      // Pointing at this extension's own panel: nothing to look up.
+      if (globalThis.sftlPointer?.insideId(path, 'sftl-panel-host')) return;
       lastTarget = { path, at: Date.now() };
       const selectionText = String(window.getSelection() || '').trim();
       chrome.runtime.sendMessage({ type: 'sftl:shortcut', selectionText }, () => void chrome.runtime.lastError);
@@ -253,7 +255,7 @@
         b.blur();
       }),
       document.createTextNode(' · '),
-      button('Report a problem', 'link', 'Copy a report of this lookup and open a new GitHub issue', (ev) => reportProblem(ev.currentTarget)),
+      button('Report a problem', 'link', 'Copy a report of this lookup to send to the person who gave you the extension', (ev) => reportProblem(ev.currentTarget)),
       // Version shows whether the extension was reloaded after an update.
       el('span', 'muted version', ` · v${chrome.runtime.getManifest?.().version || '?'}`)
     );
@@ -306,7 +308,7 @@
     }
     if (r.copy) {
       actions.append(
-        button(`Copy ${r.copy.length > 40 ? 'name' : r.copy}`, 'btn secondary', 'Copy API name', (ev) => {
+        button(`Copy ${r.copy.length > 28 ? 'API name' : r.copy}`, 'btn secondary', `Copy ${r.copy}`, (ev) => {
           navigator.clipboard.writeText(r.copy).then(() => (ev.target.textContent = 'Copied'));
         })
       );
@@ -411,8 +413,7 @@
     actions?.after(el('div', 'muted card-note', message));
   }
 
-  // ---------- "Report a problem": copy a report, open a GitHub issue to paste it into ----------
-  const ISSUE_URL = 'https://github.com/fulton916/SF_Translation_Browser_Extension/issues/new';
+  // ---------- "Report a problem": copy a report to send to whoever shared the extension ----------
   let lastPayload = null;
 
   async function reportProblem(b) {
@@ -455,14 +456,14 @@
       copied = document.execCommand('copy');
       ta.remove();
     }
-    const title = `Test finding: "${String(p.text || '').slice(0, 60)}"`;
-    window.open(`${ISSUE_URL}?template=test_finding.yml&title=${encodeURIComponent(title)}`, '_blank', 'noopener');
-    logEvent('info', 'panel', 'Opened a GitHub issue to report a problem', { text: p.text, copied });
+    // No web page is opened: the person who got the extension as a zip has no access to the repository,
+    // and the looked-up text can be record data, so it never goes into a URL.
+    logEvent('info', 'panel', 'Copied a problem report', { text: p.text, copied });
     b.parentElement.querySelector('.report-note')?.remove();
     b.parentElement.append(
       el('div', 'muted report-note', copied
-        ? 'Report copied. In the GitHub tab: click the Test log box, press Ctrl+V, and add a sentence about what was wrong. Screenshots: Win+Shift+S, then Ctrl+V.'
-        : 'Could not copy the report. Open Test log → Copy all, then paste it into the issue.')
+        ? 'Report copied. Paste it (Ctrl+V) into an email or chat to the person who sent you the extension, and add a sentence about what was wrong. Screenshots: Win+Shift+S, then Ctrl+V.'
+        : 'Could not copy the report. Open Test log → Copy all, then paste it into an email or chat to the person who sent you the extension.')
     );
   }
 
@@ -508,9 +509,9 @@
       .conf.confirmed-none { font-size: 12px; font-weight: 700; color: #fff; background: #747474; padding: 2px 8px; border-radius: 10px; }
       .steps { margin: 6px 0 4px 18px; padding: 0; } .steps li { margin: 1px 0; }
       .notes { margin: 4px 0 0 16px; padding: 0; color: #5c5c5c; font-size: 12px; }
-      .actions { display: flex; gap: 6px; margin-top: 6px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
       .btn { background: #0176d3; color: #fff; border: 0; border-radius: 4px; padding: 4px 10px; font: inherit; font-size: 12px;
-        cursor: pointer; text-decoration: none; }
+        cursor: pointer; text-decoration: none; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
       .btn.secondary { background: #fff; color: #0176d3; border: 1px solid #c9c9c9; }
       .icon { background: none; border: 0; font-size: 20px; cursor: pointer; color: #5c5c5c; line-height: 1; }
       .lang { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 4px 0; }

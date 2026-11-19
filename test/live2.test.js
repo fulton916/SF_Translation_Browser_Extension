@@ -266,3 +266,19 @@ test('disabled Today (pointer-events: none): the pointer hits the button contain
   // Pointer on the container's gap between buttons: the container.
   assert.equal(shortcutPath({ doc, selection: noSelection, pointerPath: [controls, body, html], pointerXY: [712, 178] })[0], controls);
 });
+
+test('UI-02: the shortcut over the extension\'s own panel is recognised (it looked up the panel text)', () => {
+  const { insideId } = globalThis.sftlPointer;
+  const panelHost = { ...el('div', body), id: 'example-panel-host' };
+  const panelShadow = { nodeType: 11, host: panelHost, parentNode: null, elementFromPoint: () => panelLine };
+  panelHost.shadowRoot = panelShadow;
+  const panelLine = el('div', panelShadow);
+  doc.at = panelHost;
+  const path = shortcutPath({ doc, selection: noSelection, pointerPath: [panelHost, body, html], pointerXY: [5, 5] });
+  assert.equal(path[0], panelLine);
+  assert.equal(insideId(path, 'example-panel-host'), true);
+  // Anywhere else on the page: not inside it.
+  doc.at = prevBtn;
+  assert.equal(insideId(shortcutPath({ doc, selection: noSelection, pointerPath: [prevBtn, body, html], pointerXY: [10, 10] }), 'example-panel-host'), false);
+  assert.equal(insideId([prevBtn], ''), false);
+});
