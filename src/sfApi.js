@@ -266,7 +266,7 @@ export function loadValueSet(session, objectName, fieldName) {
     const name = meta?.valueSetName;
     if (!name) {
       // The field's own values, inactive ones included (REST describe lists active values only;
-      // a test sandbox: Contact Demo Team "AC WEST" is inactive). Tooling names the value valueName (a test sandbox keys:
+      // a test sandbox: Contact Demo Team "EX WEST" is inactive). Tooling names the value valueName (a test sandbox keys:
       // color, default, description, isActive, label, urls, valueName); the Metadata API names it fullName.
       // Either can be URL-encoded. Active values come back with isActive null.
       const decode = (s) => {

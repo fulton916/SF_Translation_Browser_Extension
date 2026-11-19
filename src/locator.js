@@ -646,12 +646,12 @@ function notInPicklistResult(d, f, allKnown) {
     steps: allKnown
       ? [
           'This value is stored on the record but is not a value of this picklist (unrestricted picklist, or imported data).',
-          'Add it as a picklist value or fix the data. It cannot be translated as-is.',
+          'Add it as a picklist value or fix the data. Then translate it in Translation Workbench → Picklist Value.',
         ]
       : [
           'This value is stored on the record but is not an active value of this picklist.',
           'If it is an inactive value, translate it in Translation Workbench → Picklist Value (inactive values are listed there).',
-          'Otherwise it was saved in an unrestricted picklist or imported: add it as a picklist value or fix the data. It cannot be translated as-is.',
+          'Otherwise it was saved in an unrestricted picklist or imported: add it as a picklist value or fix the data, then translate it in Translation Workbench → Picklist Value.',
         ],
     url: SETUP.objectFields(d.name),
     copy: `${d.name}.${f.name}`,
@@ -1372,10 +1372,10 @@ function userCalendarResult() {
     key: 'sfdctext:calendarName',
     source: SOURCE.NOT_TRANSLATABLE,
     confidence: 'context',
-    title: 'Calendar name created by a user (not translatable)',
+    title: 'Calendar name created by a user',
     subtitle: 'An entry in My Calendars / Other Calendars',
     steps: [
-      'A user named this calendar when creating it (or it is a person\'s or resource\'s name). It is not translated.',
+      'A user named this calendar when creating it (or it is a person\'s or resource\'s name). Translation tools do not change it.',
       'To change it: click the arrow next to the calendar → Edit (only its owner can).',
     ],
     url: null,
