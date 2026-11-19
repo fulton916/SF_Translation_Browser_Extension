@@ -71,5 +71,32 @@ globalThis.sftlPointer = (() => {
     return Boolean(id) && (path || []).some((n) => n && n.nodeType === 1 && n.id === id);
   }
 
-  return { composedAncestors, deepElementAt, innermostAt, shortcutPath, insideId };
+  /**
+   * The element's text without its screen-reader-only parts (.slds-assistive-text), one line per row.
+   * A field's error message starts with the field label for screen readers (dev org:
+   * <div class="slds-form-element__help"><span class="slds-assistive-text">Paint Color</span>Shipped
+   * widgets need a paint color.</div>), and innerText puts that label on its own first line.
+   * Only assistive text in the element: kept (the (i) icon's "Help <label>").
+   */
+  function visibleText(el) {
+    const lines = String(el?.innerText || '')
+      .split('\n')
+      .map((l) => l.replace(/[\s ]+/g, ' ').trim())
+      .filter(Boolean);
+    const hidden = [...(el?.querySelectorAll?.('.slds-assistive-text, .assistiveText') || [])]
+      .map((a) => String(a.innerText || a.textContent || '').replace(/[\s ]+/g, ' ').trim())
+      .filter(Boolean);
+    if (!hidden.length) return lines.join('\n');
+    const shown = [];
+    for (let line of lines) {
+      for (const h of hidden) {
+        if (line === h) line = '';
+        else if (line.startsWith(h + ' ')) line = line.slice(h.length + 1).trim();
+      }
+      if (line) shown.push(line);
+    }
+    return (shown.length ? shown : lines).join('\n');
+  }
+
+  return { composedAncestors, deepElementAt, innermostAt, shortcutPath, insideId, visibleText };
 })();

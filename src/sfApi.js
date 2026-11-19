@@ -99,10 +99,13 @@ const ORG_SOURCES = {
   },
   validationRules: {
     what: 'Validation messages',
-    load: (s) =>
-      queryAll(s, 'SELECT Id, ValidationName, ErrorMessage, NamespacePrefix, EntityDefinition.QualifiedApiName FROM ValidationRule WHERE Active = true', {
-        tooling: true,
-      }),
+    // ErrorDisplayField: the field the message shows under (empty: top of the page). A translated message
+    // is never in ErrorMessage, so the field is what ties a message under a field to its rules.
+    // Without that column (older API, other access): the rules without it.
+    load: (s) => {
+      const q = (cols) => queryAll(s, `SELECT Id, ValidationName, ErrorMessage, ${cols}NamespacePrefix, EntityDefinition.QualifiedApiName FROM ValidationRule WHERE Active = true`, { tooling: true });
+      return q('ErrorDisplayField, ').catch((e) => (e?.status === 401 ? Promise.reject(e) : q('')));
+    },
   },
   // Path "Guidance for Success" (rich text HTML, one row per step) and the paths they belong to.
   pathSteps: {
@@ -112,7 +115,9 @@ const ORG_SOURCES = {
   paths: {
     what: 'Paths',
     load: (s) =>
-      queryAll(s, 'SELECT Id, DeveloperName, MasterLabel, SobjectType, SobjectProcessField, RecordTypeId, IsActive FROM PathAssistant', { tooling: true }),
+      queryAll(s, 'SELECT Id, DeveloperName, MasterLabel, SobjectType, SobjectProcessField, RecordTypeId, IsActive FROM PathAssistant', { tooling: true }).then((paths) =>
+        withObjectIds(s, paths)
+      ),
   },
   userLanguage: {
     what: 'Your language',
@@ -124,26 +129,77 @@ const ORG_SOURCES = {
   },
 };
 
-export function loadOrgData(session, { refresh = false } = {}) {
+/**
+ * A custom object's path steps name the object by its Id (EntityDefinition DurableId, 01I…), not its API
+ * name (dev org, checked live). Adds SobjectId to each custom object's path; one query, none without one.
+ */
+export async function withObjectIds(session, paths) {
+  const custom = [...new Set(paths.map((p) => p.SobjectType).filter((o) => /^[A-Za-z0-9_]+__c$/.test(o || '')))];
+  if (!custom.length) return paths;
+  const ents = await queryAll(session, `SELECT DurableId, QualifiedApiName FROM EntityDefinition WHERE QualifiedApiName IN ('${custom.join("','")}')`, {
+    tooling: true,
+  }).catch(() => []);
+  return paths.map((p) => ({ ...p, SobjectId: ents.find((e) => e.QualifiedApiName === p.SobjectType)?.DurableId || null }));
+}
+
+// Sources whose labels come back in the user's language (sobjects, TabDefinition and AppMenuItem labels).
+// Custom labels, validation messages, path guidance and metadata come back in the master language.
+const LANGUAGE_SOURCES = ['objects', 'tabs', 'apps'];
+
+async function loadSources(session, keys, org) {
+  const settled = await Promise.allSettled(keys.map((k) => ORG_SOURCES[k].load(session)));
+  const whats = keys.map((k) => ORG_SOURCES[k].what);
+  org.warnings = (org.warnings || []).filter((w) => !whats.some((what) => w.startsWith(`${what} not searched:`)));
+  settled.forEach((r, i) => {
+    const k = keys[i];
+    if (r.status === 'fulfilled') org[k] = r.value;
+    else {
+      org[k] = null;
+      if (r.reason?.status === 401) throw r.reason;
+      org.warnings.push(`${ORG_SOURCES[k].what} not searched: ${r.reason?.message || r.reason}`);
+    }
+  });
+  return org;
+}
+
+/**
+ * Org data, cached 5 minutes. `language`: the user's language now (loadUserLanguage). When it differs from
+ * the language the cached data was read in, only the language-dependent sources are read again (dev org:
+ * after a switch to French the panel said "Viewing in English" and missed "Brouillon" for 5 minutes).
+ */
+export function loadOrgData(session, { refresh = false, language = null } = {}) {
   const hit = orgCache.get(session.host);
-  if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
-  const promise = (async () => {
-    const keys = Object.keys(ORG_SOURCES);
-    const settled = await Promise.allSettled(keys.map((k) => ORG_SOURCES[k].load(session)));
-    const org = { warnings: [] };
-    settled.forEach((r, i) => {
-      const k = keys[i];
-      if (r.status === 'fulfilled') org[k] = r.value;
-      else {
-        org[k] = null;
-        if (r.reason?.status === 401) throw r.reason;
-        org.warnings.push(`${ORG_SOURCES[k].what} not searched: ${r.reason?.message || r.reason}`);
-      }
+  if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    if (!language) return hit.promise;
+    return hit.promise.then((org) => {
+      if (!org.userLanguage) org.userLanguage = language; // userinfo failed in the full load
+      if (org.userLanguage === language) return org;
+      const now = orgCache.get(session.host);
+      if (now !== hit) return now ? now.promise : loadOrgData(session, { language });
+      // The other sources keep their own expiry time.
+      const promise = loadSources(session, LANGUAGE_SOURCES, { ...org, warnings: [...(org.warnings || [])], userLanguage: language });
+      orgCache.set(session.host, { at: hit.at, promise });
+      promise.catch(() => orgCache.delete(session.host));
+      return promise;
     });
-    return org;
-  })();
+  }
+  const promise = loadSources(session, Object.keys(ORG_SOURCES), { warnings: [] });
   orgCache.set(session.host, { at: Date.now(), promise });
   promise.catch(() => orgCache.delete(session.host));
+  return promise;
+}
+
+const LANGUAGE_TTL_MS = 15 * 1000;
+const languageCache = new Map();
+
+/** The user's language now (userinfo), cached 15 s: a change in personal settings shows on the next lookup. */
+export function loadUserLanguage(session, { refresh = false } = {}) {
+  const hit = languageCache.get(session.host);
+  if (!refresh && hit && Date.now() - hit.at < LANGUAGE_TTL_MS) return hit.promise;
+  const promise = sfFetch(session, '/services/oauth2/userinfo')
+    .then((u) => u.language || null)
+    .catch(() => null);
+  languageCache.set(session.host, { at: Date.now(), promise });
   return promise;
 }
 
@@ -155,19 +211,27 @@ export function soqlLike(text) {
 /**
  * Custom label translations, searched per lookup. Big orgs have 100k+ of these
  * (one per label per language), so they are never loaded in full.
- * Returns translations of the given labels plus any translation whose value contains the text.
+ * Returns translations of the given labels plus any translation whose value contains the text, and every
+ * translation of a label found through one of its translations (dev org: "Bienvenue À L'atelier" listed
+ * French only, the label has German too).
  */
 export async function loadLabelTranslations(session, text, labelIds = []) {
   const term = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
   const where = [];
   if (term.length >= 3) where.push(`Value LIKE '%${soqlLike(term)}%'`);
   else if (term) where.push(`Value = '${soqlLike(term).replace(/\\([%_])/g, '$1')}'`);
-  const ids = labelIds.filter((id) => /^[a-zA-Z0-9]{15,18}$/.test(id)).slice(0, 300);
+  const validId = (id) => /^[a-zA-Z0-9]{15,18}$/.test(id || '');
+  const ids = labelIds.filter(validId).slice(0, 300);
   if (ids.length) where.push(`ExternalStringId IN ('${ids.join("','")}')`);
   if (!where.length) return [];
-  return queryAll(session, `SELECT Id, ExternalStringId, Language, Value FROM ExternalStringLocalization WHERE ${where.join(' OR ')} LIMIT 2000`, {
-    tooling: true,
-  });
+  const query = (w) => queryAll(session, `SELECT Id, ExternalStringId, Language, Value FROM ExternalStringLocalization WHERE ${w} LIMIT 2000`, { tooling: true });
+  const rows = await query(where.join(' OR '));
+  // Labels found by a translation's text: their other languages, in one more query.
+  const more = [...new Set(rows.map((r) => r.ExternalStringId))].filter((id) => validId(id) && !ids.includes(id)).slice(0, 300);
+  if (!more.length) return rows;
+  const extra = await query(`ExternalStringId IN ('${more.join("','")}')`).catch(() => []);
+  const seen = new Set(rows.map((r) => r.Id));
+  return [...rows, ...extra.filter((r) => !seen.has(r.Id))];
 }
 
 /**
@@ -236,6 +300,62 @@ export async function loadFlexiPageComponent(session, flexipageTag, componentId,
     return null;
   }
   return null;
+}
+
+/**
+ * The nearest of the pointed element's component ids (nearest first) that the page metadata knows.
+ * content.js keeps every identifier-shaped name, since a page deployed from metadata can use any
+ * identifier (dev org: sftl_tab_greetingTab, sftl_tabset). One FlexiPage query, cached.
+ * `kind` (optional RegExp on componentName): components of another kind are skipped, so a nearer one
+ * (e.g. the tab set around a field section) does not hide the one the text belongs to.
+ */
+export async function loadNearestFlexiPageComponent(session, flexipageTag, componentIds = [], objects = [], kind = null) {
+  for (const id of componentIds.slice(0, 5)) {
+    const pc = await loadFlexiPageComponent(session, flexipageTag, id, objects);
+    if (pc && (!kind || kind.test(pc.component || ''))) return pc;
+  }
+  return null;
+}
+
+const flowCache = new Map();
+
+/**
+ * The screens of a flow's active version (else its latest), for the screen text you point at. Tooling
+ * FlowDefinition → Flow.Metadata (one row at a time). Dev org, checked live: screens[] { name, label,
+ * fields[] { name, fieldType DisplayText|InputField|RegionContainer…, fieldText, helpText, fields[] } }.
+ * Returns { name, label, version, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }], buttonLabels }] } or null.
+ */
+export function loadFlowScreens(session, flowName) {
+  const m = /^(?:([A-Za-z0-9]+)__)?([A-Za-z0-9_]+)$/.exec(flowName || '');
+  if (!m) return Promise.resolve(null);
+  const key = `${session.host}|${flowName}`;
+  const hit = flowCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const [, ns, dev] = m;
+  const promise = (async () => {
+    // No namespace: the org's own flow, not a packaged flow with the same DeveloperName.
+    const def = await queryAll(session, `SELECT ActiveVersionId, LatestVersionId FROM FlowDefinition WHERE DeveloperName = '${dev}' AND NamespacePrefix = ${ns ? `'${ns}'` : 'null'} LIMIT 1`, { tooling: true });
+    const id = def[0]?.ActiveVersionId || def[0]?.LatestVersionId;
+    if (!/^[a-zA-Z0-9]{15,18}$/.test(id || '')) return null;
+    const v = (await queryAll(session, `SELECT MasterLabel, VersionNumber, Metadata FROM Flow WHERE Id = '${id}'`, { tooling: true }))[0];
+    if (!v) return null;
+    // Sections hold their fields in columns: fields[].fields[] (any depth).
+    const flat = (fields) => (fields || []).flatMap((f) => [{ name: f.name, fieldType: f.fieldType, fieldText: f.fieldText ?? null, helpText: f.helpText ?? null }, ...flat(f.fields)]);
+    return {
+      name: flowName,
+      label: v.MasterLabel || flowName,
+      version: v.VersionNumber ?? null,
+      screens: (v.Metadata?.screens || []).map((s) => ({
+        name: s.name,
+        label: s.label || s.name,
+        fields: flat(s.fields),
+        // The screen's own labels for its navigation buttons, when set (else Salesforce's Next, Previous…).
+        buttonLabels: [s.backButtonLabel, s.nextOrFinishButtonLabel, s.pauseButtonLabel].filter((l) => typeof l === 'string' && l.trim()),
+      })),
+    };
+  })().catch(() => null);
+  flowCache.set(key, { at: Date.now(), promise });
+  return promise;
 }
 
 const valueSetCache = new Map();
@@ -346,9 +466,130 @@ export function loadRecordTypeId(session, objectName, recordId, { refresh = fals
   return promise;
 }
 
-/** Describe + quick actions for one object. Returns null if the object is not visible. */
-export function loadDescribe(session, objectName, { refresh = false } = {}) {
-  const key = `${session.host}|${objectName}`;
+// ---------- master-language labels (the Translation Workbench lists rows by them) ----------
+
+const XML_ENT = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
+const decodeXml = (s) =>
+  String(s).replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] !== '#') return XML_ENT[e.toLowerCase()] ?? m;
+    const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+    return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m;
+  });
+const escapeXml = (s) => String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
+const tagRe = (tag, flags) => new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`, flags);
+const xmlBlocks = (xml, tag) => [...String(xml || '').matchAll(tagRe(tag, 'g'))].map((m) => m[1]);
+const dropBlocks = (xml, tags) => tags.reduce((x, t) => x.replace(tagRe(t, 'g'), ''), String(xml || ''));
+function xmlValue(xml, tag) {
+  const m = new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([^<]*)</(?:[\\w-]+:)?${tag}>`).exec(String(xml || ''));
+  return m ? decodeXml(m[1]) : null;
+}
+
+/** One SOAP call (partner API, or the Metadata API with kind 'metadata'). Returns the response XML. */
+async function soapCall(session, kind, header, body) {
+  const v = API_VERSION.slice(1);
+  const [path, ns] = kind === 'metadata' ? [`/services/Soap/m/${v}`, 'http://soap.sforce.com/2006/04/metadata'] : [`/services/Soap/u/${v}`, 'urn:partner.soap.sforce.com'];
+  const envelope =
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    `<env:Envelope xmlns:env="http://schemas.xmlsoap.org/soap/envelope/" xmlns:s="${ns}">` +
+    `<env:Header><s:SessionHeader><s:sessionId>${escapeXml(session.sid)}</s:sessionId></s:SessionHeader>${header}</env:Header>` +
+    `<env:Body>${body}</env:Body></env:Envelope>`;
+  const res = await fetch(`https://${session.host}${path}`, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=UTF-8', SOAPAction: '""' }, body: envelope });
+  const text = await res.text();
+  if (!res.ok) throw new SfError(res.status, (xmlValue(text, 'faultstring') || text).slice(0, 300));
+  return text;
+}
+
+/**
+ * describeSObject response → the labels the Workbench shows in its first column: object label, field
+ * labels, picklist value labels and record type names. Pure, unit tested.
+ */
+export function parseSoapDescribe(xml) {
+  const fields = xmlBlocks(xml, 'fields').map((b) => {
+    const own = dropBlocks(b, ['picklistValues', 'filteredLookupInfo', 'referenceTo']);
+    return {
+      name: xmlValue(own, 'name'),
+      label: xmlValue(own, 'label'),
+      picklistValues: xmlBlocks(b, 'picklistValues').map((p) => ({ label: xmlValue(p, 'label'), value: xmlValue(p, 'value') })),
+    };
+  });
+  const recordTypeInfos = xmlBlocks(xml, 'recordTypeInfos').map((b) => ({ developerName: xmlValue(b, 'developerName'), name: xmlValue(b, 'name') }));
+  const top = dropBlocks(xml, ['fields', 'childRelationships', 'recordTypeInfos', 'supportedScopes', 'namedLayoutInfos', 'actionOverrides', 'urls']);
+  const result = xmlBlocks(top, 'result')[0] ?? top;
+  return { name: xmlValue(result, 'name'), label: xmlValue(result, 'label'), labelPlural: xmlValue(result, 'labelPlural'), fields: fields.filter((f) => f.name), recordTypeInfos };
+}
+
+const masterDescribeCache = new Map();
+
+/**
+ * An object's labels in `language` (the org default), whatever the user's language. SOAP describeSObject with
+ * the LocaleOptions header (SOAP API Developer Guide: "Specifies the language of the labels returned"); REST
+ * describe only answers in the user's language. Returns null when it cannot be read.
+ */
+export function loadMasterDescribe(session, objectName, language) {
+  if (!/^[A-Za-z0-9_]+$/.test(objectName || '') || !/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve(null);
+  const key = `${session.host}|${language}|${objectName}`;
+  const hit = masterDescribeCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const promise = soapCall(session, 'partner', `<s:LocaleOptions><s:language>${language}</s:language></s:LocaleOptions>`, `<s:describeSObject><s:sObjectType>${objectName}</s:sObjectType></s:describeSObject>`)
+    .then(parseSoapDescribe)
+    .then((d) => (d.fields.length ? d : null))
+    .catch(() => null);
+  masterDescribeCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
+/** readMetadata CustomObjectTranslation response → layout section translations [{ layout, section (master name), label }]. */
+export function parseSectionTranslations(xml) {
+  return xmlBlocks(xml, 'layouts').flatMap((b) => {
+    const layout = xmlValue(dropBlocks(b, ['sections']), 'layout');
+    return xmlBlocks(b, 'sections')
+      .map((s) => ({ layout, section: xmlValue(s, 'section'), label: xmlValue(s, 'label') }))
+      .filter((s) => s.section && s.label);
+  });
+}
+
+/** Validation rule messages in a CustomObjectTranslation: [{ name, errorMessage }]. */
+export function parseValidationTranslations(xml) {
+  return xmlBlocks(xml, 'validationRules')
+    .map((b) => ({ name: xmlValue(b, 'name'), errorMessage: xmlValue(b, 'errorMessage') }))
+    .filter((v) => v.name && v.errorMessage);
+}
+
+const sectionCache = new Map();
+
+/**
+ * Page layout section names translated into `language` for one object (Metadata API readMetadata
+ * CustomObjectTranslation "<Object>-<language>", as read in the dev org for SFTL_Widget__c-de). The
+ * Workbench Layout Section tree lists sections by their master name. Returns [] when it cannot be read.
+ */
+export function loadSectionTranslations(session, objectName, language) {
+  return loadObjectTranslation(session, objectName, language).then((t) => t.sections);
+}
+
+/**
+ * One object's CustomObjectTranslation in `language` (Metadata API readMetadata, cached): its layout
+ * section names and validation rule messages. Both are empty when it cannot be read (needs Modify Metadata
+ * or Modify All Data).
+ */
+export function loadObjectTranslation(session, objectName, language) {
+  const none = { sections: [], validationRules: [] };
+  if (!/^[A-Za-z0-9_]+$/.test(objectName || '') || !/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve(none);
+  const key = `${session.host}|${language}|${objectName}`;
+  const hit = sectionCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const promise = soapCall(session, 'metadata', '', `<s:readMetadata><s:type>CustomObjectTranslation</s:type><s:fullNames>${objectName}-${language}</s:fullNames></s:readMetadata>`)
+    .then((xml) => ({ sections: parseSectionTranslations(xml), validationRules: parseValidationTranslations(xml) }))
+    .catch(() => none);
+  sectionCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
+/**
+ * Describe + quick actions for one object. Returns null if the object is not visible.
+ * Its labels are in the user's language, so the cache keeps one copy per `language`.
+ */
+export function loadDescribe(session, objectName, { refresh = false, language = null } = {}) {
+  const key = `${session.host}|${language || ''}|${objectName}`;
   const hit = describeCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
   const promise = (async () => {

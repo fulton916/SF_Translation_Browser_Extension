@@ -88,25 +88,40 @@
     // auraClasses: data-aura-class values on the path, e.g. runtime_sales_pathassistantPathAssistantInfo
     // (Path "Guidance for Success" is plain Aura divs, so tag names alone do not show it).
     // fieldPart: 'label' or 'value' of a record field (classes checked on a UAT2 Account, Nov 2026:
-    // span.test-id__field-label / span.test-id__field-value.slds-form-element__static).
+    // span.test-id__field-label / span.test-id__field-value.slds-form-element__static), or 'error' on its
+    // error message.
     // helpIcon: pointed at a field's (i) icon (lightning-helptext); its text is the assistive "Help <label>".
     // listHeader: true on a related list's title bar (h2.slds-card__header-title), false inside its rows.
     // recordTitle: the record name in the highlights panel (lightning-formatted-text slot="primaryField").
     const hints = {
       selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null,
-      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [], highlightsLabel: null,
+      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [], highlightsLabel: null, relatedListApi: null,
+      errorPopover: null,
     };
+    // errorPopover: inside the error popup a failed save shows ("We hit a snag."): 'header' on its heading,
+    // 'body' on its list of fields and messages. LWC: section.slds-popover.slds-popover_error with
+    // header.slds-popover__header (tag records-record-edit-error); Aura: div.forcePageError with div.genericNotification.
+    let popoverHeaderSeen = false;
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
     let inField = false;
     let headerSeen = false;
     let titleSeen = false;
     let valueSeen = false;
+    let errorEl = null;
+    // A field's error message (dev org: a validation rule's message under the field in the edit form). It sits
+    // inside the field's RecordField element, so it is neither the field's label nor its value. LWC inputs:
+    // div.slds-form-element__help[role=alert] in a .slds-has-error element; Aura inputs: ul.uiInputDefaultError.
+    const hasError = path.some((p) => /\b(slds-has-error|has-error)\b/.test(typeof p.className === 'string' ? p.className : ''));
     for (const el of path.slice(0, 60)) {
       const tag = el.tagName.toLowerCase();
       hints.tags.push(tag);
       const cls = typeof el.className === 'string' ? el.className : '';
       if (!inField && !hints.fieldPart) {
-        if (/\btest-id__field-label\b|\bslds-form-element__label\b/.test(cls)) hints.fieldPart = 'label';
+        const help = /\b(slds-form-element__help|form-element__help)\b/.test(cls) && (el.getAttribute('role') === 'alert' || hasError);
+        if (help || /\buiInputDefaultError\b/.test(cls)) {
+          hints.fieldPart = 'error';
+          errorEl = el;
+        } else if (/\btest-id__field-label\b|\bslds-form-element__label\b/.test(cls)) hints.fieldPart = 'label';
         else if (/\btest-id__field-value\b|\bslds-form-element__static\b|\bslds-form-element__control\b/.test(cls)) hints.fieldPart = 'value';
       }
       // Highlights panel (compact layout) field, seen in DV2 (Nov 2026): records-highlights-details-item
@@ -119,9 +134,16 @@
         hints.highlightsLabel = (t?.getAttribute('title') || t?.innerText || '').trim().slice(0, 200) || null;
         if (!hints.fieldPart) hints.fieldPart = titleSeen ? 'label' : valueSeen ? 'value' : null;
       }
+      if (/\b(slds-popover__header|genericNotification)\b/.test(cls)) popoverHeaderSeen = true;
+      if (!hints.errorPopover && (/\b(slds-popover_error|forcePageError)\b/.test(cls) || tag === 'records-record-edit-error')) {
+        hints.errorPopover = popoverHeaderSeen ? 'header' : 'body';
+      }
       if (tag === 'lightning-helptext') hints.helpIcon = true;
       if (tag === 'h2' || /\bslds-card__header\b|\bslds-card__header-title\b/.test(cls)) headerSeen = true;
       if (hints.listHeader === null && /^(lst-related-list|force-related-list|lst-dynamic-related-list)/.test(tag)) hints.listHeader = headerSeen;
+      // A related list title links to its list view (dev org, Account page Related Lists component:
+      // a.slds-card__header-link href=".../related/SFTL_Widgets__r/view"): the relationship it shows.
+      if (!hints.relatedListApi && tag === 'a') hints.relatedListApi = /\/related\/([A-Za-z0-9_]+)\/view\b/.exec(el.getAttribute('href') || '')?.[1] || null;
       if (el.getAttribute('slot') === 'primaryField' && path.some((p) => p.tagName === 'RECORDS-HIGHLIGHTS2')) hints.recordTitle = true;
       if (!hints.flexipage && tag.startsWith('forcegenerated-flexipage_')) hints.flexipage = tag.slice(0, 200);
       const role = el.getAttribute('role');
@@ -130,7 +152,9 @@
       if (tsn?.startsWith('sfdc:RecordField.')) inField = true;
       // Lightning App Builder component ids, as in the page metadata: flexipage_fieldSection6,
       // flexipage_tab2Tab (tab flexipage_tab2), lst_dynamicRelatedList16, force_relatedListSingleContainer15.
-      if (tsn && /^(flexipage_|lst_|force_)/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
+      // A page deployed from metadata can use any identifier (dev org: sftl_tab_greetingTab, sftl_tabset), so
+      // every identifier-shaped name is kept; sfdc:… names and FeedItem.… tabs are not identifiers.
+      if (tsn && /^[A-Za-z][A-Za-z0-9_]*$/.test(tsn) && hints.componentIds.length < 10) hints.componentIds.push(tsn.slice(0, 100));
       // Salesforce's own record page components (seen in UAT2): runtime_sales_activities_activityPanel,
       // runtime_sales_merge_mergeCandidatesPreviewCard2 (duplicates), forceChatter_recordFeedContainer.
       if (tsn && /^(runtime_|forceChatter_)/.test(tsn) && hints.sfComponents.length < 10) hints.sfComponents.push(tsn.slice(0, 100));
@@ -151,7 +175,9 @@
     hints.selectionNames = [...new Set(hints.selectionNames)];
     hints.tags = [...new Set(hints.tags)];
     hints.auraClasses = [...new Set(hints.auraClasses)];
-    let text = elementText(path);
+    // On a field's error message: its text, not a nearby label (dev org: hovering the message gave "Paint Color").
+    // Its first line is the field label for screen readers (an assistive span): skipped.
+    let text = (errorEl && visibleText(errorEl).split('\n')[0].trim()) || elementText(path);
     // The (i) icon only holds "Help <field label>" for screen readers (the help text itself is in a
     // popup that is not in the path). Keep the label; locator.js lists the field's help text.
     if (hints.helpIcon) {
@@ -163,11 +189,13 @@
 
   // Screen-reader-only text (seen in UAT2: "Enable table equivalent for screen reader users" on a chart).
   const isAssistive = (el) => /\b(slds-assistive-text|assistiveText)\b/.test(typeof el.className === 'string' ? el.className : '');
+  // Text without the assistive spans inside the element, when it has other text (src/pointerTarget.js).
+  const visibleText = (el) => (globalThis.sftlPointer?.visibleText ? globalThis.sftlPointer.visibleText(el) : (el.innerText || '').trim());
 
   function elementText(path) {
     for (const el of path.slice(0, 6)) {
       if (isAssistive(el)) continue;
-      const t = (el.innerText || '').trim();
+      const t = visibleText(el);
       if (t && t.length <= 300) return t.split('\n')[0].trim();
       const label = el.getAttribute('title') || el.getAttribute('aria-label');
       if (label) return label.trim();
@@ -690,6 +718,9 @@
     if (document.readyState !== 'complete') window.addEventListener('load', () => setTimeout(again, 100), { once: true });
   }
 
+  // Translate page components shown as a tree (WB_COMPONENT values in locator.js).
+  const TREE_COMPONENTS = new Set(['PicklistMaster', 'SharedPicklistDefinition', 'LayoutSection']);
+
   async function fillWorkbench(p) {
     const q = (sfx) => document.querySelector(`select[id$="${sfx}"]`);
     await waitFor(() => q('setupEntSelect'), 10000);
@@ -710,11 +741,21 @@
       }
     }
 
-    if (p.lang && !(await choose(q, 'langSelect', [p.lang]))) {
+    const langSet = !!p.lang && (await choose(q, 'langSelect', [p.lang]));
+    if (p.lang && !langSet) {
       warnings.push(`You are not a translator for ${p.lang}. Add it in Translation Language Settings, or pick another language.`);
     }
     if (!(await choose(q, 'setupEntSelect', [p.component], [p.componentLabel]))) {
       throw new Error(`Setup Component "${p.componentLabel}" is not in this org's list.`);
+    }
+    // Flow lists that could not be set: the row search below has nothing to find, so the toast says so.
+    let flowStop = null;
+    if (p.flow) {
+      const f = await fillFlowFilters(q, p.flow);
+      if (f.left.length) {
+        flowStop = f;
+        warnings.push(`Pick ${f.left.join(', ')} yourself.`);
+      }
     }
     if (p.object) {
       await waitFor(() => q('assocEntSelect') && q('assocEntSelect').options.length > 1, 8000).catch(() => null);
@@ -746,17 +787,33 @@
       await choose(q, 'aspectSelect', [p.aspect]);
     }
 
-    // Most components show a grid; Picklist Value shows a tree (field node → values).
-    await waitFor(() => document.querySelector('.x-grid3-row, li.x-tree-node'), 10000).catch(() => null);
-    const isTree = !!document.querySelector('li.x-tree-node') && !document.querySelector('.x-grid3-row');
+    // Most components show a grid; Picklist Value, Global Value Set and Layout Section show a tree. Known by
+    // the component: the page can still show the previous session's grid or tree for a moment (B-15).
+    const treeComponent = TREE_COMPONENTS.has(p.component);
+    await waitFor(() => document.querySelector(treeComponent ? 'li.x-tree-node' : '.x-grid3-row, li.x-tree-node'), 10000).catch(() => null);
+    const isTree = treeComponent || (!!document.querySelector('li.x-tree-node') && !document.querySelector('.x-grid3-row'));
+    // A tree that is still loading, or about to be replaced by the target's tree, is searched again until
+    // the row is found or 15 s have passed (B-04, B-05, B-14: "not found" while the node was loading).
+    const busy = () => !!document.querySelector('.x-tree-node-loading, .x-mask-loading');
+    // A tree hit counts only while the Object list shows the target object: a section like "System
+    // Information" is in every object's layouts, so a hit in the previous object's tree is not the row.
+    const objectShown = () => {
+      if (!p.object) return true;
+      const sel = q('assocEntSelect');
+      const o = sel?.selectedOptions?.[0];
+      return !!sel && (sel.value === p.object || (!!o && !!p.objectLabel && norm(o.text) === norm(p.objectLabel)));
+    };
+    const untilFound = (fn) => globalThis.sftlWait.untilFound(fn, { busy, ready: objectShown });
     let row = null;
     if (p.rows?.length && isTree && !p.parent) {
       // Layout Section (layout → sections): one section name can sit in several layouts.
-      const hits = await findInEveryNode(p.rows);
+      const hits = await untilFound((last) => findInEveryNode(p.rows, last));
       row = hits[0]?.row || null;
       if (hits.length > 1) warnings.push(`Also in: ${hits.slice(1).map((h) => h.place).join(', ')}. Each layout has its own copy, so translate each one.`);
+    } else if (p.rows?.length && isTree) {
+      row = await untilFound((last) => findTreeRow(p.parent ? [p.parent] : [], p.rows, last));
     } else if (p.rows?.length) {
-      row = isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows, p.rowMatch === 'richText' ? richTextMatcher(p.rows) : null);
+      row = await findGridRow(p.rows, p.rowMatch === 'richText' ? richTextMatcher(p.rows) : null);
     }
     const shown = (r) => {
       const t = (r.querySelector('.x-grid3-col-masterLabel, .x-tree-node-anchor')?.innerText || p.rows[0]).trim();
@@ -764,17 +821,71 @@
     };
     if (row) {
       mark(row, false);
-      const cell = row.querySelector('.x-grid3-td-translation .x-grid3-cell-inner, .x-grid3-td-translation, .x-tree-col.translation');
-      if (cell) {
-        for (const type of ['mousedown', 'mouseup', 'click', 'dblclick']) {
-          cell.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
-        }
-      }
-      toast(`Found "${shown(row)}". Type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
+      // The edit box is not opened for you: one opened by a script closed on the next click, and the
+      // text typed into it was lost with no warning (dev org B-07, B-09). A double-click opens a stable one.
+      toast(`Found "${shown(row)}" (marked). Double-click its translation cell, type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
+    } else if (flowStop) {
+      // Not "Filters are set": some Flow lists are still to pick.
+      const done = [langSet && 'Language', `Setup Component "${p.componentLabel}"`, ...flowStop.set].filter(Boolean);
+      const rowName = p.rows?.length ? ` Then find the row "${p.rowLabel || p.rows[0]}".` : ' Then pick the row in the list.';
+      toast(`Set: ${done.join(', ')}. ${warnings.join(' ')}${rowName}`, true);
     } else {
       toast(`Filters are set. ${p.rows?.length ? `Row "${p.rowLabel || p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
     }
     finish();
+  }
+
+  /**
+   * TW → Flow (dev org B-13, set by hand): Flow, then Flow Component "Screen Component", Screen (its label),
+   * Screen Component (its API name), Aspect ("Description" for display text, "Label" for an input). Each
+   * list reloads after the one before it. Their select ids were not seen, so each is found by an option
+   * text that only that list has; a list set by an earlier step (or Language, Setup Component) is never
+   * searched again, since a screen label can equal the flow label. Stops at the first list it cannot set.
+   * Returns { set, left }: what each list is, set and left for the user.
+   */
+  async function fillFlowFilters(q, flow) {
+    const steps = [
+      { what: `Flow "${flow.label}"`, texts: [flow.label, flow.name] },
+      flow.component && { what: `Flow Component "${flow.component}"`, texts: [flow.component] },
+      flow.screen && { what: `Screen "${flow.screen}"`, texts: [flow.screen, flow.screenName] },
+      flow.screenComponent && { what: `Screen Component "${flow.screenComponent}"`, texts: [flow.screenComponent] },
+      flow.aspect && { what: `Aspect "${flow.aspect}"`, texts: [flow.aspect], only: () => q('aspectSelect') },
+    ].filter(Boolean);
+    // Lists already used, by element and by id or name (a reload can replace the element with a new one).
+    const used = new Set();
+    const usedIds = new Set();
+    const idOf = (sel) => sel.id || sel.name || '';
+    const use = (sel) => {
+      if (!sel) return;
+      used.add(sel);
+      if (idOf(sel)) usedIds.add(idOf(sel));
+    };
+    use(q('langSelect'));
+    use(q('setupEntSelect'));
+    const isUsed = (sel) => used.has(sel) || (!!idOf(sel) && usedIds.has(idOf(sel)));
+    const set = [];
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      const want = s.texts.filter(Boolean).map(norm);
+      const find = () => {
+        const sels = s.only?.() ? [s.only()] : [...document.querySelectorAll('select')].filter((sel) => !isUsed(sel));
+        for (const sel of sels) {
+          const o = [...sel.options].find((x) => want.includes(norm(x.text)));
+          if (o) return { sel, o };
+        }
+        return null;
+      };
+      const hit = await waitFor(find, 8000).catch(() => null);
+      if (!hit) return { set, left: steps.slice(i).map((x) => x.what) };
+      use(hit.sel);
+      if (hit.sel.value !== hit.o.value) {
+        hit.sel.value = hit.o.value;
+        hit.sel.dispatchEvent(new Event('change', { bubbles: true }));
+        await quiet();
+      }
+      set.push(s.what);
+    }
+    return { set, left: [] };
   }
 
   /** Record page: click the "Translation" tab that Data Translation adds. */
@@ -826,7 +937,7 @@
   }
 
   /** Picklist Value tree: expand the field's node, then find the value under it. Verified in a real org (Nov 2026). */
-  async function findTreeRow(parents, candidates) {
+  async function findTreeRow(parents, candidates, log = true) {
     const want = candidates.filter(Boolean).map(norm);
     const pw = parents.filter(Boolean).map(norm);
     const label = (li) => norm(li.querySelector(':scope > .x-tree-node-el .x-tree-node-anchor')?.innerText);
@@ -842,9 +953,11 @@
       const hit = [...li.querySelectorAll('li.x-tree-node')].find((k) => want.includes(label(k)));
       if (hit) return hit.querySelector(':scope > .x-tree-node-el');
     }
-    // No field given or not found under it: a value already visible anywhere.
+    // No field given or not found under it: a value already visible anywhere. With a field given, only on
+    // the last try: a tree about to be replaced can show another field's value with the same label.
+    if (pw.length && !log) return null;
     const any = nodes().find((li) => want.includes(label(li)) && !pw.includes(label(li)));
-    if (!any) logEvent('warn', 'auto-fill', 'Picklist value not found in the tree', { field: parents, looking_for: candidates, fieldNodes: parentNodes.length });
+    if (!any && log) logEvent('warn', 'auto-fill', 'Picklist value not found in the tree', { field: parents, looking_for: candidates, fieldNodes: parentNodes.length });
     return any ? any.querySelector(':scope > .x-tree-node-el') : null;
   }
 
@@ -854,7 +967,7 @@
    * whichever layout happens to be open (bug: "Business Unit" under Buying Account Layout missed).
    * Returns [{ row, place }], first match first.
    */
-  async function findInEveryNode(candidates) {
+  async function findInEveryNode(candidates, log = true) {
     const want = candidates.filter(Boolean).map(norm);
     const anchor = (li) => (li.querySelector(':scope > .x-tree-node-el .x-tree-node-anchor')?.innerText || '').trim();
     const nodeEl = (li) => li.querySelector(':scope > .x-tree-node-el');
@@ -875,7 +988,7 @@
       if (hit) hits.push({ row: nodeEl(hit), place: anchor(li) });
       else if (opened) toggle(li); // close layouts opened for nothing, so the list stays short
     }
-    if (!hits.length) logEvent('warn', 'auto-fill', 'Section not found in any layout', { looking_for: candidates, layouts: tops.length });
+    if (!hits.length && log) logEvent('warn', 'auto-fill', 'Section not found in any layout', { looking_for: candidates, layouts: tops.length });
     else if (hits.length > 1) logEvent('info', 'auto-fill', `Section found in ${hits.length} layouts`, { looking_for: candidates, layouts: hits.map((h) => h.place) });
     return hits;
   }
