@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadValueSet, loadRecordTypeId } from './sfApi.js';
+import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId } from './sfApi.js';
 import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
@@ -206,15 +206,24 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // id is the clicked one (content.js lists them nearest first).
   let pageComponent = null;
   const areas = detectAreas(hints);
-  const wantsPage = areas.has('fieldSection') || areas.has('relatedList') || areas.has('lightningPageTab');
+  // A flow on a Lightning page: the Flow component names the flow (flowruntime:interview, prop flowName).
+  const wantsPage = areas.has('fieldSection') || areas.has('relatedList') || areas.has('lightningPageTab') || areas.has('flow');
   if (wantsPage && hints.flexipage && hints.componentIds?.length) {
     pageComponent = await loadNearestFlexiPageComponent(session, hints.flexipage, hints.componentIds, objects).catch((e) => {
       warnings.push(`Lightning page not read: ${e.message}`);
       return null;
     });
     // A component of another kind (e.g. the tab set around a field section) says nothing about this text.
-    const expect = areas.has('fieldSection') ? /^flexipage:fieldSection$/ : areas.has('relatedList') ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/ : /^flexipage:tab$/;
+    const expect = areas.has('flow')
+      ? /^flowruntime:interview$/
+      : areas.has('fieldSection')
+        ? /^flexipage:fieldSection$/
+        : areas.has('relatedList')
+          ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/
+          : /^flexipage:tab$/;
     if (pageComponent && !expect.test(pageComponent.component || '')) pageComponent = null;
+    // The flow's screens (active version), so the card can name the screen and component of this text.
+    if (pageComponent?.props?.flowName) pageComponent = { ...pageComponent, flow: await loadFlowScreens(session, pageComponent.props.flowName) };
   }
   // The standard Related Lists component (force:relatedListContainer, one card per page layout related list)
   // holds no list of its own in the page metadata: the title's link names the relationship (content.js).

@@ -266,6 +266,40 @@ export async function loadNearestFlexiPageComponent(session, flexipageTag, compo
   return null;
 }
 
+const flowCache = new Map();
+
+/**
+ * The screens of a flow's active version (else its latest), for the screen text you point at. Tooling
+ * FlowDefinition → Flow.Metadata (one row at a time). Dev org, checked live: screens[] { name, label,
+ * fields[] { name, fieldType DisplayText|InputField|RegionContainer…, fieldText, helpText, fields[] } }.
+ * Returns { name, label, version, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }] }] } or null.
+ */
+export function loadFlowScreens(session, flowName) {
+  const m = /^(?:([A-Za-z0-9]+)__)?([A-Za-z0-9_]+)$/.exec(flowName || '');
+  if (!m) return Promise.resolve(null);
+  const key = `${session.host}|${flowName}`;
+  const hit = flowCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const [, ns, dev] = m;
+  const promise = (async () => {
+    const def = await queryAll(session, `SELECT ActiveVersionId, LatestVersionId FROM FlowDefinition WHERE DeveloperName = '${dev}'${ns ? ` AND NamespacePrefix = '${ns}'` : ''} LIMIT 1`, { tooling: true });
+    const id = def[0]?.ActiveVersionId || def[0]?.LatestVersionId;
+    if (!/^[a-zA-Z0-9]{15,18}$/.test(id || '')) return null;
+    const v = (await queryAll(session, `SELECT MasterLabel, VersionNumber, Metadata FROM Flow WHERE Id = '${id}'`, { tooling: true }))[0];
+    if (!v) return null;
+    // Sections hold their fields in columns: fields[].fields[] (any depth).
+    const flat = (fields) => (fields || []).flatMap((f) => [{ name: f.name, fieldType: f.fieldType, fieldText: f.fieldText ?? null, helpText: f.helpText ?? null }, ...flat(f.fields)]);
+    return {
+      name: flowName,
+      label: v.MasterLabel || flowName,
+      version: v.VersionNumber ?? null,
+      screens: (v.Metadata?.screens || []).map((s) => ({ name: s.name, label: s.label || s.name, fields: flat(s.fields) })),
+    };
+  })().catch(() => null);
+  flowCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
 const valueSetCache = new Map();
 
 /**
