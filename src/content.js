@@ -732,6 +732,7 @@
     if (!(await choose(q, 'setupEntSelect', [p.component], [p.componentLabel]))) {
       throw new Error(`Setup Component "${p.componentLabel}" is not in this org's list.`);
     }
+    if (p.flow) await fillFlowFilters(q, p.flow, warnings);
     if (p.object) {
       await waitFor(() => q('assocEntSelect') && q('assocEntSelect').options.length > 1, 8000).catch(() => null);
       if (!(await choose(q, 'assocEntSelect', [p.object], [p.objectLabel]))) {
@@ -791,6 +792,44 @@
       toast(`Filters are set. ${p.rows?.length ? `Row "${p.rowLabel || p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
     }
     finish();
+  }
+
+  /**
+   * TW → Flow (dev org B-13, set by hand): Flow, then Flow Component "Screen Component", Screen (its label),
+   * Screen Component (its API name), Aspect ("Description" for display text, "Label" for an input). Each
+   * list reloads after the one before it. Their select ids were not seen, so each is found by an option
+   * text that only that list has. Stops at the first list it cannot set and says what is left.
+   */
+  async function fillFlowFilters(q, flow, warnings) {
+    const steps = [
+      { what: `Flow "${flow.label}"`, texts: [flow.label, flow.name] },
+      flow.component && { what: `Flow Component "${flow.component}"`, texts: [flow.component] },
+      flow.screen && { what: `Screen "${flow.screen}"`, texts: [flow.screen, flow.screenName] },
+      flow.screenComponent && { what: `Screen Component "${flow.screenComponent}"`, texts: [flow.screenComponent] },
+      flow.aspect && { what: `Aspect "${flow.aspect}"`, texts: [flow.aspect], only: () => q('aspectSelect') },
+    ].filter(Boolean);
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      const want = s.texts.filter(Boolean).map(norm);
+      const find = () => {
+        const sels = s.only?.() ? [s.only()] : [...document.querySelectorAll('select')];
+        for (const sel of sels) {
+          const o = [...sel.options].find((x) => want.includes(norm(x.text)));
+          if (o) return { sel, o };
+        }
+        return null;
+      };
+      const hit = await waitFor(find, 8000).catch(() => null);
+      if (!hit) {
+        warnings.push(`Pick ${steps.slice(i).map((x) => x.what).join(', ')} yourself.`);
+        return;
+      }
+      if (hit.sel.value !== hit.o.value) {
+        hit.sel.value = hit.o.value;
+        hit.sel.dispatchEvent(new Event('change', { bubbles: true }));
+        await quiet();
+      }
+    }
   }
 
   /** Record page: click the "Translation" tab that Data Translation adds. */

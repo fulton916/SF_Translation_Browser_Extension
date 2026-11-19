@@ -126,6 +126,34 @@ test('A-03 / A-24 / A-12 / A-27: wording of picklist, button and Object Manager 
   assert.equal(heading.results[0].source, SOURCE.SALESFORCE);
 });
 
+test('A-17 / B-13: flow screen text names the flow, screen, screen component and aspect', () => {
+  const pc = {
+    page: 'Demo Gadget Record Page', id: 'demo_flow', component: 'flowruntime:interview', label: null, props: { flowName: 'Demo_Gadget_Intake' },
+    flow: {
+      name: 'Demo_Gadget_Intake', label: 'Demo Gadget Intake', version: 1,
+      screens: [{ name: 'Intake_Screen', label: 'Gadget Intake', fields: [
+        { name: 'Intro_Text', fieldType: 'DisplayText', fieldText: '<p>Tell us about the gadget.</p>', helpText: null },
+        { name: 'Gadget_Nickname', fieldType: 'InputField', fieldText: 'Gadget Nickname', helpText: null },
+      ] }],
+    },
+  };
+  const hints = { tags: ['p', 'span', 'lightning-formatted-rich-text', 'flowruntime-display-text-lwc', 'flowruntime-flow', 'flexipage-component2'], componentIds: ['demo_flow'] };
+  const r = locate({ text: 'Tell us about the gadget.', org: baseOrg, describes: [gadget], hints, pageComponent: pc }).results[0];
+  assert.equal(r.key, 'flow:Demo_Gadget_Intake.Intake_Screen.Intro_Text');
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.title, 'Flow screen text: Demo Gadget Intake');
+  assert.deepEqual(r.steps.slice(-5), ['Flow: Demo Gadget Intake', 'Flow Component: Screen Component', 'Screen: Gadget Intake', 'Screen Component: Intro_Text', 'Aspect: Description']);
+  assert.deepEqual(r.goto.flow, { label: 'Demo Gadget Intake', name: 'Demo_Gadget_Intake', component: 'Screen Component', screen: 'Gadget Intake', screenName: 'Intake_Screen', screenComponent: 'Intro_Text', aspect: 'Description' });
+  assert.equal(r.goto.rows[0], '<p>Tell us about the gadget.</p>');
+  assert.equal(r.goto.rowMatch, 'richText');
+  const input = locate({ text: 'Gadget Nickname', org: baseOrg, describes: [gadget], hints, pageComponent: pc }).results.find((x) => x.key.startsWith('flow:'));
+  assert.equal(input.goto.flow.aspect, 'Label');
+  // No flow metadata: no instruction sentence is used as a row name.
+  const generic = locate({ text: 'Tell us about the gadget.', org: baseOrg, describes: [gadget], hints }).results.find((x) => x.key === 'area:flow');
+  assert.deepEqual(generic.goto.rows, ['Tell us about the gadget.']);
+  assert.ok(!generic.steps.some((s) => /pick the flow and version/.test(s)));
+});
+
 test('A-15: a page with custom component identifiers is read; a {!$Label} tab title gets only the label card', async () => {
   const ci = (identifier, componentName, props) => ({ componentInstance: { identifier, componentName, componentInstanceProperties: Object.entries(props).map(([name, value]) => ({ name, value })) } });
   globalThis.fetch = async () => ({

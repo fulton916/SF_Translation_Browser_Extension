@@ -1077,7 +1077,61 @@ function pathResults(org, needle, areas, describes, add, rawText, record) {
 
 // ---------- hint-only results (from page metadata, no text match needed) ----------
 
-function hintResults(org, hints, describes, areas, text, pageHandled = false) {
+/**
+ * Text in a running flow. pageComponent.flow (background.js, from the page's Flow component and the
+ * flow's active version) gives the flow, screen and screen component: TW → Flow lists display text under
+ * Flow Component "Screen Component" with Aspect "Description", an input's label with Aspect "Label"
+ * (dev org B-13, checked by hand). Without it, the card names what is known and never uses an
+ * instruction as a row name.
+ */
+function flowResult(org, pc, text) {
+  const flow = pc?.flow || null;
+  const flowName = flow?.label || pc?.props?.flowName || null;
+  const needle = normalize(text);
+  let hit = null;
+  for (const s of flow?.screens || []) {
+    for (const f of s.fields || []) {
+      const shown = f.fieldType === 'DisplayText' ? htmlToText(f.fieldText) : f.fieldText;
+      const mt = needle && shown ? matchType(needle, shown) : null;
+      if (mt === 'exact' || (mt && !hit)) hit = { s, f, display: f.fieldType === 'DisplayText', exact: mt === 'exact' };
+    }
+  }
+  const base = workbench(org, { component: 'Flow' });
+  if (!hit) {
+    return {
+      key: 'area:flow',
+      confidence: 'context',
+      title: 'Flow screen text',
+      subtitle: flowName ? `You pointed at text in the running flow ${flowName}` : 'You pointed at text in a running flow',
+      ...base,
+      steps: [...base.steps, flowName ? `Flow: ${flowName}` : 'Flow: the flow on this page', 'Flow Component: Screen Component, then the screen and the component that shows this text'],
+      goto: { ...base.goto, rows: text ? [text] : [], flow: flowName ? { label: flowName, name: pc?.props?.flowName || null } : null },
+      url: SETUP.workbench,
+      notes: ['Flow labels referencing {!$Label...} are translated in Custom Labels instead.'],
+    };
+  }
+  const aspect = hit.display ? 'Description' : 'Label';
+  return {
+    key: `flow:${flow.name}.${hit.s.name}.${hit.f.name}`,
+    confidence: hit.exact ? 'confirmed' : 'exact',
+    title: `Flow screen text: ${flowName}`,
+    subtitle: `Screen "${hit.s.label}", component ${hit.f.name}${flow.version ? ` (version ${flow.version})` : ''}`,
+    ...base,
+    steps: [...base.steps, `Flow: ${flowName}`, 'Flow Component: Screen Component', `Screen: ${hit.s.label}`, `Screen Component: ${hit.f.name}`, `Aspect: ${aspect}`],
+    goto: {
+      ...base.goto,
+      flow: { label: flowName, name: flow.name, component: 'Screen Component', screen: hit.s.label, screenName: hit.s.name, screenComponent: hit.f.name, aspect },
+      rows: [hit.f.fieldText, text].filter(Boolean),
+      rowMatch: hit.display ? 'richText' : null,
+      rowLabel: truncate(text, 80),
+    },
+    url: SETUP.workbench,
+    copy: hit.f.name,
+    notes: [`The flow on this page is ${flowName}; this text is ${hit.display ? 'the display text' : 'the label'} of its screen component ${hit.f.name}.`],
+  };
+}
+
+function hintResults(org, hints, describes, areas, text, pageHandled = false, pageComponent = null) {
   const out = [];
   const objLabel = (o) => describes.find((d) => d.name === o)?.label || o;
 
@@ -1139,17 +1193,7 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
       ],
     });
   }
-  if (areas.has('flow')) {
-    out.push({
-      key: 'area:flow',
-      confidence: 'context',
-      title: 'Flow screen text',
-      subtitle: 'You pointed at text in a running flow',
-      ...workbench(org, { component: 'Flow', row: 'pick the flow and version' }),
-      url: SETUP.workbench,
-      notes: ['Flow labels referencing {!$Label...} are translated in Custom Labels instead.'],
-    });
-  }
+  if (areas.has('flow')) out.push(flowResult(org, pageComponent, text));
   // Tab title read from the page metadata: that answer replaces the generic card.
   if (areas.has('lightningPageTab') && !pageHandled) {
     out.push({
@@ -1842,7 +1886,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     });
   }
 
-  for (const r of hintResults(org, hints, describes, areas, String(text || '').trim(), pageHandled)) {
+  for (const r of hintResults(org, hints, describes, areas, String(text || '').trim(), pageHandled, pageComponent)) {
     const existing = results.find((x) => x.key === r.key);
     if (!existing) add(r);
     else if (CONFIDENCE_RANK[r.confidence] < CONFIDENCE_RANK[existing.confidence]) existing.confidence = r.confidence;
