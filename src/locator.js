@@ -1162,12 +1162,15 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
     });
   }
   if (areas.has('relatedList') && !pageHandled) {
+    const base = workbench(org, { component: 'Custom Field', objectLabel: 'the child object', aspect: 'Related List Label', row: text || 'the lookup field' });
     out.push({
       key: 'area:relatedList',
       confidence: 'context',
       title: 'Related list title',
       subtitle: 'Comes from the lookup field that links the two objects',
-      ...workbench(org, { component: 'Custom Field', objectLabel: 'the CHILD object', aspect: 'Related List Label', row: text || 'the lookup field' }),
+      ...base,
+      // The child object is not known here: auto-fill leaves Object for you (B-10: it kept the parent).
+      goto: { ...base.goto, objectLabel: null, rows: text ? [text] : [] },
       notes: ['For standard relationships, the title is the plural object name: use Rename Tabs and Labels.'],
     });
   }
@@ -1300,6 +1303,10 @@ function demoteSameTextLabels(results, why) {
   }
 }
 
+// A related list read from the page metadata names its page; one in the standard Related Lists component
+// is known by its title link only (background.js, page: null).
+const onPage = (pc) => (pc.page ? ` on the Lightning page ${pc.page}` : ' in the Related Lists component');
+
 /**
  * Related list with no label of its own (UAT2: Files = AttachedContentDocuments, Account Team,
  * Opportunities). A custom relationship (…__r) keeps the generic Translation Workbench card.
@@ -1316,10 +1323,10 @@ function standardRelatedList(org, results, add, pc) {
   } else {
     add({
       ...salesforceTextResult(`stdlist:${api}`, 'confirmed'),
-      subtitle: `Standard related list ${api} on the Lightning page ${pc.page}`,
+      subtitle: `Standard related list ${api}${onPage(pc)}`,
       steps: [
         SALESFORCE_TEXT.step,
-        `To show different text: in Lightning App Builder → ${pc.page}, use a Dynamic Related List – Single and set its Related List Label to {!$Label.c.Your_Label}, then translate that label.`,
+        `To show different text: in Lightning App Builder → ${pc.page || 'this record page'}, use a Dynamic Related List – Single and set its Related List Label to {!$Label.c.Your_Label}, then translate that label.`,
       ],
       url: SETUP.customLabels,
       copy: api,
@@ -1344,7 +1351,7 @@ function customRelatedList(org, results, add, pc) {
     key: `rellist:${c.childSObject}.${c.field}`,
     confidence: 'confirmed',
     title: `Related list label of ${c.childSObject}.${c.field}`,
-    subtitle: `${pc.props.relatedListApiName} on the Lightning page ${pc.page}`,
+    subtitle: `${pc.props.relatedListApiName}${onPage(pc)}`,
     ...workbench(org, { component: 'Custom Field', object: c.childSObject, objectLabel, aspect: 'Related List Label', row: fieldLabel, rows: [fieldLabel, c.field], pkg: namespaceOf(c.field) }),
     copy: `${c.childSObject}.${c.field}`,
     notes: [
