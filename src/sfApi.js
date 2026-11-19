@@ -253,6 +253,19 @@ export async function loadFlexiPageComponent(session, flexipageTag, componentId,
   return null;
 }
 
+/**
+ * The nearest of the pointed element's component ids (nearest first) that the page metadata knows.
+ * content.js keeps every identifier-shaped name, since a page deployed from metadata can use any
+ * identifier (dev org: sftl_tab_greetingTab, sftl_tabset). One FlexiPage query, cached.
+ */
+export async function loadNearestFlexiPageComponent(session, flexipageTag, componentIds = [], objects = []) {
+  for (const id of componentIds.slice(0, 5)) {
+    const pc = await loadFlexiPageComponent(session, flexipageTag, id, objects);
+    if (pc) return pc;
+  }
+  return null;
+}
+
 const valueSetCache = new Map();
 
 /**
