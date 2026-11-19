@@ -171,6 +171,29 @@ export function contextObjects(urls, hints = {}) {
   return out.filter((o) => !['home', 'FeedItem', 'Global'].includes(o)).slice(0, 3);
 }
 
+/**
+ * The object a dialog title names ("Add Opportunity Team Members" → OpportunityTeamMember): the object whose
+ * plural or singular label is the longest whole-word part of the title. Null when none is.
+ * A picklist inside a dialog opens its options in a popup outside the dialog (Add Opportunity Team
+ * Members: a[role=option] < div[data-aura-class=uiPopupTarget], nothing names the object), so the title does.
+ */
+export function objectFromTitle(title, objects = []) {
+  const words = (s) => normalize(s).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const t = ` ${words(title)} `;
+  let best = null;
+  let bestLen = 0;
+  for (const o of objects || []) {
+    for (const l of [o.labelPlural, o.label]) {
+      const n = words(l);
+      if (n && n.length > bestLen && t.includes(` ${n} `)) {
+        best = o.name;
+        bestLen = n.length;
+      }
+    }
+  }
+  return best;
+}
+
 /** Turns raw tag names from the clicked element's path into named UI areas. */
 export function detectAreas(hints = {}) {
   const tags = hints.tags || [];
@@ -252,7 +275,19 @@ export function detectAreas(hints = {}) {
     else if (has(/^force-list-view-manager-status-info$/)) areas.add('pipelineStatus');
     else if (has(/^(th|td|table|lightning-datatable)$/)) areas.add('pipelineGrid');
     else if (has(/^h1$/)) areas.add('pipelineObjectName');
+    if (has(/^runtime_pipeline_inspector-kpi-panel$/)) areas.add('pipelineMetric');
   }
+  // Utility bar (checked live): span.itemTitle < button < div[oneUtilityBarItem] <
+  // div[flexipageComponent][tsn=runtime_sales_todo_list_unifiedToDoListAuraWrapper] < ul.slds-utility-bar; an open
+  // item's panel title is h2.panelTitle < div[oneUtilityBarPanel]. Item labels are set in App Manager → Utility Items.
+  // Only the label: the item's button, or the open panel's own title (not the records listed in the panel).
+  if (aura.includes('oneUtilityBarItem') || (aura.includes('oneUtilityBarPanel') && tags.slice(0, 3).includes('h2'))) {
+    areas.add('utilityBar');
+    if (comp(/^runtime_sales_todo_list/)) areas.add('utilityToDo');
+  }
+  // File upload area of the Files related list (checked live): "Upload Files" / "Or drop files" are a span <
+  // label < lightning-primitive-file-droppable-zone < lightning-input < div[forceContentFileDroppableZone].
+  if (aura.includes('forceContentFileDroppableZone') || has(/^lightning-primitive-file-droppable-zone$/)) areas.add('fileUpload');
   const custom = tags.filter((t) => /^c-/.test(t));
   if (custom.length || (hints.auraCustom || []).length) areas.add('customComponent');
   return areas;
@@ -1637,7 +1672,28 @@ const STANDARD_AREAS = {
   calendar: { what: 'the Calendar page (header buttons, views, day headers, My Calendars)' },
   globalHeader: { what: 'the global header (search, reminders, notifications)' },
   pipelineInspection: { what: 'Pipeline Inspection (metric tiles, filters, Metrics menu, tabs and buttons)' },
+  fileUpload: { what: 'the file upload area (Upload Files, Or drop files)' },
+  utilityBar: { what: 'the To Do List utility' },
 };
+
+// Utility items whose label Salesforce sets (English; the Label field is locked in App Manager, a test sandbox checked live).
+const SF_UTILITY_NAMES = ['to do list'];
+
+function utilityLabelResult() {
+  return {
+    key: 'area:utilityItem',
+    source: SOURCE.CONTEXT,
+    confidence: 'context',
+    title: 'Utility bar item label',
+    subtitle: 'An item in the utility bar at the bottom of the app',
+    steps: [
+      'The label is set per app: Setup → App Manager → the app → Edit → Utility Items (Desktop Only) → the item → Label.',
+      'Translation Workbench has no Setup Component for utility item labels.',
+    ],
+    url: '/lightning/setup/NavigationMenus/home',
+    notes: [],
+  };
+}
 
 function pipelineViewResult() {
   return {
@@ -1681,6 +1737,10 @@ function addPipelineResults(areas, results, add) {
   const r = standardTextResult('pipelineInspection', areas.has('pipelineStatus') || orgName ? 'context' : 'confirmed');
   if (areas.has('pipelineStatus')) {
     r.notes = ['"items" and "Filtered by" are Salesforce text. The filter names after them are field labels and values from your org.'];
+  }
+  // An admin can rename a metric (Pipeline Settings → Metrics Settings): that name has its own Workbench row.
+  if (areas.has('pipelineMetric')) {
+    r.notes = ['A metric name an admin set in Pipeline Settings → Metrics Settings is translated in Translation Workbench → Translate → Setup Component: Pipeline Inspection Metric Configuration (column "Pipeline Inspection Metric Custom Label"). Salesforce\'s own metric names are not listed there.'];
   }
   add(r);
 }
@@ -1818,6 +1878,23 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
   }
   if (areas.has('pipelineInspection')) {
     addPipelineResults(areas, results, add);
+    return;
+  }
+  if (areas.has('utilityBar')) {
+    if (areas.has('utilityToDo') || SF_UTILITY_NAMES.includes(needle)) {
+      demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.utilityBar.what}.`);
+      add(salesforceTextResult('sfdctext:utilityBar', 'confirmed', {
+        subtitle: 'Label of the To Do List utility',
+        notes: ['Its Label field is locked in App Manager → the app → Edit → Utility Items.'],
+      }));
+    } else {
+      add(utilityLabelResult());
+    }
+    return;
+  }
+  if (areas.has('fileUpload')) {
+    demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.fileUpload.what}.`);
+    add(standardTextResult('fileUpload', 'confirmed'));
     return;
   }
   for (const area of ['activityTimeline', 'duplicates', 'feed', 'reportChart', 'globalHeader']) {

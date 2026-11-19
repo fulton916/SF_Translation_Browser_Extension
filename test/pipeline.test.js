@@ -105,3 +105,8 @@ test('Pipeline Inspection: the list status line is Salesforce text with org filt
 test('Pipeline Inspection is not detected elsewhere', () => {
   assert.ok(!detectAreas({ tags: ['span', 'button', 'lst-list-view-picker'], auraClasses: ['forceListViewManager'] }).has('pipelineInspection'));
 });
+
+test('Pipeline Inspection: a metric tile says where an admin-set metric name is translated', () => {
+  const r = run('Moved In', kpi).results[0];
+  assert.ok(r.notes.some((n) => n.includes('Pipeline Inspection Metric Configuration')));
+});
