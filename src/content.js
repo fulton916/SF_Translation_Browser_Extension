@@ -167,7 +167,8 @@
     hints.tags = [...new Set(hints.tags)];
     hints.auraClasses = [...new Set(hints.auraClasses)];
     // On a field's error message: its text, not a nearby label (dev org: hovering the message gave "Paint Color").
-    let text = (errorEl && (errorEl.innerText || '').trim().split('\n')[0].trim()) || elementText(path);
+    // Its first line is the field label for screen readers (an assistive span): skipped.
+    let text = (errorEl && visibleText(errorEl).split('\n')[0].trim()) || elementText(path);
     // The (i) icon only holds "Help <field label>" for screen readers (the help text itself is in a
     // popup that is not in the path). Keep the label; locator.js lists the field's help text.
     if (hints.helpIcon) {
@@ -179,11 +180,13 @@
 
   // Screen-reader-only text (seen live: "Enable table equivalent for screen reader users" on a chart).
   const isAssistive = (el) => /\b(slds-assistive-text|assistiveText)\b/.test(typeof el.className === 'string' ? el.className : '');
+  // Text without the assistive spans inside the element, when it has other text (src/pointerTarget.js).
+  const visibleText = (el) => (globalThis.sftlPointer?.visibleText ? globalThis.sftlPointer.visibleText(el) : (el.innerText || '').trim());
 
   function elementText(path) {
     for (const el of path.slice(0, 6)) {
       if (isAssistive(el)) continue;
-      const t = (el.innerText || '').trim();
+      const t = visibleText(el);
       if (t && t.length <= 300) return t.split('\n')[0].trim();
       const label = el.getAttribute('title') || el.getAttribute('aria-label');
       if (label) return label.trim();
