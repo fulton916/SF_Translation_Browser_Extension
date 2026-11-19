@@ -56,6 +56,31 @@ test('A-16: text in a Lightning App Builder Rich Text component → Admin work r
   assert.ok(!out.results.some((x) => x.key === 'area:lightningPageTab'));
 });
 
+test('A-23 / B-10: a list in the standard Related Lists component names the child lookup field and object', () => {
+  const account = { name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, fields: [], recordTypeInfos: [], quickActions: [] };
+  // As background.js builds it from the title link (.../related/Demo_Gadgets__r/view) and the describes.
+  const pc = {
+    page: null, id: null, component: 'force:relatedListSingleContainer', label: null, props: { relatedListApiName: 'Demo_Gadgets__r' },
+    child: { childSObject: 'Demo_Gadget__c', field: 'Demo_Account__c', relationshipName: 'Demo_Gadgets__r', fieldLabel: 'Gadget Account', objectLabel: 'Gadget' },
+  };
+  const hints = {
+    tags: ['span', 'a', 'h2', 'div', 'lst-list-view-manager-header', 'lst-related-list-view-manager', 'article', 'lst-related-list-single-container', 'lst-related-list-container', 'flexipage-component2'],
+    listHeader: true, componentIds: ['force_relatedListContainer'], relatedListApi: 'Demo_Gadgets__r',
+  };
+  const out = locate({ text: 'Account Gadgets (1)', org: baseOrg, describes: [account], hints, pageComponent: pc });
+  const r = out.results[0];
+  assert.equal(r.key, 'rellist:Demo_Gadget__c.Demo_Account__c');
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.subtitle, 'Demo_Gadgets__r in the Related Lists component');
+  assert.equal(r.goto.object, 'Demo_Gadget__c', 'the child object, not the parent Account');
+  assert.equal(r.goto.aspect, 'relationshiplabel');
+  assert.ok(!out.results.some((x) => x.key === 'area:relatedList'));
+  // Without the child: the generic card names no object and leaves auto-fill's Object alone.
+  const generic = locate({ text: 'Account Gadgets', org: baseOrg, describes: [account], hints }).results.find((x) => x.key === 'area:relatedList');
+  assert.ok(generic.steps.includes('Object: the child object'));
+  assert.equal(generic.goto.objectLabel, null);
+});
+
 test('A-15: a page with custom component identifiers is read; a {!$Label} tab title gets only the label card', async () => {
   const ci = (identifier, componentName, props) => ({ componentInstance: { identifier, componentName, componentInstanceProperties: Object.entries(props).map(([name, value]) => ({ name, value })) } });
   globalThis.fetch = async () => ({

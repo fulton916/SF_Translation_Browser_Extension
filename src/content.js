@@ -95,7 +95,7 @@
     // recordTitle: the record name in the highlights panel (lightning-formatted-text slot="primaryField").
     const hints = {
       selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null,
-      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [], highlightsLabel: null,
+      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [], highlightsLabel: null, relatedListApi: null,
     };
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
     let inField = false;
@@ -132,6 +132,9 @@
       if (tag === 'lightning-helptext') hints.helpIcon = true;
       if (tag === 'h2' || /\bslds-card__header\b|\bslds-card__header-title\b/.test(cls)) headerSeen = true;
       if (hints.listHeader === null && /^(lst-related-list|force-related-list|lst-dynamic-related-list)/.test(tag)) hints.listHeader = headerSeen;
+      // A related list title links to its list view (dev org, Account page Related Lists component:
+      // a.slds-card__header-link href=".../related/SFTL_Widgets__r/view"): the relationship it shows.
+      if (!hints.relatedListApi && tag === 'a') hints.relatedListApi = /\/related\/([A-Za-z0-9_]+)\/view\b/.exec(el.getAttribute('href') || '')?.[1] || null;
       if (el.getAttribute('slot') === 'primaryField' && path.some((p) => p.tagName === 'RECORDS-HIGHLIGHTS2')) hints.recordTitle = true;
       if (!hints.flexipage && tag.startsWith('forcegenerated-flexipage_')) hints.flexipage = tag.slice(0, 200);
       const role = el.getAttribute('role');

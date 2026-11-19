@@ -216,6 +216,11 @@ async function lookup({ text, hints, urls, refresh = false }) {
     const expect = areas.has('fieldSection') ? /^flexipage:fieldSection$/ : areas.has('relatedList') ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/ : /^flexipage:tab$/;
     if (pageComponent && !expect.test(pageComponent.component || '')) pageComponent = null;
   }
+  // The standard Related Lists component (force:relatedListContainer, one card per page layout related list)
+  // holds no list of its own in the page metadata: the title's link names the relationship (content.js).
+  if (areas.has('relatedList') && !pageComponent && /^[A-Za-z0-9_]+$/.test(hints.relatedListApi || '')) {
+    pageComponent = { page: null, id: null, component: 'force:relatedListSingleContainer', label: null, props: { relatedListApiName: hints.relatedListApi } };
+  }
   const liveDescribes = describes.filter(Boolean);
   const parentDescribe = liveDescribes.find((d) => d.name === record?.object) || liveDescribes[0];
   // Custom related list title (relatedListApiName …__r, no label of its own): its Related List Label is on
