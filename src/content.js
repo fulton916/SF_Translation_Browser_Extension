@@ -88,7 +88,8 @@
     // auraClasses: data-aura-class values on the path, e.g. runtime_sales_pathassistantPathAssistantInfo
     // (Path "Guidance for Success" is plain Aura divs, so tag names alone do not show it).
     // fieldPart: 'label' or 'value' of a record field (classes checked on a UAT2 Account, Nov 2026:
-    // span.test-id__field-label / span.test-id__field-value.slds-form-element__static).
+    // span.test-id__field-label / span.test-id__field-value.slds-form-element__static), or 'error' on its
+    // error message.
     // helpIcon: pointed at a field's (i) icon (lightning-helptext); its text is the assistive "Help <label>".
     // listHeader: true on a related list's title bar (h2.slds-card__header-title), false inside its rows.
     // recordTitle: the record name in the highlights panel (lightning-formatted-text slot="primaryField").
@@ -101,12 +102,21 @@
     let headerSeen = false;
     let titleSeen = false;
     let valueSeen = false;
+    let errorEl = null;
+    // A field's error message (dev org: a validation rule's message under the field in the edit form). It sits
+    // inside the field's RecordField element, so it is neither the field's label nor its value. LWC inputs:
+    // div.slds-form-element__help[role=alert] in a .slds-has-error element; Aura inputs: ul.uiInputDefaultError.
+    const hasError = path.some((p) => /\b(slds-has-error|has-error)\b/.test(typeof p.className === 'string' ? p.className : ''));
     for (const el of path.slice(0, 60)) {
       const tag = el.tagName.toLowerCase();
       hints.tags.push(tag);
       const cls = typeof el.className === 'string' ? el.className : '';
       if (!inField && !hints.fieldPart) {
-        if (/\btest-id__field-label\b|\bslds-form-element__label\b/.test(cls)) hints.fieldPart = 'label';
+        const help = /\b(slds-form-element__help|form-element__help)\b/.test(cls) && (el.getAttribute('role') === 'alert' || hasError);
+        if (help || /\buiInputDefaultError\b/.test(cls)) {
+          hints.fieldPart = 'error';
+          errorEl = el;
+        } else if (/\btest-id__field-label\b|\bslds-form-element__label\b/.test(cls)) hints.fieldPart = 'label';
         else if (/\btest-id__field-value\b|\bslds-form-element__static\b|\bslds-form-element__control\b/.test(cls)) hints.fieldPart = 'value';
       }
       // Highlights panel (compact layout) field, seen in DV2 (Nov 2026): records-highlights-details-item
@@ -151,7 +161,8 @@
     hints.selectionNames = [...new Set(hints.selectionNames)];
     hints.tags = [...new Set(hints.tags)];
     hints.auraClasses = [...new Set(hints.auraClasses)];
-    let text = elementText(path);
+    // On a field's error message: its text, not a nearby label (dev org: hovering the message gave "Paint Color").
+    let text = (errorEl && (errorEl.innerText || '').trim().split('\n')[0].trim()) || elementText(path);
     // The (i) icon only holds "Help <field label>" for screen readers (the help text itself is in a
     // popup that is not in the path). Keep the label; locator.js lists the field's help text.
     if (hints.helpIcon) {
