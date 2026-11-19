@@ -1740,7 +1740,20 @@ function pipelineViewResult() {
  * Pipeline Inspection: Salesforce's own page. The object name, view name, status line and list rows show org text.
  * Same-text custom labels and quick actions are coincidences everywhere on it.
  */
-function addPipelineResults(areas, results, add) {
+function pipelineRecordDataResult() {
+  return {
+    key: 'value:pipelineList',
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'context',
+    title: 'Record data: a value in the Pipeline Inspection list',
+    subtitle: 'A field value of the opportunity in this row (or of its account)',
+    steps: [...RECORD_DATA_STEPS],
+    url: null,
+    notes: ['Picklist values (such as Stage) are listed above when one matches: those are translated in Translation Workbench → Picklist Value.'],
+  };
+}
+
+function addPipelineResults(areas, results, add, hints = {}, needle = '') {
   const why = `custom labels are not used in ${STANDARD_AREAS.pipelineInspection.what}.`;
   // The object name above the view name: object/tab results were confirmed by confirmNames.
   if (areas.has('pipelineObjectName') && results.some((r) => /^(object|tab):/.test(r.key) && r.confidence === 'confirmed')) return;
@@ -1755,9 +1768,27 @@ function addPipelineResults(areas, results, add) {
     r.confidence = 'partial';
     r.notes = ['Same words only: the Pipeline Inspection buttons are Salesforce text, not quick actions.', ...(r.notes || [])];
   }
-  // List rows: column headers are field labels and cells are record values, both listed above when they match.
-  if (areas.has('pipelineGrid')) return;
   const orgName = results.some((r) => r.confidence === 'confirmed' || r.confidence === 'exact');
+  // List rows (UAT2 with records, checked live: lightning-datatable inside runtime_pipeline_inspector-…-common-list).
+  if (areas.has('pipelineGrid')) {
+    const tags = hints.tags || [];
+    // The Activity cell is Salesforce's activity chart ("No recent activity": runtime_sales_activities-activity-stacked-bar-chart…).
+    if (tags.some((t) => /^runtime_sales_activities-/.test(t))) {
+      add(standardTextResult('pipelineInspection', 'confirmed'));
+      return;
+    }
+    if (tags.includes('th')) {
+      // A column header that is no Opportunity field label is a column Pipeline Inspection adds (Alerts, Contacts,
+      // Activity, Important). Field labels were confirmed in the main flow.
+      if (orgName) return;
+      const near = results.some((r) => r.key.startsWith('field:'));
+      add(salesforceTextResult('sfdctext:pipelineColumn', near ? 'context' : 'confirmed', { subtitle: 'A column Pipeline Inspection adds to the list (Alerts, Contacts, Activity, Important)' }));
+      return;
+    }
+    // A cell: a value of the opportunity or its account. Counts (Alerts, Contacts) are numbers, not text.
+    if (!orgName && needle && !/^[\d\s.,%+-]*$/.test(needle)) add(pipelineRecordDataResult());
+    return;
+  }
   const r = standardTextResult('pipelineInspection', areas.has('pipelineStatus') || orgName ? 'context' : 'confirmed');
   if (areas.has('pipelineStatus')) {
     r.notes = ['"items" and "Filtered by" are Salesforce text. The filter names after them are field labels and values from your org.'];
@@ -1901,7 +1932,7 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
     return;
   }
   if (areas.has('pipelineInspection')) {
-    addPipelineResults(areas, results, add);
+    addPipelineResults(areas, results, add, hints, needle);
     return;
   }
   if (areas.has('utilityBar')) {
