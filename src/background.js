@@ -1,5 +1,5 @@
 import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation } from './sfApi.js';
-import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
+import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
 // ---------- test log (viewer: click the toolbar icon) ----------
@@ -224,13 +224,17 @@ function logLookup(text, url, hints, result) {
 
 async function lookup({ text, hints, urls, refresh = false }) {
   const session = await getSession(urls[0]);
-  const objects = contextObjects(urls, hints);
+  let objects = contextObjects(urls, hints);
   // The user's language now (one small call, cached 15 s): labels read in another language are read again.
   const language = await loadUserLanguage(session, { refresh });
-  const [org, ...describes] = await Promise.all([
-    loadOrgData(session, { refresh, language }),
-    ...objects.map((o) => loadDescribe(session, o, { refresh, language })),
-  ]);
+  const orgLoad = loadOrgData(session, { refresh, language });
+  // In a dialog (or a picklist popup of one), its title names the object being added or edited
+  // ("Add Opportunity Team Members"): search that object first.
+  if (hints?.dialogTitle) {
+    const fromTitle = objectFromTitle(hints.dialogTitle, (await orgLoad).objects);
+    if (fromTitle && !objects.includes(fromTitle)) objects = [fromTitle, ...objects].slice(0, 3);
+  }
+  const [org, ...describes] = await Promise.all([orgLoad, ...objects.map((o) => loadDescribe(session, o, { refresh, language }))]);
   // Record page (/lightning/r/Product2/01t.../view): check Data Translation for that record.
   const rec = urls.map((u) => /\/lightning\/r\/([A-Za-z0-9_]+)\/([a-zA-Z0-9]{15,18})\//.exec(u || '')).find(Boolean);
   const dataTranslations = (
@@ -289,7 +293,8 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // Custom related list title (relatedListApiName …__r, no label of its own): its Related List Label is on
   // the child object's lookup field (DV2: SalesAgreements__r → SalesAgreement.Opportunity_ID_LUR__c).
   const api = pageComponent?.props?.relatedListApiName;
-  if (areas.has('relatedList') && !String(pageComponent?.label ?? '').trim() && /__r$/.test(api || '')) {
+  // Also with a label typed in Lightning App Builder: the card then names the title the list falls back to.
+  if (areas.has('relatedList') && /__r$/.test(api || '')) {
     const child = await relatedChild(session, parentDescribe, api, refresh, language);
     if (child) pageComponent = { ...pageComponent, child: { ...child.rel, fieldLabel: child.field?.label || null, objectLabel: child.describe?.label || null } };
   }

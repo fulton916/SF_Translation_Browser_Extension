@@ -171,6 +171,29 @@ export function contextObjects(urls, hints = {}) {
   return out.filter((o) => !['home', 'FeedItem', 'Global'].includes(o)).slice(0, 3);
 }
 
+/**
+ * The object a dialog title names ("Add Opportunity Team Members" → OpportunityTeamMember): the object whose
+ * plural or singular label is the longest whole-word part of the title. Null when none is.
+ * A picklist inside a dialog opens its options in a popup outside the dialog (UAT2 Add Opportunity Team
+ * Members: a[role=option] < div[data-aura-class=uiPopupTarget], nothing names the object), so the title does.
+ */
+export function objectFromTitle(title, objects = []) {
+  const words = (s) => normalize(s).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const t = ` ${words(title)} `;
+  let best = null;
+  let bestLen = 0;
+  for (const o of objects || []) {
+    for (const l of [o.labelPlural, o.label]) {
+      const n = words(l);
+      if (n && n.length > bestLen && t.includes(` ${n} `)) {
+        best = o.name;
+        bestLen = n.length;
+      }
+    }
+  }
+  return best;
+}
+
 /** Turns raw tag names from the clicked element's path into named UI areas. */
 export function detectAreas(hints = {}) {
   const tags = hints.tags || [];
@@ -240,6 +263,31 @@ export function detectAreas(hints = {}) {
     areas.add('calendar');
     if (aura.includes('calendarListItem')) areas.add('calendarList');
   }
+  // Pipeline Inspection (UAT2 /lightning/o/Opportunity/pipelineInspection, checked live Nov 2026): Salesforce's own
+  // page in div[data-aura-class=runtime_pipeline_inspectorPipelineInspectorHome]. Metric tiles
+  // (runtime_pipeline_inspector-kpi-panel), filters (runtime_pipeline_inspectorHighlightPanel), Metrics picker and
+  // buttons (runtime_pipeline_inspectorActionsBar, ...RecordsView) are Salesforce text. The view name is a list view
+  // (lst-list-view-picker), the h1 above it is the object name, and the list status line ("0 items • Filtered by
+  // Close Date, Type") is force-list-view-manager-status-info. The list rows hold field labels and record values.
+  if (aura.some((a) => /^runtime_pipeline_inspector/.test(a)) || has(/^runtime_pipeline_inspector-/)) {
+    areas.add('pipelineInspection');
+    if (has(/^lst-list-view-picker/)) areas.add('pipelineView');
+    else if (has(/^force-list-view-manager-status-info$/)) areas.add('pipelineStatus');
+    else if (has(/^(th|td|table|lightning-datatable)$/)) areas.add('pipelineGrid');
+    else if (has(/^h1$/)) areas.add('pipelineObjectName');
+    if (has(/^runtime_pipeline_inspector-kpi-panel$/)) areas.add('pipelineMetric');
+  }
+  // Utility bar (UAT2, checked live): span.itemTitle < button < div[oneUtilityBarItem] <
+  // div[flexipageComponent][tsn=runtime_sales_todo_list_unifiedToDoListAuraWrapper] < ul.slds-utility-bar; an open
+  // item's panel title is h2.panelTitle < div[oneUtilityBarPanel]. Item labels are set in App Manager → Utility Items.
+  // Only the label: the item's button, or the open panel's own title (not the records listed in the panel).
+  if (aura.includes('oneUtilityBarItem') || (aura.includes('oneUtilityBarPanel') && tags.slice(0, 3).includes('h2'))) {
+    areas.add('utilityBar');
+    if (comp(/^runtime_sales_todo_list/)) areas.add('utilityToDo');
+  }
+  // File upload area of the Files related list (UAT2, checked live): "Upload Files" / "Or drop files" are a span <
+  // label < lightning-primitive-file-droppable-zone < lightning-input < div[forceContentFileDroppableZone].
+  if (aura.includes('forceContentFileDroppableZone') || has(/^lightning-primitive-file-droppable-zone$/)) areas.add('fileUpload');
   const custom = tags.filter((t) => /^c-/.test(t));
   if (custom.length || (hints.auraCustom || []).length) areas.add('customComponent');
   return areas;
@@ -1443,11 +1491,35 @@ function builderTextResult(org, pc) {
       'This label is plain text, so Salesforce never translates it.',
       same ? `Custom label ${same.Name} already has this text. Add its translations if needed.` : 'Setup → Custom Labels → New: create a label with this text, then add its translations.',
       `Lightning App Builder → ${pc.page} → click the ${kind.part} → set ${kind.field} to ${ref} → Save.`,
+      ...relatedListFallbackStep(org, pc),
     ],
     url: same ? SETUP.customLabel(same.Id) : SETUP.customLabels,
     copy: ref,
     notes: [],
   };
+}
+
+/**
+ * A related list whose label was typed (DV2 Opportunity page: Dynamic Related Lists "Involved Parties",
+ * "Showpad Activities", "PPG Tech"): with the label cleared, the list shows its standard title, which is translated.
+ */
+function relatedListFallbackStep(org, pc) {
+  if (!RELATED_LIST_COMPONENTS.has(pc.component)) return [];
+  const api = String(pc.props?.relatedListApiName || '');
+  const c = pc.child;
+  if (c?.childSObject && c.field) {
+    const objectLabel = c.objectLabel || (org.objects || []).find((o) => o.name === c.childSObject)?.label || c.childSObject;
+    // A managed package's lookup field (DV2: ShowpadForSF__…) is translated in Workbench → Override.
+    const pkg = namespaceOf(c.field);
+    const tool = pkg ? `Translation Workbench → Override (package ${pkg})` : 'Translation Workbench';
+    return [
+      `Or clear the ${pcKind(pc).field} → Save: the list then shows the Related List Label of the lookup field ${c.fieldLabel || c.field} on ${objectLabel} (${c.childSObject}.${c.field}), which is translated in ${tool} → Custom Field → ${objectLabel} → Related List Label.`,
+    ];
+  }
+  if (api && !/__r$/.test(api)) {
+    return [`Or clear the ${pcKind(pc).field} → Save: the list then shows its standard title (${api}). An object's plural name there is translated in Rename Tabs and Labels; other standard titles are Salesforce text.`];
+  }
+  return [];
 }
 
 const LABEL_REF = /^\{!\$Label\.(?:([A-Za-z0-9_]+)\.)?([A-Za-z0-9_]+)\}$/;
@@ -1623,7 +1695,79 @@ const STANDARD_AREAS = {
   path: { what: 'the path (heading and buttons)' },
   calendar: { what: 'the Calendar page (header buttons, views, day headers, My Calendars)' },
   globalHeader: { what: 'the global header (search, reminders, notifications)' },
+  pipelineInspection: { what: 'Pipeline Inspection (metric tiles, filters, Metrics menu, tabs and buttons)' },
+  fileUpload: { what: 'the file upload area (Upload Files, Or drop files)' },
+  utilityBar: { what: 'the To Do List utility' },
 };
+
+// Utility items whose label Salesforce sets (English; the Label field is locked in App Manager, UAT2 checked live).
+const SF_UTILITY_NAMES = ['to do list'];
+
+function utilityLabelResult() {
+  return {
+    key: 'area:utilityItem',
+    source: SOURCE.CONTEXT,
+    confidence: 'context',
+    title: 'Utility bar item label',
+    subtitle: 'An item in the utility bar at the bottom of the app',
+    steps: [
+      'The label is set per app: Setup → App Manager → the app → Edit → Utility Items (Desktop Only) → the item → Label.',
+      'Translation Workbench has no Setup Component for utility item labels.',
+    ],
+    url: '/lightning/setup/NavigationMenus/home',
+    notes: [],
+  };
+}
+
+function pipelineViewResult() {
+  return {
+    key: 'sfdctext:pipelineView',
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'confirmed',
+    title: 'List view name',
+    subtitle: 'The view Pipeline Inspection shows (the name under the object name)',
+    steps: [
+      'This is the name of a list view on Opportunities. Translation Workbench and Rename Tabs and Labels do not list list view names.',
+      'To show a name in another language: Pipeline Settings (gear icon) → Clone, name the copy in that language, then Pipeline Settings → Sharing Settings to share it with the users of that language.',
+      'To rename it: Pipeline Settings (gear icon) → Rename.',
+    ],
+    url: null,
+    notes: [],
+  };
+}
+
+/**
+ * Pipeline Inspection: Salesforce's own page. The object name, view name, status line and list rows show org text.
+ * Same-text custom labels and quick actions are coincidences everywhere on it.
+ */
+function addPipelineResults(areas, results, add) {
+  const why = `custom labels are not used in ${STANDARD_AREAS.pipelineInspection.what}.`;
+  // The object name above the view name: object/tab results were confirmed by confirmNames.
+  if (areas.has('pipelineObjectName') && results.some((r) => /^(object|tab):/.test(r.key) && r.confidence === 'confirmed')) return;
+  if (areas.has('pipelineView')) {
+    demoteLabelsToPartial(results, 'the view name is a list view name, not a custom label.');
+    add(pipelineViewResult());
+    return;
+  }
+  demoteLabelsToPartial(results, why);
+  for (const r of results) {
+    if (!/^(qa|stdaction):/.test(r.key) || r.confidence === 'confirmed' || r.confidence === 'partial') continue;
+    r.confidence = 'partial';
+    r.notes = ['Same words only: the Pipeline Inspection buttons are Salesforce text, not quick actions.', ...(r.notes || [])];
+  }
+  // List rows: column headers are field labels and cells are record values, both listed above when they match.
+  if (areas.has('pipelineGrid')) return;
+  const orgName = results.some((r) => r.confidence === 'confirmed' || r.confidence === 'exact');
+  const r = standardTextResult('pipelineInspection', areas.has('pipelineStatus') || orgName ? 'context' : 'confirmed');
+  if (areas.has('pipelineStatus')) {
+    r.notes = ['"items" and "Filtered by" are Salesforce text. The filter names after them are field labels and values from your org.'];
+  }
+  // An admin can rename a metric (Pipeline Settings → Metrics Settings): that name has its own Workbench row.
+  if (areas.has('pipelineMetric')) {
+    r.notes = ['A metric name an admin set in Pipeline Settings → Metrics Settings is translated in Translation Workbench → Translate → Setup Component: Pipeline Inspection Metric Configuration (column "Pipeline Inspection Metric Custom Label"). Salesforce\'s own metric names are not listed there.'];
+  }
+  add(r);
+}
 
 // Calendar list entries Salesforce names itself (English; add other languages when seen). Any other
 // entry is a calendar a user created (from a list view, or a user's or resource's calendar).
@@ -1754,6 +1898,27 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
   }
   if (areas.has('calendar')) {
     addCalendarResults(needle, areas, results, add);
+    return;
+  }
+  if (areas.has('pipelineInspection')) {
+    addPipelineResults(areas, results, add);
+    return;
+  }
+  if (areas.has('utilityBar')) {
+    if (areas.has('utilityToDo') || SF_UTILITY_NAMES.includes(needle)) {
+      demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.utilityBar.what}.`);
+      add(salesforceTextResult('sfdctext:utilityBar', 'confirmed', {
+        subtitle: 'Label of the To Do List utility',
+        notes: ['Its Label field is locked in App Manager → the app → Edit → Utility Items.'],
+      }));
+    } else {
+      add(utilityLabelResult());
+    }
+    return;
+  }
+  if (areas.has('fileUpload')) {
+    demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.fileUpload.what}.`);
+    add(standardTextResult('fileUpload', 'confirmed'));
     return;
   }
   for (const area of ['activityTimeline', 'duplicates', 'feed', 'reportChart', 'globalHeader']) {
@@ -1983,6 +2148,12 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   }
   // The object name above the record name in the highlights panel (UAT2: "Account" ranked below 3 labels).
   if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');
+  // Pipeline Inspection: the small heading above the view name is the object's plural name.
+  if (areas.has('pipelineObjectName')) confirmNames(results, /^(object|tab):/, 'Pipeline Inspection shows the object name above the view name, not a custom label.');
+  // Pipeline Inspection list: a column header is an Opportunity field label.
+  if (areas.has('pipelineGrid') && (hints.tags || []).includes('th')) {
+    confirmNames(results, /^field:Opportunity\./, 'the Pipeline Inspection columns show field labels, not custom labels.');
+  }
 
   // A field label in a related list row ("Stage:" in an Opportunities tile): the child object's field.
   const onRowLabel = hints.fieldPart === 'label' || (hints.tags || []).includes('dt');

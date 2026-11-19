@@ -175,6 +175,7 @@
     hints.selectionNames = [...new Set(hints.selectionNames)];
     hints.tags = [...new Set(hints.tags)];
     hints.auraClasses = [...new Set(hints.auraClasses)];
+    hints.dialogTitle = dialogTitle(path);
     // On a field's error message: its text, not a nearby label (dev org: hovering the message gave "Paint Color").
     // Its first line is the field label for screen readers (an assistive span): skipped.
     let text = (errorEl && visibleText(errorEl).split('\n')[0].trim()) || elementText(path);
@@ -185,6 +186,19 @@
       hints.fieldPart = null;
     }
     return { text, hints, url: location.href };
+  }
+
+  // The title of the dialog the element is in ("Add Opportunity Team Members", "New Involved Party"): it names
+  // the object. A picklist's options open in a popup outside the dialog (UAT2: a[role=option] <
+  // div[data-aura-class=uiPopupTarget]), so for a popup the open dialog on top is used.
+  function dialogTitle(path) {
+    const titleOf = (d) => (d?.querySelector?.('h1, h2')?.innerText || '').trim().slice(0, 200) || null;
+    const inPath = path.find((el) => el.getAttribute('role') === 'dialog');
+    if (inPath) return titleOf(inPath);
+    const inPopup = path.some((el) => el.getAttribute('role') === 'listbox' || /\buiPopupTarget\b/.test(el.getAttribute('data-aura-class') || ''));
+    if (!inPopup) return null;
+    const open = [...document.querySelectorAll('[role="dialog"]')].filter((d) => d.getClientRects().length && titleOf(d));
+    return titleOf(open[open.length - 1]);
   }
 
   // Screen-reader-only text (seen in UAT2: "Enable table equivalent for screen reader users" on a chart).

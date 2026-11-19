@@ -60,6 +60,30 @@ test('loadFlexiPageComponent reads a field section label (real UAT2 shape)', asy
   assert.match(urls[0], /DeveloperName = 'prospect_record_page_three_column' LIMIT 1/);
 });
 
+test('loadFlexiPageComponent reads the New form of a Dynamic Forms page (tag ends in __create_js)', async () => {
+  const urls = [];
+  globalThis.fetch = async (u) => {
+    urls.push(decodeURIComponent(u));
+    return {
+      ok: true,
+      json: async () => ({
+        done: true,
+        records: [{
+          DeveloperName: 'Example_Party_Record_Page', MasterLabel: 'Example Party Record Page',
+          Metadata: { flexiPageRegions: [{ itemInstances: [
+            { componentInstance: { identifier: 'flexipage_fieldSection2', componentName: 'flexipage:fieldSection',
+              componentInstanceProperties: [{ name: 'label', value: 'System Information' }] } },
+          ] }] },
+        }],
+      }),
+    };
+  };
+  const pc = await loadFlexiPageComponent({ host: 'create-form', sid: 's' },
+    'forcegenerated-flexipage_example_party_record_page_example_party__c__create_js___lmt___1783417856000', 'flexipage_fieldSection2', ['Example_Party__c']);
+  assert.equal(pc.label, 'System Information');
+  assert.match(urls[0], /DeveloperName = 'example_party_record_page' LIMIT 1/);
+});
+
 test('loadOrgData: path guidance queries fail → warnings only, other sources still load', async () => {
   globalThis.fetch = async (u) => {
     const url = decodeURIComponent(u);
