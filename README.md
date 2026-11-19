@@ -104,7 +104,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Custom label value (Apex, LWC, Aura, VF, Flow `{!$Label}`) | **Custom Labels** → label → Local Translations / Overrides | Yes (value and existing translations) |
 | Standard object name (Account, Opportunity) | **Rename Tabs and Labels** → Standard Tabs | Yes |
 | Custom object name | **Rename Tabs and Labels** → Custom Tabs (master label: Object Manager) | Yes |
-| Standard field label | **Rename Tabs and Labels** → object → Edit → Next (step 2) | Yes (current object) |
+| Standard field label | **Rename Tabs and Labels** → object → Edit → Next (step 2). A custom object's standard fields (Owner ID, Record Type ID, Deleted) are Salesforce text | Yes (current object) |
 | Standard tab (Chatter and others TabDefinition lists) | **Rename Tabs and Labels** | Yes |
 | Nav bar standard tab with no object/tab name match (Home, Calendar) | Owned by Salesforce, unless TabDefinition lists it with that name (then **Rename Tabs and Labels**) | From page metadata (`sfdc:TabDefinition.standard-<X>`, nav item `data-id="home"`) |
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
@@ -113,20 +113,21 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Path step chevron | The path field's picklist value (above); the generic last "Closed" step is Salesforce text | Confirmed for the active path of the record's record type (read from the record) |
 | Record type | **Translation Workbench** → Record Type | Yes (current object) |
 | Quick action | **Translation Workbench** → Action; feed actions (`FeedItem.*`, e.g. New Note, Post) and standard global actions (NewTask, NewContact, NewCase, NewEvent, LogACall…) are Salesforce text: TW → Action does not list them | Yes (current object) |
-| Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects) |
+| Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects). Confirmed when you point at the error message under a field (`.slds-form-element__help`) and an active rule of that object has this message |
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
 | Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Also detected on Aura classic record layouts: a `forcePageBlockSection` header (an `h1`–`h6` or `legend` in the path), not a `forcePageBlockItem` field; a custom label with the same text then drops to similar text. Auto-fill opens every layout and lists each copy of the section |
-| Flow screen text | **Translation Workbench** → Flow | From page metadata only |
-| Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance of the record's own path |
+| Flow screen text | **Translation Workbench** → Flow → the flow → Flow Component "Screen Component" → Screen → Screen Component → Aspect "Description" (display text) or "Label" (an input) | From page metadata. On a Lightning page, the Flow component names the flow, and its active version's screens are read (Tooling `Flow.Metadata`): confirmed when the text is a screen component's text |
+| Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance of the record's own path. A custom object's step names the object by its Id (01I…), cut at 80 characters: the step is matched to its path by record type Id, or by object Id and field |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
 | Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
 | Record data: Product / Product Category Name and Description, plus enabled custom fields | **Data Translation**: the record's Translations tab (an admin adds it in Lightning App Builder) | Yes, on record pages; says how to enable it if off |
 | Record data in an org-built translation object (e.g. `Product_Translations__c`) | That object's related list on the record | Yes: any custom child object with "Translat" in its name |
 | Standard button (Edit, Delete) | Owned by Salesforce (Salesforce translates it) | Flagged |
 | Text typed into a custom LWC/Aura component or into Lightning App Builder | Admin work required to translate: move the text into a Custom Label | Flagged |
-| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → Admin work required to translate | Read from the FlexiPage for the section, list header or tab you point at. A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field |
+| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → Admin work required to translate | Read from the FlexiPage for the section, list header or tab you point at (any component identifier, also custom ones like `my_tab_greeting`). A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field. In the standard Related Lists component, the list's title link (`…/related/<relationship>/view`) names the relationship |
+| Rich Text component text (Lightning App Builder) | Admin work required to translate: replace it with a component that shows a Custom Label, or one Rich Text component per language with a Component Visibility filter on the user's Language | From the page area (`data-aura-class="flexipageRichText"`) |
 | Report chart title (Report Chart component) | Admin work required to translate: set its Label to a Custom Label | From the page area |
 | User calendar names in My Calendars / Other Calendars | Admin work required to translate: a user named it; only its owner can change it | From the page area |
 | Value in a record field, record name in the highlights panel | Record data, formula output (change the formula), a value missing from the picklist: Admin work required to translate. Auto-number and currency name: Salesforce text. Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel). An event box on the Calendar page (`runtime_calendar-*-event`) gives "Record data: Event subject", confirmed, with no Salesforce text card |
@@ -151,7 +152,7 @@ Salesforce has no documented deep links for these pages. These were found by ins
 | Custom label | Setup → Custom Labels → the label's New Translation page (`/01j/e?Parent=<label Id>` inside `/lightning/setup/ExternalStrings/page`), or the existing translation's edit page for that language | Picks the Language |
 | Standard object / field | Setup → Rename Tabs and Labels → the object's Edit page (`RenameTabStageManager?id=<Object>&l=<lang>` inside `/lightning/setup/RenameTab/page`) | For a field: clicks Next (saves nothing), highlights the field on Step 2 |
 | Custom object | Setup → Rename Tabs and Labels (`/lightning/setup/RenameTab/home`) | Switches language, opens the object's Edit page |
-| Translation Workbench item | Setup → Translate (`/lightning/setup/LabelWorkbenchTranslate/home`) | Sets Language, Setup Component, Object, Aspect; finds the row (pages through the grid); opens its edit box. Path guidance: matches the row's raw HTML, or its text without tags |
+| Translation Workbench item | Setup → Translate (`/lightning/setup/LabelWorkbenchTranslate/home`) | Sets Language, Setup Component, Object, Aspect (for a flow: Flow, Flow Component, Screen, Screen Component, Aspect); finds the row (pages through the grid; a tree is searched again until it has loaded, up to 15 s) and marks it. Double-click its translation cell to type: a script-opened edit box closed on the next click and lost the text. Path guidance: matches the row's raw HTML, or its text without tags |
 | Package item | Setup → Override (`/lightning/setup/LabelWorkbenchOverride/home`) | Same as Translate, plus picks the Package by namespace (warns if two packages share it) |
 | Record data | The record page | Clicks the Translations tab. If the page has none, says so |
 
@@ -220,8 +221,9 @@ Tests run on every push and pull request (GitHub Actions). They cover:
 - `test/locator.test.js`: matching and classification in `src/locator.js`, using fake org data and cases found in real orgs.
 - `test/sfApi.test.js`: the per-lookup custom label translation query.
 - `test/logStore.test.js`: the test log (redaction, size cap, export).
-- `test/sweep.test.js`, `test/sweepPage.test.js`, `test/dv2.test.js`, `test/live2.test.js`: one test per finding from the
-  live sandbox runs (made-up names and Ids), including the Alt+Shift+T pointer logic in `src/pointerTarget.js`.
+- `test/sweep.test.js`, `test/sweepPage.test.js`, `test/dv2.test.js`, `test/live2.test.js`, `test/devorg.test.js`: one test per
+  finding from the live sandbox and Developer Edition runs (made-up names and Ids), including the Alt+Shift+T pointer logic in
+  `src/pointerTarget.js` and the auto-fill retry in `src/waitUntil.js`.
 - `test/devVersion.test.js`: the code fingerprint used by the auto-reload below.
 
 ### Auto-reload while developing
@@ -245,6 +247,7 @@ Auto-fill (`src/content.js`) runs against live Salesforce pages and is tested by
 | `manifest.json` | Chrome extension setup (permissions, scripts) |
 | `src/background.js` | Right-click menu, Salesforce API calls, opens translation pages, writes the log |
 | `src/pointerTarget.js` | Picks the element the Alt+Shift+T shortcut describes: the highlighted text, else the element under the pointer (unit tested) |
+| `src/waitUntil.js` | Auto-fill retry: searches again until the Translate page's tree has loaded (unit tested) |
 | `src/content.js` | Reads the clicked element, shows the panel, auto-fills Setup pages |
 | `src/locator.js` | Decides where each text is translated (no browser code; unit tested) |
 | `src/sfApi.js` | REST and Tooling API queries |
