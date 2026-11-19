@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { locate, SOURCE } from '../src/locator.js';
-import { loadNearestFlexiPageComponent } from '../src/sfApi.js';
+import { loadNearestFlexiPageComponent, loadFlowScreens, withObjectIds } from '../src/sfApi.js';
 
 const baseOrg = {
   userLanguage: 'en_US',
@@ -192,14 +192,174 @@ test('A-15: a page with custom component identifiers is read; a {!$Label} tab ti
   });
   const FLEXI = 'forcegenerated-flexipage_demo_gadget_record_page_demo_gadget__c__view_js___lmt___1';
   const s = { host: 'devorg-test.my.salesforce.com', sid: 's' };
-  // Nearest first, as content.js lists them: the tab's page element, then its tab set.
-  const pc = await loadNearestFlexiPageComponent(s, FLEXI, ['demo_tab_greetingTab', 'demo_tabset'], ['Demo_Gadget__c']);
+  // Nearest first, as content.js lists them: an identifier the page metadata does not know (a custom
+  // component's inner element), the tab's page element, then its tab set.
+  const pc = await loadNearestFlexiPageComponent(s, FLEXI, ['demo_inner_widget', 'demo_tab_greetingTab', 'demo_tabset'], ['Demo_Gadget__c']);
   assert.deepEqual([pc.id, pc.component, pc.label], ['demo_tab_greeting', 'flexipage:tab', '{!$Label.Demo_Greeting}']);
 
   const org = { ...baseOrg, customLabels: [{ Id: '101000000000001', Name: 'Demo_Greeting', MasterLabel: 'Demo_Greeting', NamespacePrefix: null, Value: 'Welcome To The Gadget Shop', Language: 'en_US' }] };
-  const hints = { tags: ['a', 'li', 'ul', 'lightning-tab-bar', 'div', FLEXI], tabRole: 'tab', componentIds: ['demo_tab_greetingTab', 'demo_tabset'], flexipage: FLEXI };
+  const hints = { tags: ['a', 'li', 'ul', 'lightning-tab-bar', 'div', FLEXI], tabRole: 'tab', componentIds: ['demo_inner_widget', 'demo_tab_greetingTab', 'demo_tabset'], flexipage: FLEXI };
   const out = locate({ text: 'Welcome To The Gadget Shop', org, describes: [gadget], hints, pageComponent: pc });
   assert.equal(out.results[0].key, 'label:101000000000001');
   assert.equal(out.results[0].confidence, 'confirmed');
   assert.ok(!out.results.some((r) => r.key === 'area:lightningPageTab' || r.key.startsWith('builder:')));
+});
+
+test('A-15: a nearer component of another kind does not hide the one the text belongs to', async () => {
+  const ci = (identifier, componentName, props) => ({ componentInstance: { identifier, componentName, componentInstanceProperties: Object.entries(props).map(([name, value]) => ({ name, value })) } });
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      done: true,
+      records: [{
+        DeveloperName: 'Demo_Kind_Page', MasterLabel: 'Demo Kind Page',
+        Metadata: { flexiPageRegions: [
+          { itemInstances: [ci('demo_tabset', 'flexipage:tabset', { tabs: 'Facet-demo-tabs' })] },
+          { itemInstances: [ci('demo_section', 'flexipage:fieldSection', { label: 'Gadget Details' })] },
+        ] },
+      }],
+    }),
+  });
+  const FLEXI = 'forcegenerated-flexipage_demo_kind_page_demo_gadget__c__view_js___lmt___1';
+  const s = { host: 'devorg-kind.my.salesforce.com', sid: 's' };
+  const ids = ['demo_tabset', 'demo_section'];
+  assert.equal((await loadNearestFlexiPageComponent(s, FLEXI, ids, ['Demo_Gadget__c'])).id, 'demo_tabset', 'no kind: the nearest');
+  const pc = await loadNearestFlexiPageComponent(s, FLEXI, ids, ['Demo_Gadget__c'], /^flexipage:fieldSection$/);
+  assert.deepEqual([pc.id, pc.component, pc.label], ['demo_section', 'flexipage:fieldSection', 'Gadget Details']);
+  assert.equal(await loadNearestFlexiPageComponent(s, FLEXI, ids, ['Demo_Gadget__c'], /^flowruntime:interview$/), null);
+});
+
+const flowPc = (fields, screen = {}) => ({
+  page: 'Demo Gadget Record Page', id: 'demo_flow', component: 'flowruntime:interview', label: null, props: { flowName: 'Demo' },
+  flow: { name: 'Demo', label: 'Demo', version: 1, screens: [{ name: 'S', label: 'Intro', fields, buttonLabels: [], ...screen }] },
+});
+const flowHints = { tags: ['p', 'span', 'lightning-formatted-rich-text', 'flowruntime-display-text-lwc', 'flowruntime-flow', 'flexipage-component2'], componentIds: ['demo_flow'] };
+
+test('A-17: a phrase inside a display text line is similar text; a whole line is confirmed', () => {
+  const pc = flowPc([{ name: 'Intro', fieldType: 'DisplayText', fieldText: '<p>Click Next to continue.</p><ul><li>Bring the gadget box.</li></ul>', helpText: null }]);
+  const find = (text) => locate({ text, org: baseOrg, describes: [gadget], hints: flowHints, pageComponent: pc }).results.find((r) => r.key.startsWith('flow:'));
+  const phrase = find('Next to continue');
+  assert.equal(phrase.key, 'flow:Demo.S.Intro');
+  assert.equal(phrase.confidence, 'partial');
+  assert.ok(!/this text is the display text/.test(phrase.notes[0]));
+  assert.equal(find('Bring the gadget box.').confidence, 'confirmed', 'one whole list item');
+  assert.equal(find('Click Next to continue.').confidence, 'confirmed', 'one whole paragraph');
+  assert.equal(find('Click Next to continue. Bring the gadget box.').confidence, 'confirmed', 'the whole text');
+  // An input label: only the same text is confirmed.
+  const input = flowPc([{ name: 'Nick', fieldType: 'InputField', fieldText: 'Gadget Nickname', helpText: null }]);
+  const r = locate({ text: 'Nickname', org: baseOrg, describes: [gadget], hints: flowHints, pageComponent: input }).results.find((x) => x.key.startsWith('flow:'));
+  assert.equal(r.confidence, 'partial');
+});
+
+test('A-17: the flow navigation bar buttons are Salesforce text, not the display text', () => {
+  const pc = flowPc([{ name: 'Intro', fieldType: 'DisplayText', fieldText: '<p>Click Next to continue.</p>', helpText: null }]);
+  const hints = { tags: ['span', 'button', 'lightning-button', 'div', 'flowruntime-navigation-bar', 'flowruntime-lwc-body', 'flowruntime-flow', 'flexipage-component2'], componentIds: ['demo_flow'] };
+  for (const text of ['Next', 'Previous', 'Finish', 'Pause']) {
+    const out = locate({ text, org: baseOrg, describes: [gadget], hints, pageComponent: pc });
+    assert.ok(!out.results.some((r) => r.key.startsWith('flow:')), text);
+    const r = out.results.find((x) => x.key === 'sfdctext:flowNavigation');
+    assert.equal(r.source, SOURCE.SALESFORCE, text);
+    assert.equal(r.confidence, 'confirmed', text);
+  }
+  // A screen with its own button label: not Salesforce text.
+  const own = flowPc([], { buttonLabels: ['Send Gadget'] });
+  const out = locate({ text: 'Send Gadget', org: baseOrg, describes: [gadget], hints, pageComponent: own });
+  assert.ok(!out.results.some((r) => r.key === 'sfdctext:flowNavigation'));
+});
+
+test('B-04: a tree hit counts only once the Object list shows the target object', async () => {
+  await import('../src/waitUntil.js');
+  const { untilFound } = globalThis.sftlWait;
+  let now = 0;
+  const clock = () => now;
+  const pause = async (ms) => void (now += ms);
+  // The previous object's tree has "System Information" too; the target object is shown from 3 s.
+  const ready = () => now >= 3000;
+  const tries = [];
+  const hits = await untilFound(() => (tries.push(now), [{ row: now >= 3000 ? 'target' : 'previous' }]), { ready, clock, pause });
+  assert.equal(hits[0].row, 'target');
+  assert.ok(tries.every((t) => t >= 3000), 'nothing searched before the object is shown');
+  // A hit while a node starts loading after the search is searched again.
+  now = 0;
+  let loading = false;
+  const rows = [];
+  const row = await untilFound(() => {
+    rows.push(now);
+    loading = rows.length === 1;
+    return rows.length === 1 ? 'stale row' : 'row';
+  }, { busy: () => (loading ? ((loading = false), true) : false), clock, pause });
+  assert.equal(row, 'row');
+  // The object never shown: no hit, even on the last try.
+  now = 0;
+  assert.equal(await untilFound(() => 'previous', { ready: () => false, clock, pause, timeout: 2000 }), null);
+  assert.deepEqual(await untilFound(() => [{ row: 'previous' }], { ready: () => false, clock, pause, timeout: 2000 }), []);
+});
+
+test('loadFlowScreens: the org\'s own flow without a namespace, fields in sections flattened', async () => {
+  const urls = [];
+  globalThis.fetch = async (u) => {
+    const url = decodeURIComponent(u);
+    urls.push(url);
+    if (url.includes('FROM FlowDefinition')) return { ok: true, json: async () => ({ done: true, records: [{ ActiveVersionId: '301000000000001AAA', LatestVersionId: '301000000000002AAA' }] }) };
+    return {
+      ok: true,
+      json: async () => ({
+        done: true,
+        records: [{
+          attributes: { type: 'Flow' }, MasterLabel: 'Demo Intake', VersionNumber: 3,
+          Metadata: { screens: [{
+            name: 'Intro', label: 'Intro Screen', nextOrFinishButtonLabel: 'Send Gadget', backButtonLabel: null,
+            fields: [
+              { name: 'Welcome', fieldType: 'DisplayText', fieldText: '<p>Welcome.</p>' },
+              { name: 'Section1', fieldType: 'RegionContainer', fields: [
+                { name: 'Section1_Column1', fieldType: 'Region', fields: [{ name: 'Nick', fieldType: 'InputField', fieldText: 'Gadget Nickname', helpText: 'Short name' }] },
+              ] },
+            ],
+          }] },
+        }],
+      }),
+    };
+  };
+  const s = { host: 'devorg-flow.my.salesforce.com', sid: 's' };
+  const flow = await loadFlowScreens(s, 'Demo_Intake');
+  assert.match(urls[0], /FROM FlowDefinition WHERE DeveloperName = 'Demo_Intake' AND NamespacePrefix = null LIMIT 1/);
+  assert.match(urls[1], /FROM Flow WHERE Id = '301000000000001AAA'/, 'the active version');
+  assert.deepEqual([flow.name, flow.label, flow.version], ['Demo_Intake', 'Demo Intake', 3]);
+  const [screen] = flow.screens;
+  assert.deepEqual([screen.name, screen.label, screen.buttonLabels], ['Intro', 'Intro Screen', ['Send Gadget']]);
+  assert.deepEqual(screen.fields.map((f) => f.name), ['Welcome', 'Section1', 'Section1_Column1', 'Nick']);
+  assert.deepEqual(screen.fields[3], { name: 'Nick', fieldType: 'InputField', fieldText: 'Gadget Nickname', helpText: 'Short name' });
+  assert.equal(screen.fields[1].fieldText, null);
+  // A packaged flow: its namespace is the filter.
+  urls.length = 0;
+  await loadFlowScreens(s, 'demo__Packaged_Intake');
+  assert.match(urls[0], /WHERE DeveloperName = 'Packaged_Intake' AND NamespacePrefix = 'demo' LIMIT 1/);
+  // A name that is not an API name: no query.
+  urls.length = 0;
+  assert.equal(await loadFlowScreens(s, "Demo' OR Id != null"), null);
+  assert.equal(urls.length, 0);
+});
+
+test('withObjectIds adds a custom object\'s Id to its paths, one query, none for standard objects', async () => {
+  const urls = [];
+  globalThis.fetch = async (u) => {
+    urls.push(decodeURIComponent(u));
+    return { ok: true, json: async () => ({ done: true, records: [{ attributes: {}, DurableId: '01I000000000001', QualifiedApiName: 'Demo_Gadget__c' }] }) };
+  };
+  const s = { host: 'devorg-ids.my.salesforce.com', sid: 's' };
+  const standard = [{ Id: '0Ko000000000001AAA', SobjectType: 'Opportunity' }];
+  assert.equal(await withObjectIds(s, standard), standard);
+  assert.equal(urls.length, 0);
+  const out = await withObjectIds(s, [
+    { Id: '0Ko000000000002AAA', SobjectType: 'Demo_Gadget__c' },
+    { Id: '0Ko000000000003AAA', SobjectType: 'Demo_Gadget__c' },
+    { Id: '0Ko000000000004AAA', SobjectType: 'Demo_Widget__c' },
+  ]);
+  assert.equal(urls.length, 1);
+  assert.match(urls[0], /\/tooling\/query\/\?q=SELECT DurableId, QualifiedApiName FROM EntityDefinition WHERE QualifiedApiName IN \('Demo_Gadget__c','Demo_Widget__c'\)/);
+  assert.deepEqual(out.map((p) => p.SobjectId), ['01I000000000001', '01I000000000001', null]);
+  // The query fails: the paths come back without Ids.
+  globalThis.fetch = async () => ({ ok: false, status: 400, text: async () => '[{"message":"no access"}]' });
+  const failed = await withObjectIds(s, [{ Id: '0Ko000000000005AAA', SobjectType: 'Demo_Gadget__c' }]);
+  assert.equal(failed[0].SobjectId, null);
 });

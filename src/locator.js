@@ -1084,16 +1084,47 @@ function pathResults(org, needle, areas, describes, add, rawText, record) {
  * (dev org B-13, checked by hand). Without it, the card names what is known and never uses an
  * instruction as a row name.
  */
-function flowResult(org, pc, text) {
+/**
+ * How the text matches a screen component's text. Display text counts as 'exact' only for the whole text
+ * or one whole line (paragraph, list item) of it, the rule path guidance uses; a phrase inside a line is
+ * 'partial' ("Next" in "<p>Click Next to continue.</p>").
+ */
+function flowTextMatch(needle, f) {
+  if (!needle || !f.fieldText) return null;
+  if (f.fieldType !== 'DisplayText') return matchType(needle, f.fieldText);
+  const lines = htmlLines(f.fieldText).map(normalize).filter(Boolean);
+  const full = lines.join(' ');
+  if (!full) return null;
+  if (full === needle || (needle.length >= 4 && lines.includes(needle))) return 'exact';
+  return matchType(needle, full) ? 'partial' : null;
+}
+
+/**
+ * The flow's navigation bar (Next, Previous, Finish, Pause): Salesforce text, unless a screen sets its
+ * own label for that button (FlowScreen backButtonLabel, nextOrFinishButtonLabel, pauseButtonLabel).
+ */
+function flowNavigationResult(flow, needle) {
+  const own = (flow?.screens || []).some((s) => (s.buttonLabels || []).some((l) => normalize(l) === needle));
+  if (own) return null;
+  return salesforceTextResult('sfdctext:flowNavigation', 'confirmed', {
+    subtitle: 'A button in the flow\'s navigation bar (Next, Previous, Finish, Pause)',
+    steps: ['To show different text: in Flow Builder, open the screen → Configure Footer → set a custom label for the button.'],
+  });
+}
+
+function flowResult(org, pc, text, hints = {}) {
   const flow = pc?.flow || null;
   const flowName = flow?.label || pc?.props?.flowName || null;
   const needle = normalize(text);
+  if ((hints.tags || []).some((t) => /^flowruntime-navigation-bar/.test(t))) {
+    const nav = flowNavigationResult(flow, needle);
+    if (nav) return nav;
+  }
   let hit = null;
   for (const s of flow?.screens || []) {
     for (const f of s.fields || []) {
-      const shown = f.fieldType === 'DisplayText' ? htmlToText(f.fieldText) : f.fieldText;
-      const mt = needle && shown ? matchType(needle, shown) : null;
-      if (mt === 'exact' || (mt && !hit)) hit = { s, f, display: f.fieldType === 'DisplayText', exact: mt === 'exact' };
+      const mt = flowTextMatch(needle, f);
+      if (mt === 'exact' ? !hit?.exact : mt && !hit) hit = { s, f, display: f.fieldType === 'DisplayText', exact: mt === 'exact' };
     }
   }
   const base = workbench(org, { component: 'Flow' });
@@ -1113,7 +1144,7 @@ function flowResult(org, pc, text) {
   const aspect = hit.display ? 'Description' : 'Label';
   return {
     key: `flow:${flow.name}.${hit.s.name}.${hit.f.name}`,
-    confidence: hit.exact ? 'confirmed' : 'exact',
+    confidence: hit.exact ? 'confirmed' : 'partial',
     title: `Flow screen text: ${flowName}`,
     subtitle: `Screen "${hit.s.label}", component ${hit.f.name}${flow.version ? ` (version ${flow.version})` : ''}`,
     ...base,
@@ -1127,7 +1158,11 @@ function flowResult(org, pc, text) {
     },
     url: SETUP.workbench,
     copy: hit.f.name,
-    notes: [`The flow on this page is ${flowName}; this text is ${hit.display ? 'the display text' : 'the label'} of its screen component ${hit.f.name}.`],
+    notes: [
+      hit.exact
+        ? `The flow on this page is ${flowName}; this text is ${hit.display ? 'the display text' : 'the label'} of its screen component ${hit.f.name}.`
+        : `The flow on this page is ${flowName}; this text and the ${hit.display ? 'display text' : 'label'} of its screen component ${hit.f.name} share words.`,
+    ],
   };
 }
 
@@ -1193,7 +1228,7 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false, pa
       ],
     });
   }
-  if (areas.has('flow')) out.push(flowResult(org, pageComponent, text));
+  if (areas.has('flow')) out.push(flowResult(org, pageComponent, text, hints));
   // Tab title read from the page metadata: that answer replaces the generic card.
   if (areas.has('lightningPageTab') && !pageHandled) {
     out.push({

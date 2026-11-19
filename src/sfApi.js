@@ -257,11 +257,13 @@ export async function loadFlexiPageComponent(session, flexipageTag, componentId,
  * The nearest of the pointed element's component ids (nearest first) that the page metadata knows.
  * content.js keeps every identifier-shaped name, since a page deployed from metadata can use any
  * identifier (dev org: sftl_tab_greetingTab, sftl_tabset). One FlexiPage query, cached.
+ * `kind` (optional RegExp on componentName): components of another kind are skipped, so a nearer one
+ * (e.g. the tab set around a field section) does not hide the one the text belongs to.
  */
-export async function loadNearestFlexiPageComponent(session, flexipageTag, componentIds = [], objects = []) {
+export async function loadNearestFlexiPageComponent(session, flexipageTag, componentIds = [], objects = [], kind = null) {
   for (const id of componentIds.slice(0, 5)) {
     const pc = await loadFlexiPageComponent(session, flexipageTag, id, objects);
-    if (pc) return pc;
+    if (pc && (!kind || kind.test(pc.component || ''))) return pc;
   }
   return null;
 }
@@ -272,7 +274,7 @@ const flowCache = new Map();
  * The screens of a flow's active version (else its latest), for the screen text you point at. Tooling
  * FlowDefinition → Flow.Metadata (one row at a time). Dev org, checked live: screens[] { name, label,
  * fields[] { name, fieldType DisplayText|InputField|RegionContainer…, fieldText, helpText, fields[] } }.
- * Returns { name, label, version, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }] }] } or null.
+ * Returns { name, label, version, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }], buttonLabels }] } or null.
  */
 export function loadFlowScreens(session, flowName) {
   const m = /^(?:([A-Za-z0-9]+)__)?([A-Za-z0-9_]+)$/.exec(flowName || '');
@@ -282,7 +284,8 @@ export function loadFlowScreens(session, flowName) {
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
   const [, ns, dev] = m;
   const promise = (async () => {
-    const def = await queryAll(session, `SELECT ActiveVersionId, LatestVersionId FROM FlowDefinition WHERE DeveloperName = '${dev}'${ns ? ` AND NamespacePrefix = '${ns}'` : ''} LIMIT 1`, { tooling: true });
+    // No namespace: the org's own flow, not a packaged flow with the same DeveloperName.
+    const def = await queryAll(session, `SELECT ActiveVersionId, LatestVersionId FROM FlowDefinition WHERE DeveloperName = '${dev}' AND NamespacePrefix = ${ns ? `'${ns}'` : 'null'} LIMIT 1`, { tooling: true });
     const id = def[0]?.ActiveVersionId || def[0]?.LatestVersionId;
     if (!/^[a-zA-Z0-9]{15,18}$/.test(id || '')) return null;
     const v = (await queryAll(session, `SELECT MasterLabel, VersionNumber, Metadata FROM Flow WHERE Id = '${id}'`, { tooling: true }))[0];
@@ -293,7 +296,13 @@ export function loadFlowScreens(session, flowName) {
       name: flowName,
       label: v.MasterLabel || flowName,
       version: v.VersionNumber ?? null,
-      screens: (v.Metadata?.screens || []).map((s) => ({ name: s.name, label: s.label || s.name, fields: flat(s.fields) })),
+      screens: (v.Metadata?.screens || []).map((s) => ({
+        name: s.name,
+        label: s.label || s.name,
+        fields: flat(s.fields),
+        // The screen's own labels for its navigation buttons, when set (else Salesforce's Next, Previous…).
+        buttonLabels: [s.backButtonLabel, s.nextOrFinishButtonLabel, s.pauseButtonLabel].filter((l) => typeof l === 'string' && l.trim()),
+      })),
     };
   })().catch(() => null);
   flowCache.set(key, { at: Date.now(), promise });
