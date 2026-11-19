@@ -102,6 +102,22 @@ test('ISS-02: a standard picklist value in no value list is confirmed "Not a val
   assert.ok(inactive.some((x) => x.key === 'picklist:Opportunity.LeadSource.Old Fair'));
 });
 
+// ---------- RANK-01: a custom label holding a URL or path is not a similar text ----------
+
+test('RANK-01: a label whose value is a path does not partly match page text', () => {
+  const org = {
+    ...baseOrg,
+    customLabels: [lbl('101D00000000090', 'Example_Redirect_URL', '/lightning/page/home'), lbl('101D00000000091', 'Example_Link', 'https://example.com/home'), lbl('101D00000000092', 'Example_Home_Title', 'Home page')],
+  };
+  const out = locate({ text: 'Home', org, describes: [] });
+  const keys = [...out.results, ...out.more].map((r) => r.title + ' ' + (r.subtitle || '') + ' ' + r.key).join('\n');
+  assert.doesNotMatch(keys, /Example_Redirect_URL|Example_Link/);
+  assert.match(keys, /Example_Home_Title/);
+  // The exact value still matches.
+  const exact = locate({ text: '/lightning/page/home', org, describes: [] });
+  assert.match(JSON.stringify(exact.results), /Example_Redirect_URL/);
+});
+
 // ---------- ISS-03: one "Salesforce text" card, not a second bare page-area card ----------
 
 test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed action)', () => {
