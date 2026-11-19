@@ -232,15 +232,21 @@ async function lookup({ text, hints, urls, refresh = false }) {
     }
   }
   // Global Value Sets: only for the custom picklists this text can be about (each costs 2-3 Tooling queries).
+  // A standard picklist the user pointed at: its StandardValueSet (all values, inactive ones too), so a value
+  // that is in no list is confirmed (R-07: Opportunity Lead Source "Example Referral").
   const valueSets = {};
   const hinted = new Set((hints.selectionNames || []).map((s) => /^sfdc:RecordField\.(.+)$/.exec(s)?.[1]).filter(Boolean));
   const picklistFields = [];
   for (const d of liveDescribes) {
     for (const f of d.fields || []) {
-      if (!f.custom || !/picklist/.test(f.type || '')) continue;
-      if (hinted.has(`${d.name}.${f.name}`) || (f.picklistValues || []).some((pv) => matchType(needle, pv.label) === 'exact')) picklistFields.push([d.name, f.name]);
+      if (!/picklist/.test(f.type || '') || f.name === 'CurrencyIsoCode') continue;
+      const isHinted = hinted.has(`${d.name}.${f.name}`);
+      if (!f.custom && !isHinted) continue;
+      if (isHinted || (f.picklistValues || []).some((pv) => matchType(needle, pv.label) === 'exact')) picklistFields.push([d.name, f.name]);
     }
   }
+  // Pointed-at fields first, so the 4-field cap never drops them.
+  picklistFields.sort((a, b) => Number(!hinted.has(a.join('.'))) - Number(!hinted.has(b.join('.'))));
   await Promise.all(
     picklistFields.slice(0, 4).map(([o, f]) =>
       loadValueSet(session, o, f).then((vs) => {
