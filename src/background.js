@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadValueSet, loadRecordTypeId } from './sfApi.js';
+import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation } from './sfApi.js';
 import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
@@ -66,7 +66,7 @@ async function devAfterReload() {
   await chrome.storage.session.set({ devV: v });
   for (const t of await chrome.tabs.query({ url: SF_PAGES })) {
     chrome.scripting
-      .executeScript({ target: { tabId: t.id, allFrames: true }, files: ['src/pointerTarget.js', 'src/content.js'] })
+      .executeScript({ target: { tabId: t.id, allFrames: true }, files: ['src/pointerTarget.js', 'src/waitUntil.js', 'src/content.js'] })
       .catch(() => {});
   }
 }
@@ -214,9 +214,11 @@ function logLookup(text, url, hints, result) {
 async function lookup({ text, hints, urls, refresh = false }) {
   const session = await getSession(urls[0]);
   const objects = contextObjects(urls, hints);
+  // The user's language now (one small call, cached 15 s): labels read in another language are read again.
+  const language = await loadUserLanguage(session, { refresh });
   const [org, ...describes] = await Promise.all([
-    loadOrgData(session, { refresh }),
-    ...objects.map((o) => loadDescribe(session, o, { refresh })),
+    loadOrgData(session, { refresh, language }),
+    ...objects.map((o) => loadDescribe(session, o, { refresh, language })),
   ]);
   // Record page (/lightning/r/Product2/01t.../view): check Data Translation for that record.
   const rec = urls.map((u) => /\/lightning\/r\/([A-Za-z0-9_]+)\/([a-zA-Z0-9]{15,18})\//.exec(u || '')).find(Boolean);
@@ -247,15 +249,29 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // id is the clicked one (content.js lists them nearest first).
   let pageComponent = null;
   const areas = detectAreas(hints);
-  const wantsPage = areas.has('fieldSection') || areas.has('relatedList') || areas.has('lightningPageTab');
+  // A flow on a Lightning page: the Flow component names the flow (flowruntime:interview, prop flowName).
+  const wantsPage = areas.has('fieldSection') || areas.has('relatedList') || areas.has('lightningPageTab') || areas.has('flow');
   if (wantsPage && hints.flexipage && hints.componentIds?.length) {
-    pageComponent = await loadFlexiPageComponent(session, hints.flexipage, hints.componentIds[0], objects).catch((e) => {
+    // A component of another kind (e.g. the tab set around a field section) says nothing about this text:
+    // skip it and keep looking further out.
+    const expect = areas.has('flow')
+      ? /^flowruntime:interview$/
+      : areas.has('fieldSection')
+        ? /^flexipage:fieldSection$/
+        : areas.has('relatedList')
+          ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/
+          : /^flexipage:tab$/;
+    pageComponent = await loadNearestFlexiPageComponent(session, hints.flexipage, hints.componentIds, objects, expect).catch((e) => {
       warnings.push(`Lightning page not read: ${e.message}`);
       return null;
     });
-    // A component of another kind (e.g. the tab set around a field section) says nothing about this text.
-    const expect = areas.has('fieldSection') ? /^flexipage:fieldSection$/ : areas.has('relatedList') ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/ : /^flexipage:tab$/;
-    if (pageComponent && !expect.test(pageComponent.component || '')) pageComponent = null;
+    // The flow's screens (active version), so the card can name the screen and component of this text.
+    if (pageComponent?.props?.flowName) pageComponent = { ...pageComponent, flow: await loadFlowScreens(session, pageComponent.props.flowName) };
+  }
+  // The standard Related Lists component (force:relatedListContainer, one card per page layout related list)
+  // holds no list of its own in the page metadata: the title's link names the relationship (content.js).
+  if (areas.has('relatedList') && !pageComponent && /^[A-Za-z0-9_]+$/.test(hints.relatedListApi || '')) {
+    pageComponent = { page: null, id: null, component: 'force:relatedListSingleContainer', label: null, props: { relatedListApiName: hints.relatedListApi } };
   }
   const liveDescribes = describes.filter(Boolean);
   const parentDescribe = liveDescribes.find((d) => d.name === record?.object) || liveDescribes[0];
@@ -263,7 +279,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // the child object's lookup field (e.g. Demo_Contracts__r → Contract.Demo_Opportunity__c).
   const api = pageComponent?.props?.relatedListApiName;
   if (areas.has('relatedList') && !String(pageComponent?.label ?? '').trim() && /__r$/.test(api || '')) {
-    const child = await relatedChild(session, parentDescribe, api, refresh);
+    const child = await relatedChild(session, parentDescribe, api, refresh, language);
     if (child) pageComponent = { ...pageComponent, child: { ...child.rel, fieldLabel: child.field?.label || null, objectLabel: child.describe?.label || null } };
   }
   // Inside related list rows ("Stage:" in Opportunities on an Account): the rows are the child
@@ -272,7 +288,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   const listComponentId = (hints.componentIds || []).find((c) => /^(lst_|force_relatedList)/.test(c));
   if (areas.has('relatedListRow') && hints.flexipage && listComponentId) {
     const pc = await loadFlexiPageComponent(session, hints.flexipage, listComponentId, objects).catch(() => null);
-    const child = pc?.props?.relatedListApiName ? await relatedChild(session, parentDescribe, pc.props.relatedListApiName, refresh) : null;
+    const child = pc?.props?.relatedListApiName ? await relatedChild(session, parentDescribe, pc.props.relatedListApiName, refresh, language) : null;
     if (child?.describe) {
       listObject = child.describe.name;
       if (!liveDescribes.some((d) => d.name === listObject)) liveDescribes.push(child.describe);
@@ -301,7 +317,23 @@ async function lookup({ text, hints, urls, refresh = false }) {
       })
     )
   );
-  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
+  // Viewing another language than the org default: describes hold translated labels, but Translation
+  // Workbench lists its rows by the master label (dev org, French: "Find the row: Couleur de peinture" for the
+  // row Paint Color). Read the master labels of the objects in play, and the page layout section names.
+  let masterDescribes = null;
+  let sectionTranslations = null;
+  let validationTranslations = null;
+  if (org.userLanguage && org.defaultLanguage && org.userLanguage !== org.defaultLanguage) {
+    const names = [...new Set([...liveDescribes.map((d) => d.name), pageComponent?.child?.childSObject].filter(Boolean))].slice(0, 4);
+    const [masters, sections] = await Promise.all([
+      Promise.all(names.map((n) => loadMasterDescribe(session, n, org.defaultLanguage))),
+      (areas.has('layoutSection') || hints.fieldPart === 'error') && objects[0] ? loadObjectTranslation(session, objects[0], org.userLanguage) : null,
+    ]);
+    masterDescribes = Object.fromEntries(names.map((n, i) => [n, masters[i]]).filter(([, m]) => m));
+    sectionTranslations = sections?.sections || null;
+    validationTranslations = sections?.validationRules || null;
+  }
+  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
   return {
     ...located,
     hints,
@@ -312,10 +344,10 @@ async function lookup({ text, hints, urls, refresh = false }) {
 }
 
 /** The child relationship a related list shows (relationshipName = relatedListApiName), with the child describe. */
-async function relatedChild(session, parent, relationshipName, refresh) {
+async function relatedChild(session, parent, relationshipName, refresh, language) {
   const rel = (parent?.childRelationships || []).find((c) => c.relationshipName === relationshipName);
   if (!rel) return null;
-  const describe = await loadDescribe(session, rel.childSObject, { refresh });
+  const describe = await loadDescribe(session, rel.childSObject, { refresh, language });
   return { rel, describe, field: describe?.fields?.find((f) => f.name === rel.field) || null };
 }
 
@@ -325,7 +357,7 @@ async function sendToFrame(tabId, frameId, msg) {
   } catch {
     // Tab was open before the extension loaded: inject the content script now.
     try {
-      await chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ['src/pointerTarget.js', 'src/content.js'] });
+      await chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ['src/pointerTarget.js', 'src/waitUntil.js', 'src/content.js'] });
       return await chrome.tabs.sendMessage(tabId, msg, { frameId });
     } catch {
       return null;
