@@ -196,3 +196,52 @@ test('ISS-09: an event box in the calendar week grid is record data (Event subje
   // The day column itself (no event box in the path) is not an event.
   assert.ok(!locate({ text: 'WED 18', org, describes: [], hints: { tags: ['ul', 'runtime_calendar-day-timed-events', 'div'], auraClasses: ['forceCalendarDay'] } }).areas.includes('calendarEvent'));
 });
+
+// ---------- ISS-05 / ISS-07: which element the shortcut describes (src/pointerTarget.js) ----------
+
+await import('../src/pointerTarget.js');
+const { shortcutPath, composedAncestors } = globalThis.sftlPointer;
+
+// Minimal fake DOM: elements (nodeType 1), text (3), shadow roots (11, with host), document (9).
+const doc = { nodeType: 9, parentNode: null, at: null, elementFromPoint() { return this.at; } };
+const el = (tag, parentNode) => ({ nodeType: 1, tagName: tag.toUpperCase(), parentNode, assignedSlot: null, shadowRoot: null });
+const html = el('html', doc);
+const body = el('body', html);
+// Path guidance text inside a shadow root.
+const guidanceHost = el('runtime_sales_pathassistant-info', body);
+const shadow = { nodeType: 11, host: guidanceHost, parentNode: null, elementFromPoint: () => null };
+guidanceHost.shadowRoot = shadow;
+const li = el('li', shadow);
+const text = { nodeType: 3, parentNode: li, assignedSlot: null };
+// Somewhere else on the page: calendar header buttons.
+const prevBtn = el('button', body);
+const todayBtn = el('button', body); // disabled: no mousemove reaches it
+const selectionOf = (node, s = 'Review') => ({ rangeCount: 1, toString: () => s, getRangeAt: () => ({ commonAncestorContainer: node }) });
+const noSelection = { rangeCount: 0, toString: () => '' };
+
+test('ISS-05: composedAncestors climbs from a text node through a shadow root to the document', () => {
+  assert.deepEqual(composedAncestors(text).map((n) => n.tagName), ['LI', 'RUNTIME_SALES_PATHASSISTANT-INFO', 'BODY', 'HTML']);
+});
+
+test('ISS-05: highlighted text describes the selection\'s element, not the hovered one', () => {
+  doc.at = prevBtn;
+  const path = shortcutPath({ doc, selection: selectionOf(text), pointerPath: [prevBtn, body, html, doc], pointerXY: [10, 10] });
+  assert.equal(path[0], li);
+  assert.ok(path.includes(guidanceHost));
+  // Pointer on the selected text (deeper or equal): its own path is kept.
+  doc.at = null;
+  const onIt = shortcutPath({ doc, selection: selectionOf(text), pointerPath: [li, guidanceHost, body, html], pointerXY: null });
+  assert.equal(onIt[0], li);
+});
+
+test('ISS-07: a disabled button under the pointer is found again at the pointer position', () => {
+  doc.at = todayBtn;
+  const path = shortcutPath({ doc, selection: noSelection, pointerPath: [prevBtn, body, html, doc], pointerXY: [40, 10] });
+  assert.equal(path[0], todayBtn);
+  // Same element as the last mouse event: unchanged.
+  doc.at = prevBtn;
+  assert.equal(shortcutPath({ doc, selection: noSelection, pointerPath: [prevBtn, body, html], pointerXY: [10, 10] })[0], prevBtn);
+  // Nothing at that point: the last mouse path.
+  doc.at = null;
+  assert.equal(shortcutPath({ doc, selection: noSelection, pointerPath: [prevBtn, body, html], pointerXY: [10, 10] })[0], prevBtn);
+});
