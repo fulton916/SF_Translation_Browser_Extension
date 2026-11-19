@@ -66,7 +66,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Nav bar standard tab with no object/tab name match (Home, Calendar) | Salesforce text, not translatable, unless TabDefinition lists it with that name (then **Rename Tabs and Labels**) | From page metadata (`sfdc:TabDefinition.standard-<X>`, nav item `data-id="home"`) |
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
 | Standard field help text | **Translation Workbench** → Standard Field Help | Yes (current object) |
-| Picklist value | **Translation Workbench** → Picklist Value, or → Global Value Set (tree: value set label → values) when the field uses one | Yes (current object). The value set is read from Tooling `CustomField.Metadata` for matching custom picklists |
+| Picklist value | **Translation Workbench** → Picklist Value, or → Global Value Set (tree: value set label → values) when the field uses one | Yes (current object). The value set is read from Tooling `CustomField.Metadata` for matching custom picklists, and from `StandardValueSet.Metadata` for a standard picklist you point at (inactive values too) |
 | Path step chevron | The path field's picklist value (above); the generic last "Closed" step is Salesforce text | Confirmed for the active path of the record's record type (read from the record) |
 | Record type | **Translation Workbench** → Record Type | Yes (current object) |
 | Quick action | **Translation Workbench** → Action; feed actions (`FeedItem.*`, e.g. New Note, Post) and standard global actions (NewTask, NewContact, NewCase, NewEvent, LogACall…) are Salesforce text: TW → Action does not list them | Yes (current object) |
@@ -163,6 +163,7 @@ Auto-fill (`src/content.js`) runs against live Salesforce pages and is tested by
 |---|---|
 | `manifest.json` | Chrome extension setup (permissions, scripts) |
 | `src/background.js` | Right-click menu, Salesforce API calls, opens translation pages, writes the log |
+| `src/pointerTarget.js` | Picks the element the Alt+Shift+T shortcut describes: the highlighted text, else the element under the pointer (unit tested) |
 | `src/content.js` | Reads the clicked element, shows the panel, auto-fills Setup pages |
 | `src/locator.js` | Decides where each text is translated (no browser code; unit tested) |
 | `src/sfApi.js` | REST and Tooling API queries |

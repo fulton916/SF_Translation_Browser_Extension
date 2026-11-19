@@ -39,15 +39,29 @@
 
   // Keyboard shortcut Alt+Shift+T: same lookup as the right-click menu, for the element under the mouse
   // (or the highlighted text). A page listener, not chrome.commands, so automated key presses reach it too.
+  // pointermove too: Chrome sends no mousemove over disabled buttons (C-02: calendar "Today").
   let pointerPath = null;
-  document.addEventListener('mousemove', (e) => (pointerPath = e.composedPath()), { capture: true, passive: true });
+  let pointerXY = null;
+  const onPointer = (e) => {
+    pointerPath = e.composedPath();
+    pointerXY = [e.clientX, e.clientY];
+  };
+  document.addEventListener('mousemove', onPointer, { capture: true, passive: true });
+  document.addEventListener('pointermove', onPointer, { capture: true, passive: true });
   window.addEventListener(
     'keydown',
     (e) => {
       if (!(e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyT') || !window.__sftlAlive()) return;
       e.preventDefault();
       e.stopPropagation();
-      lastTarget = { path: (pointerPath || []).filter((n) => n instanceof Element), at: Date.now() };
+      // Highlighted text: its own element; else the element under the pointer (src/pointerTarget.js).
+      let path = (pointerPath || []).filter((n) => n instanceof Element);
+      try {
+        path = globalThis.sftlPointer?.shortcutPath({ doc: document, selection: window.getSelection(), pointerPath, pointerXY }) || path;
+      } catch (err) {
+        logEvent('warn', 'shortcut', 'Could not read the element under the pointer', { error: String(err) });
+      }
+      lastTarget = { path, at: Date.now() };
       const selectionText = String(window.getSelection() || '').trim();
       chrome.runtime.sendMessage({ type: 'sftl:shortcut', selectionText }, () => void chrome.runtime.lastError);
     },
