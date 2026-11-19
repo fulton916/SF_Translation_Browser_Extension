@@ -215,6 +215,7 @@ export function detectAreas(hints = {}) {
     areas.add('globalHeader');
     if (aura.some((a) => /^(unsCardQueue|unsNotificationCardFrame)$/.test(a))) areas.add('headerNotification');
   }
+  if (has(/^runtime_calendar-[\w-]*event$/)) areas.add('calendarEvent');
   if (aura.some((a) => /^(forceCalendar|calendarHome)/.test(a)) && !has(/^runtime_calendar-/)) {
     areas.add('calendar');
     if (aura.includes('calendarListItem')) areas.add('calendarList');
@@ -632,10 +633,27 @@ function recordValueResult(d, f) {
     ...base,
     title: `Record data: a value typed on the record (${d.label} → ${f.label})`,
     subtitle: 'This is data stored on the record, not a label',
-    steps: [
-      'Translation tools do not change values that people type on records.',
-      'If every user must see it in their language, use a picklist field instead, or Data Translation where the object supports it.',
-    ],
+    steps: [...RECORD_DATA_STEPS],
+  };
+}
+
+const RECORD_DATA_STEPS = [
+  'Translation tools do not change values that people type on records.',
+  'If every user must see it in their language, use a picklist field instead, or Data Translation where the object supports it.',
+];
+
+/** An event box on the Calendar page shows the Event's Subject (a.subject-link in runtime_calendar-timed-event). */
+function calendarEventResult() {
+  return {
+    key: 'value:Event.Subject',
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'confirmed',
+    title: 'Record data: Event subject',
+    subtitle: 'An event on the calendar shows its Subject, typed on the event',
+    steps: [...RECORD_DATA_STEPS],
+    url: SETUP.objectFields('Event'),
+    copy: 'Event.Subject',
+    notes: [],
   };
 }
 
@@ -1431,10 +1449,9 @@ function addClosedStepResult(org, needle, describes, results, add, record) {
   add({
     ...standardTextResult('path', 'confirmed'),
     key: 'sfdctext:pathClosed',
-    subtitle: 'The final Closed step groups the closed stages (Closed Won / Closed Lost)',
     steps: [
       SALESFORCE_TEXT.step,
-      'Once the record is closed, the step shows its closed value (e.g. Closed Won). That value is a picklist value: Translation Workbench → Picklist Value.',
+      'This final step groups the closed values. Once the record is closed, the step shows its closed value (e.g. Closed Won). That value is a picklist value: Translation Workbench → Picklist Value.',
     ],
   });
   demoteLabelsToPartial(results, 'the Closed step is Salesforce path text.');
@@ -1485,6 +1502,11 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
       }
       return;
     }
+  }
+  if (areas.has('calendarEvent')) {
+    add(calendarEventResult());
+    demoteLabelsToPartial(results, 'an event on the calendar shows its subject, not a custom label.');
+    return;
   }
   if (areas.has('calendar')) {
     addCalendarResults(needle, areas, results, add);
