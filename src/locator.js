@@ -240,6 +240,19 @@ export function detectAreas(hints = {}) {
     areas.add('calendar');
     if (aura.includes('calendarListItem')) areas.add('calendarList');
   }
+  // Pipeline Inspection (UAT2 /lightning/o/Opportunity/pipelineInspection, checked live Nov 2026): Salesforce's own
+  // page in div[data-aura-class=runtime_pipeline_inspectorPipelineInspectorHome]. Metric tiles
+  // (runtime_pipeline_inspector-kpi-panel), filters (runtime_pipeline_inspectorHighlightPanel), Metrics picker and
+  // buttons (runtime_pipeline_inspectorActionsBar, ...RecordsView) are Salesforce text. The view name is a list view
+  // (lst-list-view-picker), the h1 above it is the object name, and the list status line ("0 items • Filtered by
+  // Close Date, Type") is force-list-view-manager-status-info. The list rows hold field labels and record values.
+  if (aura.some((a) => /^runtime_pipeline_inspector/.test(a)) || has(/^runtime_pipeline_inspector-/)) {
+    areas.add('pipelineInspection');
+    if (has(/^lst-list-view-picker/)) areas.add('pipelineView');
+    else if (has(/^force-list-view-manager-status-info$/)) areas.add('pipelineStatus');
+    else if (has(/^(th|td|table|lightning-datatable)$/)) areas.add('pipelineGrid');
+    else if (has(/^h1$/)) areas.add('pipelineObjectName');
+  }
   const custom = tags.filter((t) => /^c-/.test(t));
   if (custom.length || (hints.auraCustom || []).length) areas.add('customComponent');
   return areas;
@@ -1623,7 +1636,54 @@ const STANDARD_AREAS = {
   path: { what: 'the path (heading and buttons)' },
   calendar: { what: 'the Calendar page (header buttons, views, day headers, My Calendars)' },
   globalHeader: { what: 'the global header (search, reminders, notifications)' },
+  pipelineInspection: { what: 'Pipeline Inspection (metric tiles, filters, Metrics menu, tabs and buttons)' },
 };
+
+function pipelineViewResult() {
+  return {
+    key: 'sfdctext:pipelineView',
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'confirmed',
+    title: 'List view name',
+    subtitle: 'The view Pipeline Inspection shows (the name under the object name)',
+    steps: [
+      'This is the name of a list view on Opportunities. Translation Workbench and Rename Tabs and Labels do not list list view names.',
+      'To show a name in another language: Pipeline Settings (gear icon) → Clone, name the copy in that language, then Pipeline Settings → Sharing Settings to share it with the users of that language.',
+      'To rename it: Pipeline Settings (gear icon) → Rename.',
+    ],
+    url: null,
+    notes: [],
+  };
+}
+
+/**
+ * Pipeline Inspection: Salesforce's own page. The object name, view name, status line and list rows show org text.
+ * Same-text custom labels and quick actions are coincidences everywhere on it.
+ */
+function addPipelineResults(areas, results, add) {
+  const why = `custom labels are not used in ${STANDARD_AREAS.pipelineInspection.what}.`;
+  // The object name above the view name: object/tab results were confirmed by confirmNames.
+  if (areas.has('pipelineObjectName') && results.some((r) => /^(object|tab):/.test(r.key) && r.confidence === 'confirmed')) return;
+  if (areas.has('pipelineView')) {
+    demoteLabelsToPartial(results, 'the view name is a list view name, not a custom label.');
+    add(pipelineViewResult());
+    return;
+  }
+  demoteLabelsToPartial(results, why);
+  for (const r of results) {
+    if (!/^(qa|stdaction):/.test(r.key) || r.confidence === 'confirmed' || r.confidence === 'partial') continue;
+    r.confidence = 'partial';
+    r.notes = ['Same words only: the Pipeline Inspection buttons are Salesforce text, not quick actions.', ...(r.notes || [])];
+  }
+  // List rows: column headers are field labels and cells are record values, both listed above when they match.
+  if (areas.has('pipelineGrid')) return;
+  const orgName = results.some((r) => r.confidence === 'confirmed' || r.confidence === 'exact');
+  const r = standardTextResult('pipelineInspection', areas.has('pipelineStatus') || orgName ? 'context' : 'confirmed');
+  if (areas.has('pipelineStatus')) {
+    r.notes = ['"items" and "Filtered by" are Salesforce text. The filter names after them are field labels and values from your org.'];
+  }
+  add(r);
+}
 
 // Calendar list entries Salesforce names itself (English; add other languages when seen). Any other
 // entry is a calendar a user created (from a list view, or a user's or resource's calendar).
@@ -1754,6 +1814,10 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
   }
   if (areas.has('calendar')) {
     addCalendarResults(needle, areas, results, add);
+    return;
+  }
+  if (areas.has('pipelineInspection')) {
+    addPipelineResults(areas, results, add);
     return;
   }
   for (const area of ['activityTimeline', 'duplicates', 'feed', 'reportChart', 'globalHeader']) {
@@ -1983,6 +2047,12 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   }
   // The object name above the record name in the highlights panel (UAT2: "Account" ranked below 3 labels).
   if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');
+  // Pipeline Inspection: the small heading above the view name is the object's plural name.
+  if (areas.has('pipelineObjectName')) confirmNames(results, /^(object|tab):/, 'Pipeline Inspection shows the object name above the view name, not a custom label.');
+  // Pipeline Inspection list: a column header is an Opportunity field label.
+  if (areas.has('pipelineGrid') && (hints.tags || []).includes('th')) {
+    confirmNames(results, /^field:Opportunity\./, 'the Pipeline Inspection columns show field labels, not custom labels.');
+  }
 
   // A field label in a related list row ("Stage:" in an Opportunities tile): the child object's field.
   const onRowLabel = hints.fieldPart === 'label' || (hints.tags || []).includes('dt');

@@ -150,6 +150,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | User calendar names in My Calendars / Other Calendars | Admin work required to translate: a user named it; only its owner can change it | From the page area |
 | Value in a record field, record name in the highlights panel | Record data, formula output (change the formula), a value missing from the picklist: Admin work required to translate. Auto-number and currency name: Salesforce text. Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel). An event box on the Calendar page (`runtime_calendar-*-event`) gives "Record data: Event subject", confirmed, with no Salesforce text card |
 | Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart body, Calendar page (New Event, Today, day headers, the My Events / My Calendars / Other Calendars headings), global header (search) | Owned by Salesforce (Salesforce translates it) | Flagged from the page area |
+| Pipeline Inspection (Opportunities → Pipeline Inspection) | Metric tiles (Open Pipeline, Moved In…), filters, the Metrics menu, the Inspection / Chart tabs, buttons and the empty-list message: Owned by Salesforce. The heading above the view name is the object name: **Rename Tabs and Labels**. The view name is a list view name: Admin work required to translate (clone the view per language). List column headers are field labels | From the page area (`data-aura-class="runtime_pipeline_inspectorPipelineInspectorHome"`; the view name in `lst-list-view-picker`). Same-text custom labels and the New quick action drop to similar text |
 | Reminder and notification cards in the global header | The card frame is Salesforce text; event subjects and custom notification text in them come from your org | "From page area" |
 | Heading of the error popup after a failed save ("We hit a snag.") | Owned by Salesforce | From the page area (`.slds-popover_error` with `.slds-popover__header`, Aura `forcePageError`). The fields and messages listed below it are looked up as usual |
 
@@ -250,6 +251,7 @@ Tests run on every push and pull request (GitHub Actions). They cover:
 - `test/locator.test.js`: matching and classification in `src/locator.js`, using fake org data and cases found in real orgs.
 - `test/sfApi.test.js`: the per-lookup custom label translation query.
 - `test/logStore.test.js`: the test log (redaction, size cap, export).
+- `test/pipeline.test.js`: Pipeline Inspection page areas (element paths read from UAT2).
 - `test/sweep.test.js`, `test/sweepPage.test.js`, `test/dv2.test.js`, `test/live2.test.js`, `test/devorg.test.js`: one test per
   finding from the live sandbox and Developer Edition runs (made-up names and Ids), including the Alt+Shift+T pointer logic in
   `src/pointerTarget.js` and the auto-fill retry in `src/waitUntil.js`.
