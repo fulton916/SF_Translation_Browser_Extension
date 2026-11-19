@@ -112,7 +112,9 @@ const ORG_SOURCES = {
   paths: {
     what: 'Paths',
     load: (s) =>
-      queryAll(s, 'SELECT Id, DeveloperName, MasterLabel, SobjectType, SobjectProcessField, RecordTypeId, IsActive FROM PathAssistant', { tooling: true }),
+      queryAll(s, 'SELECT Id, DeveloperName, MasterLabel, SobjectType, SobjectProcessField, RecordTypeId, IsActive FROM PathAssistant', { tooling: true }).then((paths) =>
+        withObjectIds(s, paths)
+      ),
   },
   userLanguage: {
     what: 'Your language',
@@ -123,6 +125,19 @@ const ORG_SOURCES = {
     load: (s) => queryAll(s, 'SELECT LanguageLocaleKey FROM Organization').then((r) => r[0]?.LanguageLocaleKey || null),
   },
 };
+
+/**
+ * A custom object's path steps name the object by its Id (EntityDefinition DurableId, 01I…), not its API
+ * name (dev org, checked live). Adds SobjectId to each custom object's path; one query, none without one.
+ */
+export async function withObjectIds(session, paths) {
+  const custom = [...new Set(paths.map((p) => p.SobjectType).filter((o) => /^[A-Za-z0-9_]+__c$/.test(o || '')))];
+  if (!custom.length) return paths;
+  const ents = await queryAll(session, `SELECT DurableId, QualifiedApiName FROM EntityDefinition WHERE QualifiedApiName IN ('${custom.join("','")}')`, {
+    tooling: true,
+  }).catch(() => []);
+  return paths.map((p) => ({ ...p, SobjectId: ents.find((e) => e.QualifiedApiName === p.SobjectType)?.DurableId || null }));
+}
 
 export function loadOrgData(session, { refresh = false } = {}) {
   const hit = orgCache.get(session.host);
