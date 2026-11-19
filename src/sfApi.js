@@ -99,10 +99,13 @@ const ORG_SOURCES = {
   },
   validationRules: {
     what: 'Validation messages',
-    load: (s) =>
-      queryAll(s, 'SELECT Id, ValidationName, ErrorMessage, NamespacePrefix, EntityDefinition.QualifiedApiName FROM ValidationRule WHERE Active = true', {
-        tooling: true,
-      }),
+    // ErrorDisplayField: the field the message shows under (empty: top of the page). A translated message
+    // is never in ErrorMessage, so the field is what ties a message under a field to its rules.
+    // Without that column (older API, other access): the rules without it.
+    load: (s) => {
+      const q = (cols) => queryAll(s, `SELECT Id, ValidationName, ErrorMessage, ${cols}NamespacePrefix, EntityDefinition.QualifiedApiName FROM ValidationRule WHERE Active = true`, { tooling: true });
+      return q('ErrorDisplayField, ').catch((e) => (e?.status === 401 ? Promise.reject(e) : q('')));
+    },
   },
   // Path "Guidance for Success" (rich text HTML, one row per step) and the paths they belong to.
   pathSteps: {
