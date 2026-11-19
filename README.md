@@ -37,7 +37,9 @@ Log in to Salesforce. Your user needs:
   - Translation Workbench: enabled in the org, plus **Manage Translation** (or you are set up as a
     translator for the target language).
   - Rename Tabs and Labels, and custom label translations: **Customize Application**.
-  - Data Translation (record data): **Modify All Data**.
+  - Data Translation (record data): **Manage Translation** and **Create Documents** to export and import
+    the translation files. Turning data translation on for a field needs **Customize Application** and
+    **Modify All Data**.
 
 ## Reading the panel
 
