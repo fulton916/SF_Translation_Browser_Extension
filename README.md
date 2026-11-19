@@ -8,9 +8,12 @@ filters. You type the translation and click Save.
 
 ## Install (developer mode, about 2 minutes)
 
-1. Unzip the `SF-Translation-Locator-<version>.zip` you were sent into a folder you will keep. Chrome
-   loads the extension from that folder: moving or deleting it removes the extension. Inside is a folder
-   named `SF-Translation-Locator`. That is the folder to pick in step 4.
+1. Get the zip. From GitHub: open
+   [the Releases page](https://github.com/fulton916/SF_Translation_Browser_Extension/releases/latest) and,
+   under **Assets**, click `SF-Translation-Locator-<version>.zip`. Use that file, not "Source code (zip)".
+   If someone sent you the zip, use that instead. Unzip it into a folder you will keep: Chrome loads the
+   extension from that folder, so moving or deleting it removes the extension. Inside is a folder named
+   `SF-Translation-Locator`. That is the folder to pick in step 4.
 2. Open `chrome://extensions` in Chrome.
 3. Turn on **Developer mode** (top right). On a company-managed Chrome, IT policy can block Developer
    mode or **Load unpacked**. If so, ask IT.
@@ -23,8 +26,10 @@ filters. You type the translation and click Save.
    With nothing highlighted, right-click the text and choose **Find Salesforce translation for this text**,
    or point at it and press **Alt + Shift + T** (**Option + Shift + T** on a Mac).
 
-After an update: click reload on the extension in `chrome://extensions`, then press F5 on your
-Salesforce tabs. Panels left open from before the reload stop working.
+To update to a newer version: download the new zip from the Releases page and unzip it over the same
+folder (replace the files). Click reload on the extension in `chrome://extensions`, then press F5 on your
+Salesforce tabs. Panels left open from before the reload stop working. The version shows at the bottom
+right of every panel.
 
 ## Requirements
 
