@@ -74,7 +74,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
-| Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Auto-fill opens every layout and lists each copy of the section |
+| Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Also detected on Aura classic record layouts: a `forcePageBlockSection` header (an `h1`–`h6` or `legend` in the path), not a `forcePageBlockItem` field; a custom label with the same text then drops to similar text. Auto-fill opens every layout and lists each copy of the section |
 | Flow screen text | **Translation Workbench** → Flow | From page metadata only |
 | Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance of the record's own path |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
@@ -84,8 +84,10 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Standard button (Edit, Delete) | Owned by Salesforce (Salesforce translates it) | Flagged |
 | Text typed into a custom LWC/Aura or Lightning App Builder | Not translatable until moved into a Custom Label | Flagged |
 | Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → not translatable | Read from the FlexiPage for the clicked section, list header or tab. A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field |
-| Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), auto-number (Salesforce), a value missing from the picklist, or currency name (Salesforce). Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel) |
+| Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), auto-number (Salesforce), a value missing from the picklist, or currency name (Salesforce). Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel). An event box on the Calendar page (`runtime_calendar-*-event`) gives "Record data: Event subject", confirmed, with no Salesforce text card |
 | Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart, Calendar page (New Event, Today, day headers, My Calendars), global header (search, reminders) | Owned by Salesforce (Salesforce translates it) | Flagged from the page area |
+
+Matching rule: a highlight under 5 characters matches whole words only; 5 or more characters also match inside words.
 
 Language rule: if you are viewing Salesforce in the org default language, the text is the
 **master label**. Change it in Object Manager (or the label itself). Translations go into the
