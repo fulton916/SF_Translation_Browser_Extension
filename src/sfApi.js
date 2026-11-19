@@ -261,11 +261,12 @@ const flexiCache = new Map();
 
 /**
  * Reads one Lightning App Builder component (e.g. a Dynamic Forms field section) from a record
- * page's metadata. The page's generated tag is "forcegenerated-flexipage_<dev name>_<object>__view_js…";
+ * page's metadata. The page's generated tag is "forcegenerated-flexipage_<dev name>_<object>__view_js…", and
+ * "…__create_js…" on the New form of a Dynamic Forms page (checked live, Nov 2026);
  * SOQL DeveloperName comparisons ignore case. Returns { page, id, component, label } or null.
  */
 export async function loadFlexiPageComponent(session, flexipageTag, componentId, objects = []) {
-  const m = /^forcegenerated-flexipage_(.+?)__view/.exec(flexipageTag || '');
+  const m = /^forcegenerated-flexipage_(.+?)__(?:view|create|edit|clone)(?:_|$)/.exec(flexipageTag || '');
   if (!m || !/^[A-Za-z0-9_]+$/.test(m[1]) || !/^[A-Za-z0-9_]+$/.test(componentId || '')) return null;
   const names = [m[1]];
   for (const o of objects) {

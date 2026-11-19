@@ -60,6 +60,30 @@ test('loadFlexiPageComponent reads a field section label (real shape)', async ()
   assert.match(urls[0], /DeveloperName = 'demo_account_record_page' LIMIT 1/);
 });
 
+test('loadFlexiPageComponent reads the New form of a Dynamic Forms page (tag ends in __create_js)', async () => {
+  const urls = [];
+  globalThis.fetch = async (u) => {
+    urls.push(decodeURIComponent(u));
+    return {
+      ok: true,
+      json: async () => ({
+        done: true,
+        records: [{
+          DeveloperName: 'Demo_Part_Record_Page', MasterLabel: 'Demo Part Record Page',
+          Metadata: { flexiPageRegions: [{ itemInstances: [
+            { componentInstance: { identifier: 'flexipage_fieldSection2', componentName: 'flexipage:fieldSection',
+              componentInstanceProperties: [{ name: 'label', value: 'System Information' }] } },
+          ] }] },
+        }],
+      }),
+    };
+  };
+  const pc = await loadFlexiPageComponent({ host: 'create-form', sid: 's' },
+    'forcegenerated-flexipage_demo_part_record_page_demo_part__c__create_js___lmt___1', 'flexipage_fieldSection2', ['Demo_Part__c']);
+  assert.equal(pc.label, 'System Information');
+  assert.match(urls[0], /DeveloperName = 'demo_part_record_page' LIMIT 1/);
+});
+
 test('loadOrgData: path guidance queries fail → warnings only, other sources still load', async () => {
   globalThis.fetch = async (u) => {
     const url = decodeURIComponent(u);

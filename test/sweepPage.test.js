@@ -116,6 +116,26 @@ test('M-03: related list label typed in App Builder (Demo Recorder) → not tran
   assert.ok(!out.results.some((r) => r.key === 'area:relatedList'));
 });
 
+test('a typed related list label also says the list falls back to a translated title when cleared', () => {
+  const child = { childSObject: 'Demo_Part__c', field: 'Demo_Opportunity__c', fieldLabel: 'Opportunity', objectLabel: 'Demo Part' };
+  const pc = { page, id: 'lst_dynamicRelatedList7', component: 'lst:dynamicRelatedList', label: 'Demo Parts', props: { relatedListApiName: 'Demo_Parts__r', relatedListLabel: 'Demo Parts' }, child };
+  const out = run('Demo Parts (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: pc });
+  assert.equal(out.results[0].title, 'Related list label typed in Lightning App Builder');
+  const last = out.results[0].steps.at(-1);
+  assert.match(last, /^Or clear the Related List Label → Save/);
+  assert.match(last, /Demo_Part__c\.Demo_Opportunity__c/);
+  assert.match(last, /Translation Workbench → Custom Field → Demo Part → Related List Label/);
+  // A standard relationship: its standard title.
+  const std = run('Example Opps (0)', { hints: listHints('lst_dynamicRelatedList8'), pageComponent: { ...pc, id: 'lst_dynamicRelatedList8', label: 'Example Opps', props: { relatedListApiName: 'Opportunities' }, child: undefined } });
+  assert.match(std.results[0].steps.at(-1), /standard title \(Opportunities\).*Rename Tabs and Labels/);
+  // A managed package's lookup field: Workbench → Override.
+  const managed = run('Demo Parts (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: { ...pc, child: { ...child, childSObject: 'exns__Activity__c', field: 'exns__Opportunity__c' } } });
+  assert.match(managed.results[0].steps.at(-1), /Translation Workbench → Override \(package exns\) → Custom Field/);
+  // A lookup that could not be read: no fallback step.
+  const unknown = run('Demo Parts (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: { ...pc, child: undefined } });
+  assert.ok(!unknown.results[0].steps.some((s) => s.startsWith('Or clear')));
+});
+
 test('M-12: standard related list without a label (Files) → Salesforce standard related list', () => {
   const pc = { page, id: 'force_relatedListSingleContainer15', component: 'force:relatedListSingleContainer', label: null, props: { relatedListApiName: 'AttachedContentDocuments' } };
   const out = run('Files', { hints: listHints('force_relatedListSingleContainer15'), pageComponent: pc });
