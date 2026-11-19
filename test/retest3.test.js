@@ -267,3 +267,17 @@ test('5: viewing French, "Find the row" and Go to translation use the master lab
   assert.equal(step(bare), 'Find the row: Couleur du gadget (Demo_Color__c)');
   assert.ok(bare.notes.includes(`Master label (${EN}): Object Manager → Demo_Gadget__c → Fields → Demo_Color__c → Edit.`));
 });
+
+// ---------- 7: the heading of the save error popup ----------
+test('7: "We hit a snag." in the save error popup is Salesforce text; its list items are looked up as usual', () => {
+  const org = { userLanguage: 'en_US', defaultLanguage: 'en_US', labelTranslations: [], customLabels: [], apps: [], tabs: [], validationRules: [], objects: [] };
+  const out = locate({ text: 'We hit a snag.', org, describes: [gadget], hints: { tags: ['h2', 'div', 'header', 'section', 'records-record-edit-error'], errorPopover: 'header' } });
+  assert.ok(out.areas.includes('errorPopoverHeader'));
+  assert.equal(out.results[0].source, SOURCE.SALESFORCE);
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.equal(out.notFoundHelp, null);
+  assertWording(out.results);
+  const body = locate({ text: 'Couleur du gadget', org, describes: [gadget], hints: { tags: ['a', 'li', 'ul', 'section'], errorPopover: 'body' } });
+  assert.ok(!body.results.some((r) => r.key === 'sfdctext:errorPopover'));
+  assert.ok(body.results.some((r) => r.key === 'field:Demo_Gadget__c.Demo_Color__c'));
+});

@@ -96,7 +96,12 @@
     const hints = {
       selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null,
       fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [], highlightsLabel: null, relatedListApi: null,
+      errorPopover: null,
     };
+    // errorPopover: inside the error popup a failed save shows ("We hit a snag."): 'header' on its heading,
+    // 'body' on its list of fields and messages. LWC: section.slds-popover.slds-popover_error with
+    // header.slds-popover__header (tag records-record-edit-error); Aura: div.forcePageError with div.genericNotification.
+    let popoverHeaderSeen = false;
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
     let inField = false;
     let headerSeen = false;
@@ -128,6 +133,10 @@
         const t = (el.shadowRoot || el).querySelector?.('.slds-text-title');
         hints.highlightsLabel = (t?.getAttribute('title') || t?.innerText || '').trim().slice(0, 200) || null;
         if (!hints.fieldPart) hints.fieldPart = titleSeen ? 'label' : valueSeen ? 'value' : null;
+      }
+      if (/\b(slds-popover__header|genericNotification)\b/.test(cls)) popoverHeaderSeen = true;
+      if (!hints.errorPopover && (/\b(slds-popover_error|forcePageError)\b/.test(cls) || tag === 'records-record-edit-error')) {
+        hints.errorPopover = popoverHeaderSeen ? 'header' : 'body';
       }
       if (tag === 'lightning-helptext') hints.helpIcon = true;
       if (tag === 'h2' || /\bslds-card__header\b|\bslds-card__header-title\b/.test(cls)) headerSeen = true;
