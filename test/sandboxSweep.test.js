@@ -351,7 +351,8 @@ test('SB-09: a partial highlight of a real picklist value is not flagged as "not
   const custom = out.results;
   assert.ok(!custom.some((x) => x.key.startsWith('value:')), 'no value: card');
   assert.ok(!custom.some((x) => x.confidence === 'confirmed' && x.source === SOURCE.NOT_TRANSLATABLE), 'nothing wrongly confirmed');
-  assert.ok(out.droppedPartial >= 1, 'the partial value match is kept as "similar text"');
+  // Live run 2 (ISS-04): the value that holds the highlighted words is listed, not folded away.
+  assert.ok(custom.some((x) => x.key.startsWith('picklist:Contact.Demo_Team__c.') && x.confidence === 'context'), 'the value card is listed');
   // Part of an inactive value (from the field metadata).
   const inactive = locate({ text: 'Unit WEST', org: teamOrg, describes: [contactTeam], hints: contactField('Demo_Team__c') }).results;
   assert.ok(!inactive.some((x) => x.key.startsWith('value:')));

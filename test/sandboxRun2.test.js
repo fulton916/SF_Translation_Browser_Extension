@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { locate, SOURCE } from '../src/locator.js';
+import { locate, matchType, SOURCE } from '../src/locator.js';
 import { loadValueSet } from '../src/sfApi.js';
 
 const lbl = (Id, Name, Value, NamespacePrefix = null) => ({ Id, Name, MasterLabel: Name, NamespacePrefix, Value, Language: 'en_US' });
@@ -116,4 +116,33 @@ test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed ac
   // Text in the feed that matched nothing else still gets the page-area card.
   const other = locate({ text: 'updated this record.', org, describes: [contact], hints: { sfComponents: ['forceChatter_exampleFeedPublisher'] } }).results;
   assert.equal(other[0].key, 'sfdctext:feed');
+});
+
+// ---------- ISS-04: part of a picklist value highlighted ----------
+
+test('ISS-04: highlighting "OLD" in the value "EX OLD" puts that value card first, ahead of similar labels', () => {
+  const account = {
+    name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
+    fields: [{ name: 'Demo_Team__c', label: 'Demo Team', custom: true, type: 'picklist', picklistValues: [{ label: 'EX NORTH', value: 'EX NORTH', active: true }] }],
+  };
+  const org = {
+    ...baseOrg,
+    customLabels: Array.from({ length: 30 }, (_, i) => lbl(`101D0000000${String(100 + i)}`, `Example_${i}`, `Example gold text ${i}`)),
+    valueSets: { 'Account.Demo_Team__c': { name: null, values: [{ value: 'EX NORTH', label: 'EX NORTH', active: true }, { value: 'EX OLD', label: 'EX OLD', active: false }] } },
+  };
+  const out = locate({ text: 'OLD', org, describes: [account], hints: { selectionNames: ['sfdc:RecordField.Account.Demo_Team__c'], fieldPart: 'value' } });
+  const r = out.results[0];
+  assert.equal(r.key, 'picklist:Account.Demo_Team__c.EX OLD');
+  assert.equal(r.confidence, 'context');
+  assert.equal(r.notes[0], 'You highlighted part of this value.');
+  assert.ok(!out.results.some((x) => x.source === SOURCE.CUSTOM_LABEL), 'similar labels stay behind "Show more"');
+  assert.ok(!out.results.some((x) => x.key.startsWith('value:')));
+});
+
+test('ISS-04: a highlight under 5 characters matches whole words only', () => {
+  assert.equal(matchType('old', 'EX OLD'), 'partial');
+  assert.equal(matchType('old', 'Gold old'), 'partial');
+  assert.equal(matchType('old', 'Example gold text'), null);
+  assert.equal(matchType('west', 'EX WEST (new)'), 'partial');
+  assert.equal(matchType('portal', 'Welcome to the portals'), 'partial', '5+ characters still match inside words');
 });
