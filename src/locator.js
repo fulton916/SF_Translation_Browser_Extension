@@ -575,7 +575,9 @@ function picklistResult(org, d, f, pv, confidence) {
       ],
     };
   }
-  const notes = ['If the field uses a Global Value Set, pick Setup Component "Global Value Set" instead.'];
+  // The note only when the value set was not read: a standard picklist never uses a Global Value Set, and
+  // a read value set without a name is the field's own (A-03, A-24).
+  const notes = f.custom && !vs ? ['If the field uses a Global Value Set, pick Setup Component "Global Value Set" instead.'] : [];
   if (!pv.active) notes.push('This value is inactive.');
   if (isDefaultLanguage(org)) notes.push(`Master label: Object Manager → ${d.label} → Fields → ${f.label} → Values → Edit.`);
   return {
@@ -1088,7 +1090,8 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
         confidence: 'confirmed',
         title: `Custom button/link ${sn.object}.${sn.name}`,
         subtitle: 'Found in page metadata',
-        ...workbench(org, { component: 'Button and Link Label', object: sn.object, objectLabel: objLabel(sn.object), row: sn.name, rows: [sn.name, text], pkg: namespaceOf(sn.name) }),
+        // The grid's first column shows the label (A-12): name the row by it, API name in brackets.
+        ...workbench(org, { component: 'Button and Link Label', object: sn.object, objectLabel: objLabel(sn.object), row: text ? `${text} (${sn.name})` : sn.name, rows: [sn.name, text], pkg: namespaceOf(sn.name) }),
         copy: sn.name,
         notes: [],
       });
@@ -1986,7 +1989,14 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       r.confidence = 'partial';
       r.notes = ['Same words only: Setup pages do not show custom labels.', ...(r.notes || [])];
     }
-    add(setupTextResult());
+    // Object Manager lists the object's own metadata (A-27: the "Paint Color" field label in Fields &
+    // Relationships also got a Salesforce text card): a same-text match of it is not Salesforce text.
+    const inObjectManager = pageUrls.some((u) => /\/lightning\/setup\/ObjectManager\/[A-Za-z0-9_]+\//.test(u || ''));
+    const own = new Set(describes.map((d) => d.name));
+    const ownMetadata = (r) =>
+      ['exact', 'confirmed'].includes(r.confidence) &&
+      ([...own].some((o) => new RegExp(`^(field|help|picklist|rt|qa):${o}\\.`).test(r.key)) || (r.key.startsWith('vr:') && own.has(r.goto?.object)));
+    if (!(inObjectManager && results.some(ownMetadata))) add(setupTextResult());
   }
 
   return finalize(results, areas);
