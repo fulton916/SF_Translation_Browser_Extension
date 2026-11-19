@@ -117,6 +117,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Standard object name (Account, Opportunity) | **Rename Tabs and Labels** → Standard Tabs | Yes |
 | Custom object name | **Rename Tabs and Labels** → Custom Tabs (master label: Object Manager) | Yes |
 | Standard field label | **Rename Tabs and Labels** → object → Edit → Next (step 2). A custom object's standard fields (Owner ID, Record Type ID, Deleted) are Salesforce text | Yes (current object) |
+| Custom object's Name field label ("Widget Name") | **Rename Tabs and Labels** → Custom Tabs → object → Edit → **Record Name** on that page (no step 2) | Yes (current object) |
 | Standard tab (Chatter and others TabDefinition lists) | **Rename Tabs and Labels** | Yes |
 | Nav bar standard tab with no object/tab name match (Home, Calendar) | Owned by Salesforce, unless TabDefinition lists it with that name (then **Rename Tabs and Labels**) | From page metadata (`sfdc:TabDefinition.standard-<X>`, nav item `data-id="home"`) |
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
@@ -165,7 +166,7 @@ Salesforce has no documented deep links for these pages. These were found by ins
 |---|---|---|
 | Custom label | Setup → Custom Labels → the label's New Translation page (`/01j/e?Parent=<label Id>` inside `/lightning/setup/ExternalStrings/page`), or the existing translation's edit page for that language | Picks the Language |
 | Standard object / field | Setup → Rename Tabs and Labels → the object's Edit page (`RenameTabStageManager?id=<Object>&l=<lang>` inside `/lightning/setup/RenameTab/page`) | For a field: clicks Next (saves nothing), highlights the field on Step 2 |
-| Custom object | Setup → Rename Tabs and Labels (`/lightning/setup/RenameTab/home`) | Switches language, opens the object's Edit page |
+| Custom object | Setup → Rename Tabs and Labels (`/lightning/setup/RenameTab/home`) | Switches language, opens the object's Edit page (`RenameEntityUi/e`, one page, no Next); highlights Singular, Plural, or for its Name field Record Name |
 | Translation Workbench item | Setup → Translate (`/lightning/setup/LabelWorkbenchTranslate/home`) | Sets Language, Setup Component, Object, Aspect (for a flow: Flow, Flow Component, Screen, Screen Component, Aspect); finds the row (pages through the grid; a tree is searched again until it has loaded, up to 15 s) and marks it. Double-click its translation cell to type: a script-opened edit box closed on the next click and lost the text. Path guidance: matches the row's raw HTML, or its text without tags |
 | Package item | Setup → Override (`/lightning/setup/LabelWorkbenchOverride/home`) | Same as Translate, plus picks the Package by namespace (warns if two packages share it) |
 | Record data | The record page | Clicks the Translations tab. If the page has none, says so |
