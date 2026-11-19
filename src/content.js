@@ -636,10 +636,13 @@
       .find((a) => [...(a.closest('tr')?.cells || [])].some((c) => norm(c.innerText) === want));
     const href = decodeURIComponent(link?.getAttribute('href') || '');
     // A custom object's row (dev org, Nov 2026): Edit opens /_ui/core/i18n/entity/RenameEntityUi/e?id=01I…&Language=…
-    if (/RenameEntityUi\/e\?/.test(href)) {
+    // Inside Lightning the href is javascript:srcUp('…'), so take the path out of it.
+    const entityPath = /(\/_ui\/core\/i18n\/entity\/RenameEntityUi\/e\?[^'"\s)]+)/.exec(href)?.[1];
+    if (entityPath) {
       await patch({ page: 'renameStage' });
-      const url = new URL(link.href, location.href);
+      const url = new URL(entityPath, location.origin);
       url.searchParams.set('Language', p.lang);
+      if (new URLSearchParams(location.search).has('isdtp')) url.searchParams.set('isdtp', 'p1');
       location.href = url.href;
       return;
     }

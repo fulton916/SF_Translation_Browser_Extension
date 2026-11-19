@@ -433,7 +433,7 @@ function objectResult(org, obj, confidence, plural, tab) {
     subtitle: `API name ${obj.name}`,
     steps: [
       ...renameSteps(org, { custom: obj.custom, tabLabel: tab?.Label || obj.labelPlural }),
-      `Step 1 page: change the ${plural ? 'Plural' : 'Singular'} name, then Save`,
+      `${obj.custom ? 'On that page' : 'Step 1 page'}: change the ${plural ? 'Plural' : 'Singular'} name, then Save`,
     ],
     url: SETUP.renameTabs,
     goto: { page: 'rename', object: obj.name, custom: obj.custom, tabLabel: tab?.Label || obj.labelPlural, plural: !!plural },

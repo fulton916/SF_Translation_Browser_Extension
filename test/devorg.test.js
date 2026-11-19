@@ -383,3 +383,11 @@ test('Custom object Name field: Rename Tabs and Labels, Custom Tabs, "Record Nam
   assert.equal(g.autofill.recordNameLabel, 'Gadget Name');
   assert.equal(g.autofill.fieldLabel, null, 'never treated as a Step 2 field');
 });
+
+test('Custom object name: one page, no "Step 1" wording', () => {
+  const hints = { selectionNames: [], fieldPart: 'label' };
+  const r = locate({ text: 'Gadget', org: baseOrg, describes: [gadget], hints }).results.find((x) => x.key === 'object:Demo_Gadget__c');
+  assert.ok(r, 'object card');
+  assert.ok(r.steps.some((s) => /^On that page: change the Singular name/.test(s)), r.steps.join(' | '));
+  assert.ok(!r.steps.some((s) => /Step 1/.test(s)));
+});
