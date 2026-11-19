@@ -110,3 +110,43 @@ test('Pipeline Inspection: a metric tile says where an admin-set metric name is 
   const r = run('Moved In', kpi).results[0];
   assert.ok(r.notes.some((n) => n.includes('Pipeline Inspection Metric Configuration')));
 });
+
+// List rows as read live from a list view with records.
+const GRID = ['lightning-datatable', 'lst-primary-display-grid', 'lst-primary-display', 'lst-primary-display-manager', 'lst-common-list-internal', 'lst-common-list', 'runtime_pipeline_inspector-pipeline-inspector-common-list'];
+const gridAura = ['runtime_pipeline_inspectorPipelineInspectorRecordsView', HOME];
+const header = { tags: ['span', 'a', 'lightning-primitive-header-factory', 'th', 'tr', 'thead', 'table', 'div', ...GRID], auraClasses: gridAura };
+const cell = (inner) => ({ tags: [...inner, 'lightning-primitive-custom-cell', 'lightning-primitive-cell-factory', 'td', 'tr', 'tbody', 'table', 'div', ...GRID], auraClasses: gridAura });
+
+test('Pipeline Inspection list: a field column header is the Opportunity field label', () => {
+  const out = run('Close Date', header);
+  assert.ok(out.areas.includes('pipelineGrid'));
+  assert.equal(out.results[0].key, 'field:Opportunity.CloseDate');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.ok(!out.results.some((r) => r.key === 'sfdctext:pipelineColumn'));
+});
+
+test('Pipeline Inspection list: Alerts, Contacts, Activity columns are Salesforce text', () => {
+  for (const text of ['Alerts', 'Activity', 'Important']) {
+    const r = run(text, { ...header, tags: ['span', 'div', ...header.tags.slice(2)] }).results[0];
+    assert.equal(r.key, 'sfdctext:pipelineColumn', text);
+    assert.equal(r.confidence, 'confirmed', text);
+  }
+});
+
+test('Pipeline Inspection list: "No recent activity" is the Salesforce activity chart', () => {
+  const r = run('No recent activity', cell(['p', 'div', 'runtime_sales_activities-activity-stacked-bar-chart-empty-state', 'runtime_sales_activities-activity-stacked-bar-chart'])).results[0];
+  assert.equal(r.key, 'sfdctext:pipelineInspection');
+  assert.equal(r.confidence, 'confirmed');
+});
+
+test('Pipeline Inspection list: an account name cell is record data; a count gets no card', () => {
+  const out = run('Example Shop', cell(['span', 'slot', 'a', 'div', 'force-lookup']));
+  assert.equal(out.results[0].key, 'value:pipelineList');
+  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.ok(!out.results.some((r) => r.source === SOURCE.SALESFORCE));
+  assert.equal(run('2', cell(['span', 'div'])).results.length, 0);
+  // A picklist value in a cell is the picklist value, not record data.
+  const value = run('Blue', cell(['lightning-base-formatted-text']));
+  assert.equal(value.results[0].key.startsWith('picklist:Opportunity.Demo_Team__c'), true, value.results[0].key);
+  assert.ok(!value.results.some((r) => r.key === 'value:pipelineList'));
+});
