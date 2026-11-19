@@ -9,7 +9,8 @@ screen and fills in the language and filters. You type the translation and click
 
 ## Install (developer mode, about 2 minutes)
 
-1. Get the code: on this page click **Code → Download ZIP** and unzip it, or run
+1. Get the code: unzip the `SF-Translation-Locator-<version>.zip` you were sent, or (with access to
+   this private repository) click **Code → Download ZIP**, or run
    `git clone https://github.com/fulton916/SF_Translation_Browser_Extension.git`.
 2. Open `chrome://extensions` in Chrome.
 3. Turn on **Developer mode** (top right).
@@ -156,6 +157,8 @@ Tests run on every push and pull request (GitHub Actions). They cover:
 - `test/locator.test.js`: matching and classification in `src/locator.js`, using fake org data and cases found in real orgs.
 - `test/sfApi.test.js`: the per-lookup custom label translation query.
 - `test/logStore.test.js`: the test log (redaction, size cap, export).
+- `test/sweep.test.js`, `test/sweepPage.test.js`, `test/sandbox.test.js`, `test/live2.test.js`: one test per finding from the
+  live test runs (made-up names and Ids), including the Alt+Shift+T pointer logic in `src/pointerTarget.js`.
 
 Auto-fill (`src/content.js`) runs against live Salesforce pages and is tested by hand. Record what you test in an issue.
 
