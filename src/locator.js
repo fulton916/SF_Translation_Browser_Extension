@@ -208,6 +208,8 @@ export function detectAreas(hints = {}) {
     areas.add(hints.recordTitle ? 'recordTitle' : has(/^records-highlights-details-item$/) ? 'highlightsField' : 'highlights');
   }
   if (hints.helpIcon) areas.add('helpIcon');
+  // The error popup of a failed save (content.js hints.errorPopover): its heading is Salesforce's.
+  if (hints.errorPopover) areas.add(hints.errorPopover === 'header' ? 'errorPopoverHeader' : 'errorPopover');
   // Salesforce's own components on a record page (component ids seen live in an Account page DOM).
   const comps = [...(hints.componentIds || []), ...(hints.sfComponents || [])];
   const comp = (re) => comps.some((c) => re.test(c));
@@ -1699,6 +1701,13 @@ function reportChartTitleResult(results) {
 }
 
 function addStandardTextResults(org, needle, areas, describes, results, add, record, hints = {}) {
+  // Heading of the error popup after a failed save ("We hit a snag.", Aura "Review the errors on this page.").
+  // Its list below names fields and shows messages, which are looked up as usual.
+  if (areas.has('errorPopoverHeader')) {
+    add(salesforceTextResult('sfdctext:errorPopover', 'confirmed', { subtitle: 'Heading of the error popup Lightning shows when a save fails' }));
+    demoteLabelsToPartial(results, 'the heading of the save error popup is Salesforce text.');
+    return;
+  }
   if (areas.has('path') && !areas.has('pathGuidance') && CLOSED_STEPS.includes(needle) && addClosedStepResult(org, needle, describes, results, add, record)) return;
   if (areas.has('path') && needle) {
     const button = PATH_BUTTONS.map((re) => re.exec(needle)).find(Boolean);
