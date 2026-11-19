@@ -664,6 +664,37 @@ test('pathOfStep reads both real DeveloperName shapes', () => {
   assert.deepEqual(pathOfStep(steps[1].DeveloperName, []), { path: null, object: 'Lead', field: 'Status' });
 });
 
+// Dev org shape (Nov 2026): a custom object's step names the object by its Id and is cut at 80 characters.
+test('custom object path step (object Id, cut name) finds its path; one word of it is confirmed', () => {
+  const dn = 'X444444444444444_01J000000000001AAA_012000000000001AAA_01I000000000001_Demo_Stat';
+  const paths = [
+    { DeveloperName: 'Demo_Gadget_Path', MasterLabel: 'Demo Gadget Path', SobjectType: 'Demo_Gadget__c', SobjectProcessField: 'Demo_Status__c', RecordTypeId: '012000000000001AAA', IsActive: true, SobjectId: '01I000000000001' },
+  ];
+  assert.equal(pathOfStep(dn, paths).path.DeveloperName, 'Demo_Gadget_Path');
+  // No record type: the object Id and the start of the field still name it.
+  const noRt = 'X444444444444444_01J000000000001AAA_null_01I000000000001_Demo_Status_Of_The_Gadget_Line'.slice(0, 80);
+  const longField = { ...paths[0], RecordTypeId: null, SobjectProcessField: 'Demo_Status_Of_The_Gadget_Line__c' };
+  assert.equal(pathOfStep(noRt, [longField]).path.DeveloperName, 'Demo_Gadget_Path');
+  assert.equal(pathOfStep(noRt, [{ ...longField, SobjectId: '01I000000000002' }]).path, null);
+  // No path data: the object Id is never shown as a name.
+  assert.deepEqual(pathOfStep(dn, []), { path: null, object: null, field: null });
+
+  const gadget = {
+    name: 'Demo_Gadget__c', label: 'Gadget', custom: true, quickActions: [],
+    fields: [{ name: 'Demo_Status__c', label: 'Gadget Status', custom: true, type: 'picklist', picklistValues: [] }],
+    recordTypeInfos: [{ name: 'Standard Gadget', developerName: 'Standard_Gadget', master: false, recordTypeId: '012000000000001AAA' }],
+  };
+  const gOrg = { ...org, paths, pathSteps: [{ Id: '1CF000000000009', DeveloperName: dn, Language: 'en_US', Info: '<ul><li>Collect the sketches before review.</li></ul>' }] };
+  const record = { object: 'Demo_Gadget__c', id: 'a00000000000001AAA', recordTypeId: '012000000000001AAA' };
+  const r = locate({ text: 'sketches', hints: guidanceHints, org: gOrg, describes: [gadget], record }).results[0];
+  assert.equal(r.key, 'path:1CF000000000009');
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.title, 'Path guidance: Demo Gadget Path (Gadget › Gadget Status)');
+  const noPath = locate({ text: 'Collect the sketches before review.', hints: guidanceHints, org: { ...gOrg, paths: [] }, describes: [gadget] }).results[0];
+  assert.equal(noPath.title, 'Path guidance');
+  assert.ok(!/01I|unknown/.test(noPath.title + noPath.notes.join(' ')));
+});
+
 test('guidance line in the path guidance area → Workbench Path Step Rich Text, confirmed', () => {
   const out = runPath('Who draws the first sketch?', { hints: guidanceHints });
   assert.ok(out.areas.includes('path') && out.areas.includes('pathGuidance'));
@@ -713,7 +744,7 @@ test('path guidance still works without PathAssistant data (query failed)', () =
   const out = locate({ text: 'Who draws the first sketch?', hints: guidanceHints, org: { ...pathOrg, paths: null }, describes: [oppDescribe] });
   const r = out.results[0];
   assert.equal(r.confidence, 'confirmed');
-  assert.equal(r.title, 'Path guidance: unknown path (Opportunity › Mid Stage)');
+  assert.equal(r.title, 'Path guidance: Opportunity › Mid Stage');
   assert.equal(r.goto.component, 'PathAssistantStepInfo');
 });
 

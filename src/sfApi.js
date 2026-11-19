@@ -112,7 +112,9 @@ const ORG_SOURCES = {
   paths: {
     what: 'Paths',
     load: (s) =>
-      queryAll(s, 'SELECT Id, DeveloperName, MasterLabel, SobjectType, SobjectProcessField, RecordTypeId, IsActive FROM PathAssistant', { tooling: true }),
+      queryAll(s, 'SELECT Id, DeveloperName, MasterLabel, SobjectType, SobjectProcessField, RecordTypeId, IsActive FROM PathAssistant', { tooling: true }).then((paths) =>
+        withObjectIds(s, paths)
+      ),
   },
   userLanguage: {
     what: 'Your language',
@@ -123,6 +125,19 @@ const ORG_SOURCES = {
     load: (s) => queryAll(s, 'SELECT LanguageLocaleKey FROM Organization').then((r) => r[0]?.LanguageLocaleKey || null),
   },
 };
+
+/**
+ * A custom object's path steps name the object by its Id (EntityDefinition DurableId, 01I…), not its API
+ * name (dev org, checked live). Adds SobjectId to each custom object's path; one query, none without one.
+ */
+export async function withObjectIds(session, paths) {
+  const custom = [...new Set(paths.map((p) => p.SobjectType).filter((o) => /^[A-Za-z0-9_]+__c$/.test(o || '')))];
+  if (!custom.length) return paths;
+  const ents = await queryAll(session, `SELECT DurableId, QualifiedApiName FROM EntityDefinition WHERE QualifiedApiName IN ('${custom.join("','")}')`, {
+    tooling: true,
+  }).catch(() => []);
+  return paths.map((p) => ({ ...p, SobjectId: ents.find((e) => e.QualifiedApiName === p.SobjectType)?.DurableId || null }));
+}
 
 export function loadOrgData(session, { refresh = false } = {}) {
   const hit = orgCache.get(session.host);
@@ -236,6 +251,53 @@ export async function loadFlexiPageComponent(session, flexipageTag, componentId,
     return null;
   }
   return null;
+}
+
+/**
+ * The nearest of the pointed element's component ids (nearest first) that the page metadata knows.
+ * content.js keeps every identifier-shaped name, since a page deployed from metadata can use any
+ * identifier (dev org: sftl_tab_greetingTab, sftl_tabset). One FlexiPage query, cached.
+ */
+export async function loadNearestFlexiPageComponent(session, flexipageTag, componentIds = [], objects = []) {
+  for (const id of componentIds.slice(0, 5)) {
+    const pc = await loadFlexiPageComponent(session, flexipageTag, id, objects);
+    if (pc) return pc;
+  }
+  return null;
+}
+
+const flowCache = new Map();
+
+/**
+ * The screens of a flow's active version (else its latest), for the screen text you point at. Tooling
+ * FlowDefinition → Flow.Metadata (one row at a time). Dev org, checked live: screens[] { name, label,
+ * fields[] { name, fieldType DisplayText|InputField|RegionContainer…, fieldText, helpText, fields[] } }.
+ * Returns { name, label, version, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }] }] } or null.
+ */
+export function loadFlowScreens(session, flowName) {
+  const m = /^(?:([A-Za-z0-9]+)__)?([A-Za-z0-9_]+)$/.exec(flowName || '');
+  if (!m) return Promise.resolve(null);
+  const key = `${session.host}|${flowName}`;
+  const hit = flowCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const [, ns, dev] = m;
+  const promise = (async () => {
+    const def = await queryAll(session, `SELECT ActiveVersionId, LatestVersionId FROM FlowDefinition WHERE DeveloperName = '${dev}'${ns ? ` AND NamespacePrefix = '${ns}'` : ''} LIMIT 1`, { tooling: true });
+    const id = def[0]?.ActiveVersionId || def[0]?.LatestVersionId;
+    if (!/^[a-zA-Z0-9]{15,18}$/.test(id || '')) return null;
+    const v = (await queryAll(session, `SELECT MasterLabel, VersionNumber, Metadata FROM Flow WHERE Id = '${id}'`, { tooling: true }))[0];
+    if (!v) return null;
+    // Sections hold their fields in columns: fields[].fields[] (any depth).
+    const flat = (fields) => (fields || []).flatMap((f) => [{ name: f.name, fieldType: f.fieldType, fieldText: f.fieldText ?? null, helpText: f.helpText ?? null }, ...flat(f.fields)]);
+    return {
+      name: flowName,
+      label: v.MasterLabel || flowName,
+      version: v.VersionNumber ?? null,
+      screens: (v.Metadata?.screens || []).map((s) => ({ name: s.name, label: s.label || s.name, fields: flat(s.fields) })),
+    };
+  })().catch(() => null);
+  flowCache.set(key, { at: Date.now(), promise });
+  return promise;
 }
 
 const valueSetCache = new Map();

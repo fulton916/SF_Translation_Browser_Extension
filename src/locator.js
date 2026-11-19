@@ -215,6 +215,9 @@ export function detectAreas(hints = {}) {
   if (comp(/^runtime_sales_merge/)) areas.add('duplicates');
   if (comp(/^forceChatter_/)) areas.add('feed');
   if (comp(/^flexipage_reportChart/)) areas.add('reportChart');
+  // Lightning App Builder Rich Text component (dev org, checked live: p < div.uiOutputRichText <
+  // div[data-aura-class=flexipageRichText] < flexipage-aura-wrapper < flexipage-component2).
+  if (aura.includes('flexipageRichText') || has(/^flexipage-rich-?text/) || comp(/^flexipage_richText/)) areas.add('richText');
   // Path: the guidance is in Aura divs (no custom tag names), so read their data-aura-class too.
   // Verified live on an Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
   if (has(/(^lightning-path|pathassistant)/) || aura.some((a) => /pathassistant/i.test(a))) areas.add('path');
@@ -457,9 +460,9 @@ function salesforceTextResult(key, confidence, extra = {}) {
   };
 }
 
-function systemFieldResult(d, f, confidence) {
+function systemFieldResult(d, f, confidence, what = 'System field') {
   return {
-    ...salesforceTextResult(`field:${d.name}.${f.name}`, confidence, { subtitle: `System field ${d.name}.${f.name}` }),
+    ...salesforceTextResult(`field:${d.name}.${f.name}`, confidence, { subtitle: `${what} ${d.name}.${f.name}` }),
     url: SETUP.objectFields(d.name),
     copy: `${d.name}.${f.name}`,
   };
@@ -486,6 +489,9 @@ function fieldLabelNote(prefix, d, f, hints = {}) {
 
 function fieldLabelResult(org, d, f, confidence) {
   if (SYSTEM_FIELDS.has(f.name)) return systemFieldResult(d, f, confidence);
+  // A custom object's standard fields (Owner ID, Record Type ID, Deleted) are Salesforce's own; Rename Tabs
+  // and Labels was the wrong place for them (dev org A-10, A-13). Its Name field keeps the Rename Tabs card.
+  if (!f.custom && d.custom && f.name !== 'Name') return systemFieldResult(d, f, confidence, 'Standard field');
   if (!f.custom) {
     return {
       key: `field:${d.name}.${f.name}`,
@@ -569,7 +575,9 @@ function picklistResult(org, d, f, pv, confidence) {
       ],
     };
   }
-  const notes = ['If the field uses a Global Value Set, pick Setup Component "Global Value Set" instead.'];
+  // The note only when the value set was not read: a standard picklist never uses a Global Value Set, and
+  // a read value set without a name is the field's own (A-03, A-24).
+  const notes = f.custom && !vs ? ['If the field uses a Global Value Set, pick Setup Component "Global Value Set" instead.'] : [];
   if (!pv.active) notes.push('This value is inactive.');
   if (isDefaultLanguage(org)) notes.push(`Master label: Object Manager → ${d.label} → Fields → ${f.label} → Values → Edit.`);
   return {
@@ -914,24 +922,40 @@ export function pathStepMatch(needle, info, rawText = null) {
 }
 
 /**
- * The path a step belongs to. Step DeveloperNames seen in a real org (Nov 2026):
- * "X<num>_<picklist value Id 01J…>_<record type Id 012… or null>_<Object>_<field without __c>"
- * and the older "<Object>_<record type or null>_<field>_<01J…>_<num>".
+ * The path a step belongs to. Step DeveloperNames seen in real orgs (Nov 2026):
+ * "X<num>_<picklist value Id 01J…>_<record type Id 012… or null>_<Object>_<field without __c>",
+ * the older "<Object>_<record type or null>_<field>_<01J…>_<num>", and for a custom object the object's
+ * Id instead of its name, cut at 80 characters (dev org: "X…_01J…_012…_01I…_SFTL_Stat" for SFTL_Status__c).
+ * A record type has one path, so its Id alone names the path. With no record type, the object (name, or
+ * Id from sfApi's SobjectId) and the field (its start, when the name was cut) must match.
  */
 export function pathOfStep(dn, paths = [], objects = []) {
   dn = String(dn || '');
+  const cut = dn.length >= 80;
+  const parts = /_01J[A-Za-z0-9]{12,15}_(012[A-Za-z0-9]{12,15}|null)_(.+)$/.exec(dn);
   const hits = (paths || []).filter((p) => {
     const field = String(p.SobjectProcessField || '').replace(/__c$/, '');
     const rts = p.RecordTypeId ? [p.RecordTypeId, p.RecordTypeId.slice(0, 15)] : ['null'];
-    return rts.some((rt) => dn.endsWith(`_${rt}_${p.SobjectType}_${field}`) || dn.startsWith(`${p.SobjectType}_${rt}_${field}_`));
+    if (rts.some((rt) => dn.endsWith(`_${rt}_${p.SobjectType}_${field}`) || dn.startsWith(`${p.SobjectType}_${rt}_${field}_`))) return true;
+    if (!parts) return false;
+    const [, rt, rest] = parts;
+    if (rt !== 'null') return !!p.RecordTypeId && id15(rt) === id15(p.RecordTypeId);
+    if (p.RecordTypeId) return false;
+    return [p.SobjectType, p.SobjectId && id15(p.SobjectId)].filter(Boolean).some((o) => {
+      const full = `${o}_${field}`;
+      return rest === full || (cut && rest.length > o.length + 1 && full.startsWith(rest));
+    });
   });
   const path = hits.find((p) => p.IsActive) || hits[0] || null;
   if (path) return { path, object: path.SobjectType, field: path.SobjectProcessField };
   // No path data: read object and field from the name itself.
   const old = /^(.+?)_(?:012[A-Za-z0-9]{12,15}|null)_(.+?)_01J[A-Za-z0-9]{12,15}_\d+$/.exec(dn);
   if (old) return { path: null, object: old[1], field: old[2] };
-  const rest = /_01J[A-Za-z0-9]{12,15}_(?:012[A-Za-z0-9]{12,15}|null)_(.+)$/.exec(dn)?.[1];
+  const rest = parts?.[2];
   if (!rest) return { path: null, object: null, field: null };
+  // A custom object's Id (01I…) is not a name to show: keep only a field name that was not cut.
+  const byId = /^01I[A-Za-z0-9]{12}(?:_(.*))?$/.exec(rest);
+  if (byId) return { path: null, object: null, field: byId[1] && !cut ? byId[1] : null };
   const obj = (objects || [])
     .map((o) => o.name)
     .filter((n) => rest.startsWith(n.replace(/__c$/, '') + '_'))
@@ -948,17 +972,17 @@ function pathStepResult(org, step, where, describes, confidence) {
   const f = d?.fields?.find((x) => x.name === fieldName || x.name === `${fieldName}__c`);
   const objectLabel = d?.label || (org.objects || []).find((o) => o.name === where.object)?.label || where.object;
   const fieldLabel = f?.label || fieldName.replace(/__c$/, '').replace(/_/g, ' ');
-  const pathName = where.path?.MasterLabel || where.path?.DeveloperName || 'unknown path';
+  const pathName = where.path?.MasterLabel || where.path?.DeveloperName || null;
   const where2 = [objectLabel, fieldLabel].filter(Boolean).join(' › ');
   const base = workbench(org, { component: 'Path Step Rich Text' });
   const notes = [];
   if (where.path && where.path.IsActive === false) notes.push('This path is inactive.');
   if (step.Language && org.defaultLanguage && step.Language !== org.defaultLanguage) notes.push(`This guidance is written in ${languageName(step.Language)}.`);
-  if (isDefaultLanguage(org)) notes.push(`Master text: Setup → Path Settings → ${pathName} → Edit → the step's Guidance for Success.`);
+  if (isDefaultLanguage(org)) notes.push(`Master text: Setup → Path Settings → ${pathName || `the path for ${where2 || 'this step'}`} → Edit → the step's Guidance for Success.`);
   return {
     key: `path:${step.Id || step.DeveloperName}`,
     confidence,
-    title: `Path guidance: ${pathName}${where2 ? ` (${where2})` : ''}`,
+    title: pathName ? `Path guidance: ${pathName}${where2 ? ` (${where2})` : ''}` : `Path guidance${where2 ? `: ${where2}` : ''}`,
     subtitle: `"${truncate(lines.join(' '), 100)}"`,
     ...base,
     steps: [
@@ -1053,7 +1077,61 @@ function pathResults(org, needle, areas, describes, add, rawText, record) {
 
 // ---------- hint-only results (from page metadata, no text match needed) ----------
 
-function hintResults(org, hints, describes, areas, text, pageHandled = false) {
+/**
+ * Text in a running flow. pageComponent.flow (background.js, from the page's Flow component and the
+ * flow's active version) gives the flow, screen and screen component: TW → Flow lists display text under
+ * Flow Component "Screen Component" with Aspect "Description", an input's label with Aspect "Label"
+ * (dev org B-13, checked by hand). Without it, the card names what is known and never uses an
+ * instruction as a row name.
+ */
+function flowResult(org, pc, text) {
+  const flow = pc?.flow || null;
+  const flowName = flow?.label || pc?.props?.flowName || null;
+  const needle = normalize(text);
+  let hit = null;
+  for (const s of flow?.screens || []) {
+    for (const f of s.fields || []) {
+      const shown = f.fieldType === 'DisplayText' ? htmlToText(f.fieldText) : f.fieldText;
+      const mt = needle && shown ? matchType(needle, shown) : null;
+      if (mt === 'exact' || (mt && !hit)) hit = { s, f, display: f.fieldType === 'DisplayText', exact: mt === 'exact' };
+    }
+  }
+  const base = workbench(org, { component: 'Flow' });
+  if (!hit) {
+    return {
+      key: 'area:flow',
+      confidence: 'context',
+      title: 'Flow screen text',
+      subtitle: flowName ? `You pointed at text in the running flow ${flowName}` : 'You pointed at text in a running flow',
+      ...base,
+      steps: [...base.steps, flowName ? `Flow: ${flowName}` : 'Flow: the flow on this page', 'Flow Component: Screen Component, then the screen and the component that shows this text'],
+      goto: { ...base.goto, rows: text ? [text] : [], flow: flowName ? { label: flowName, name: pc?.props?.flowName || null } : null },
+      url: SETUP.workbench,
+      notes: ['Flow labels referencing {!$Label...} are translated in Custom Labels instead.'],
+    };
+  }
+  const aspect = hit.display ? 'Description' : 'Label';
+  return {
+    key: `flow:${flow.name}.${hit.s.name}.${hit.f.name}`,
+    confidence: hit.exact ? 'confirmed' : 'exact',
+    title: `Flow screen text: ${flowName}`,
+    subtitle: `Screen "${hit.s.label}", component ${hit.f.name}${flow.version ? ` (version ${flow.version})` : ''}`,
+    ...base,
+    steps: [...base.steps, `Flow: ${flowName}`, 'Flow Component: Screen Component', `Screen: ${hit.s.label}`, `Screen Component: ${hit.f.name}`, `Aspect: ${aspect}`],
+    goto: {
+      ...base.goto,
+      flow: { label: flowName, name: flow.name, component: 'Screen Component', screen: hit.s.label, screenName: hit.s.name, screenComponent: hit.f.name, aspect },
+      rows: [hit.f.fieldText, text].filter(Boolean),
+      rowMatch: hit.display ? 'richText' : null,
+      rowLabel: truncate(text, 80),
+    },
+    url: SETUP.workbench,
+    copy: hit.f.name,
+    notes: [`The flow on this page is ${flowName}; this text is ${hit.display ? 'the display text' : 'the label'} of its screen component ${hit.f.name}.`],
+  };
+}
+
+function hintResults(org, hints, describes, areas, text, pageHandled = false, pageComponent = null) {
   const out = [];
   const objLabel = (o) => describes.find((d) => d.name === o)?.label || o;
 
@@ -1066,7 +1144,8 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
         confidence: 'confirmed',
         title: `Custom button/link ${sn.object}.${sn.name}`,
         subtitle: 'Found in page metadata',
-        ...workbench(org, { component: 'Button and Link Label', object: sn.object, objectLabel: objLabel(sn.object), row: sn.name, rows: [sn.name, text], pkg: namespaceOf(sn.name) }),
+        // The grid's first column shows the label (A-12): name the row by it, API name in brackets.
+        ...workbench(org, { component: 'Button and Link Label', object: sn.object, objectLabel: objLabel(sn.object), row: text ? `${text} (${sn.name})` : sn.name, rows: [sn.name, text], pkg: namespaceOf(sn.name) }),
         copy: sn.name,
         notes: [],
       });
@@ -1114,17 +1193,7 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
       ],
     });
   }
-  if (areas.has('flow')) {
-    out.push({
-      key: 'area:flow',
-      confidence: 'context',
-      title: 'Flow screen text',
-      subtitle: 'You pointed at text in a running flow',
-      ...workbench(org, { component: 'Flow', row: 'pick the flow and version' }),
-      url: SETUP.workbench,
-      notes: ['Flow labels referencing {!$Label...} are translated in Custom Labels instead.'],
-    });
-  }
+  if (areas.has('flow')) out.push(flowResult(org, pageComponent, text));
   // Tab title read from the page metadata: that answer replaces the generic card.
   if (areas.has('lightningPageTab') && !pageHandled) {
     out.push({
@@ -1143,13 +1212,32 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
     });
   }
   if (areas.has('relatedList') && !pageHandled) {
+    const base = workbench(org, { component: 'Custom Field', objectLabel: 'the child object', aspect: 'Related List Label', row: text || 'the lookup field' });
     out.push({
       key: 'area:relatedList',
       confidence: 'context',
       title: 'Related list title',
       subtitle: 'Comes from the lookup field that links the two objects',
-      ...workbench(org, { component: 'Custom Field', objectLabel: 'the CHILD object', aspect: 'Related List Label', row: text || 'the lookup field' }),
+      ...base,
+      // The child object is not known here: auto-fill leaves Object for you (B-10: it kept the parent).
+      goto: { ...base.goto, objectLabel: null, rows: text ? [text] : [] },
       notes: ['For standard relationships, the title is the plural object name: use Rename Tabs and Labels.'],
+    });
+  }
+  if (areas.has('richText')) {
+    out.push({
+      key: 'area:richText',
+      source: SOURCE.NOT_TRANSLATABLE,
+      confidence: 'confirmed',
+      title: 'Rich text typed in Lightning App Builder',
+      subtitle: 'Text of a Rich Text component on this Lightning page',
+      steps: [
+        'The text of a Rich Text component is typed in Lightning App Builder. Salesforce does not translate it.',
+        'To translate it, an admin replaces the component with one that shows a Custom Label (for example a custom Lightning component that reads $Label), then translates that label.',
+        'Or: one Rich Text component per language, each with a Component Visibility filter on the user\'s Language.',
+      ],
+      url: SETUP.customLabels,
+      notes: [],
     });
   }
   if (areas.has('customComponent')) {
@@ -1265,6 +1353,10 @@ function demoteSameTextLabels(results, why) {
   }
 }
 
+// A related list read from the page metadata names its page; one in the standard Related Lists component
+// is known by its title link only (background.js, page: null).
+const onPage = (pc) => (pc.page ? ` on the Lightning page ${pc.page}` : ' in the Related Lists component');
+
 /**
  * Related list with no label of its own (Files = AttachedContentDocuments, Account Team,
  * Opportunities). A custom relationship (…__r) keeps the generic Translation Workbench card.
@@ -1281,10 +1373,10 @@ function standardRelatedList(org, results, add, pc) {
   } else {
     add({
       ...salesforceTextResult(`stdlist:${api}`, 'confirmed'),
-      subtitle: `Standard related list ${api} on the Lightning page ${pc.page}`,
+      subtitle: `Standard related list ${api}${onPage(pc)}`,
       steps: [
         SALESFORCE_TEXT.step,
-        `To show different text: in Lightning App Builder → ${pc.page}, use a Dynamic Related List – Single and set its Related List Label to {!$Label.c.Your_Label}, then translate that label.`,
+        `To show different text: in Lightning App Builder → ${pc.page || 'this record page'}, use a Dynamic Related List – Single and set its Related List Label to {!$Label.c.Your_Label}, then translate that label.`,
       ],
       url: SETUP.customLabels,
       copy: api,
@@ -1309,7 +1401,7 @@ function customRelatedList(org, results, add, pc) {
     key: `rellist:${c.childSObject}.${c.field}`,
     confidence: 'confirmed',
     title: `Related list label of ${c.childSObject}.${c.field}`,
-    subtitle: `${pc.props.relatedListApiName} on the Lightning page ${pc.page}`,
+    subtitle: `${pc.props.relatedListApiName}${onPage(pc)}`,
     ...workbench(org, { component: 'Custom Field', object: c.childSObject, objectLabel, aspect: 'Related List Label', row: fieldLabel, rows: [fieldLabel, c.field], pkg: namespaceOf(c.field) }),
     copy: `${c.childSObject}.${c.field}`,
     notes: [
@@ -1794,7 +1886,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     });
   }
 
-  for (const r of hintResults(org, hints, describes, areas, String(text || '').trim(), pageHandled)) {
+  for (const r of hintResults(org, hints, describes, areas, String(text || '').trim(), pageHandled, pageComponent)) {
     const existing = results.find((x) => x.key === r.key);
     if (!existing) add(r);
     else if (CONFIDENCE_RANK[r.confidence] < CONFIDENCE_RANK[existing.confidence]) existing.confidence = r.confidence;
@@ -1803,6 +1895,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   if (results.some((r) => r.key === 'area:layoutSection' && r.confidence === 'confirmed')) {
     demoteLabelsToPartial(results, 'page layout section names are not custom labels.');
   }
+  if (areas.has('richText')) demoteSameTextLabels(results, 'a Rich Text component shows typed text, not a custom label.');
 
   // Boost matches confirmed by the clicked element (e.g. sfdc:RecordField.Account.Industry)
   const confirmedFields = (hints.selectionNames || [])
@@ -1854,6 +1947,24 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       r.notes = ["You pointed at this record's Record Type.", ...(r.notes || [])];
     }
   }
+  // A field's error message (dev org: a validation rule's message under the field in the edit form): an
+  // active rule of that object with this message is the answer; the field's label and value are not.
+  const onError = hints.fieldPart === 'error';
+  if (onError) {
+    const objs = new Set(confirmedFields.map((cf) => cf.split('.')[0]));
+    const [eo, ef] = (confirmedFields[0] || '').split('.');
+    const shown = ef ? describes.find((d) => d.name === eo)?.fields?.find((f) => f.name === ef)?.label || ef : null;
+    let found = false;
+    for (const r of results) {
+      if (!r.key.startsWith('vr:') || r.confidence !== 'exact') continue;
+      const o = r.goto?.object;
+      if (objs.size && !objs.has(o)) continue;
+      r.confidence = 'confirmed';
+      r.notes = [`You pointed at the error message${shown ? ` shown under the field ${shown}` : ''}.`, ...(r.notes || [])];
+      found = true;
+    }
+    if (found) demoteSameTextLabels(results, 'this is a validation rule message, not a custom label.');
+  }
   // Help (i) icon of a field: its help text, not the label (bug: "Help Demo Title" matched labels only).
   if (areas.has('helpIcon')) addHelpIconResults(org, describes, confirmedFields, results, add);
   // The record name in the highlights panel is the Name field's value.
@@ -1868,7 +1979,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
 
   // Clicked a record value in a field that supports Data Translation (never for a click on the label).
   const onLabel = hints.fieldPart === 'label';
-  for (const cf of onLabel ? [] : confirmedFields) {
+  for (const cf of onLabel || onError ? [] : confirmedFields) {
     if (results.some((r) => aboutField(r, cf) && r.confidence !== 'partial')) continue;
     const [o, fName] = cf.split('.');
     const dt = dataTranslations.find((x) => x.object === o);
@@ -1877,7 +1988,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     else if (!dt && DATA_TRANSLATION_FIELDS[o]?.includes(fName) && Array.isArray(org.objects)) add(dataOffResult(o, fName));
   }
   // Clicked a record value: also list org-built translation objects (e.g. Demo_Translations__c).
-  for (const cf of onLabel ? [] : confirmedFields) {
+  for (const cf of onLabel || onError ? [] : confirmedFields) {
     if (results.some((r) => aboutField(r, cf) && r.confidence !== 'partial' && !r.key.startsWith('data:'))) continue;
     const d = describes.find((x) => x.name === cf.split('.')[0]);
     for (const child of d?.translationChildren || []) {
@@ -1922,7 +2033,14 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       r.confidence = 'partial';
       r.notes = ['Same words only: Setup pages do not show custom labels.', ...(r.notes || [])];
     }
-    add(setupTextResult());
+    // Object Manager lists the object's own metadata (A-27: the "Paint Color" field label in Fields &
+    // Relationships also got a Salesforce text card): a same-text match of it is not Salesforce text.
+    const inObjectManager = pageUrls.some((u) => /\/lightning\/setup\/ObjectManager\/[A-Za-z0-9_]+\//.test(u || ''));
+    const own = new Set(describes.map((d) => d.name));
+    const ownMetadata = (r) =>
+      ['exact', 'confirmed'].includes(r.confidence) &&
+      ([...own].some((o) => new RegExp(`^(field|help|picklist|rt|qa):${o}\\.`).test(r.key)) || (r.key.startsWith('vr:') && own.has(r.goto?.object)));
+    if (!(inObjectManager && results.some(ownMetadata))) add(setupTextResult());
   }
 
   return finalize(results, areas);
