@@ -729,13 +729,22 @@
       }
     }
 
-    if (p.lang && !(await choose(q, 'langSelect', [p.lang]))) {
+    const langSet = !!p.lang && (await choose(q, 'langSelect', [p.lang]));
+    if (p.lang && !langSet) {
       warnings.push(`You are not a translator for ${p.lang}. Add it in Translation Language Settings, or pick another language.`);
     }
     if (!(await choose(q, 'setupEntSelect', [p.component], [p.componentLabel]))) {
       throw new Error(`Setup Component "${p.componentLabel}" is not in this org's list.`);
     }
-    if (p.flow) await fillFlowFilters(q, p.flow, warnings);
+    // Flow lists that could not be set: the row search below has nothing to find, so the toast says so.
+    let flowStop = null;
+    if (p.flow) {
+      const f = await fillFlowFilters(q, p.flow);
+      if (f.left.length) {
+        flowStop = f;
+        warnings.push(`Pick ${f.left.join(', ')} yourself.`);
+      }
+    }
     if (p.object) {
       await waitFor(() => q('assocEntSelect') && q('assocEntSelect').options.length > 1, 8000).catch(() => null);
       if (!(await choose(q, 'assocEntSelect', [p.object], [p.objectLabel]))) {
@@ -774,7 +783,15 @@
     // A tree that is still loading, or about to be replaced by the target's tree, is searched again until
     // the row is found or 15 s have passed (B-04, B-05, B-14: "not found" while the node was loading).
     const busy = () => !!document.querySelector('.x-tree-node-loading, .x-mask-loading');
-    const untilFound = (fn) => globalThis.sftlWait.untilFound(fn, { busy });
+    // A tree hit counts only while the Object list shows the target object: a section like "System
+    // Information" is in every object's layouts, so a hit in the previous object's tree is not the row.
+    const objectShown = () => {
+      if (!p.object) return true;
+      const sel = q('assocEntSelect');
+      const o = sel?.selectedOptions?.[0];
+      return !!sel && (sel.value === p.object || (!!o && !!p.objectLabel && norm(o.text) === norm(p.objectLabel)));
+    };
+    const untilFound = (fn) => globalThis.sftlWait.untilFound(fn, { busy, ready: objectShown });
     let row = null;
     if (p.rows?.length && isTree && !p.parent) {
       // Layout Section (layout → sections): one section name can sit in several layouts.
@@ -795,6 +812,11 @@
       // The edit box is not opened for you: one opened by a script closed on the next click, and the
       // text typed into it was lost with no warning (dev org B-07, B-09). A double-click opens a stable one.
       toast(`Found "${shown(row)}" (marked). Double-click its translation cell, type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
+    } else if (flowStop) {
+      // Not "Filters are set": some Flow lists are still to pick.
+      const done = [langSet && 'Language', `Setup Component "${p.componentLabel}"`, ...flowStop.set].filter(Boolean);
+      const rowName = p.rows?.length ? ` Then find the row "${p.rowLabel || p.rows[0]}".` : ' Then pick the row in the list.';
+      toast(`Set: ${done.join(', ')}. ${warnings.join(' ')}${rowName}`, true);
     } else {
       toast(`Filters are set. ${p.rows?.length ? `Row "${p.rowLabel || p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
     }
@@ -805,9 +827,11 @@
    * TW → Flow (dev org B-13, set by hand): Flow, then Flow Component "Screen Component", Screen (its label),
    * Screen Component (its API name), Aspect ("Description" for display text, "Label" for an input). Each
    * list reloads after the one before it. Their select ids were not seen, so each is found by an option
-   * text that only that list has. Stops at the first list it cannot set and says what is left.
+   * text that only that list has; a list set by an earlier step (or Language, Setup Component) is never
+   * searched again, since a screen label can equal the flow label. Stops at the first list it cannot set.
+   * Returns { set, left }: what each list is, set and left for the user.
    */
-  async function fillFlowFilters(q, flow, warnings) {
+  async function fillFlowFilters(q, flow) {
     const steps = [
       { what: `Flow "${flow.label}"`, texts: [flow.label, flow.name] },
       flow.component && { what: `Flow Component "${flow.component}"`, texts: [flow.component] },
@@ -815,11 +839,24 @@
       flow.screenComponent && { what: `Screen Component "${flow.screenComponent}"`, texts: [flow.screenComponent] },
       flow.aspect && { what: `Aspect "${flow.aspect}"`, texts: [flow.aspect], only: () => q('aspectSelect') },
     ].filter(Boolean);
+    // Lists already used, by element and by id or name (a reload can replace the element with a new one).
+    const used = new Set();
+    const usedIds = new Set();
+    const idOf = (sel) => sel.id || sel.name || '';
+    const use = (sel) => {
+      if (!sel) return;
+      used.add(sel);
+      if (idOf(sel)) usedIds.add(idOf(sel));
+    };
+    use(q('langSelect'));
+    use(q('setupEntSelect'));
+    const isUsed = (sel) => used.has(sel) || (!!idOf(sel) && usedIds.has(idOf(sel)));
+    const set = [];
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       const want = s.texts.filter(Boolean).map(norm);
       const find = () => {
-        const sels = s.only?.() ? [s.only()] : [...document.querySelectorAll('select')];
+        const sels = s.only?.() ? [s.only()] : [...document.querySelectorAll('select')].filter((sel) => !isUsed(sel));
         for (const sel of sels) {
           const o = [...sel.options].find((x) => want.includes(norm(x.text)));
           if (o) return { sel, o };
@@ -827,16 +864,16 @@
         return null;
       };
       const hit = await waitFor(find, 8000).catch(() => null);
-      if (!hit) {
-        warnings.push(`Pick ${steps.slice(i).map((x) => x.what).join(', ')} yourself.`);
-        return;
-      }
+      if (!hit) return { set, left: steps.slice(i).map((x) => x.what) };
+      use(hit.sel);
       if (hit.sel.value !== hit.o.value) {
         hit.sel.value = hit.o.value;
         hit.sel.dispatchEvent(new Event('change', { bubbles: true }));
         await quiet();
       }
+      set.push(s.what);
     }
+    return { set, left: [] };
   }
 
   /** Record page: click the "Translation" tab that Data Translation adds. */

@@ -250,11 +250,8 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // A flow on a Lightning page: the Flow component names the flow (flowruntime:interview, prop flowName).
   const wantsPage = areas.has('fieldSection') || areas.has('relatedList') || areas.has('lightningPageTab') || areas.has('flow');
   if (wantsPage && hints.flexipage && hints.componentIds?.length) {
-    pageComponent = await loadNearestFlexiPageComponent(session, hints.flexipage, hints.componentIds, objects).catch((e) => {
-      warnings.push(`Lightning page not read: ${e.message}`);
-      return null;
-    });
-    // A component of another kind (e.g. the tab set around a field section) says nothing about this text.
+    // A component of another kind (e.g. the tab set around a field section) says nothing about this text:
+    // skip it and keep looking further out.
     const expect = areas.has('flow')
       ? /^flowruntime:interview$/
       : areas.has('fieldSection')
@@ -262,7 +259,10 @@ async function lookup({ text, hints, urls, refresh = false }) {
         : areas.has('relatedList')
           ? /^(lst:dynamicRelatedList|force:relatedListSingleContainer)$/
           : /^flexipage:tab$/;
-    if (pageComponent && !expect.test(pageComponent.component || '')) pageComponent = null;
+    pageComponent = await loadNearestFlexiPageComponent(session, hints.flexipage, hints.componentIds, objects, expect).catch((e) => {
+      warnings.push(`Lightning page not read: ${e.message}`);
+      return null;
+    });
     // The flow's screens (active version), so the card can name the screen and component of this text.
     if (pageComponent?.props?.flowName) pageComponent = { ...pageComponent, flow: await loadFlowScreens(session, pageComponent.props.flowName) };
   }
