@@ -18,7 +18,13 @@ self.addEventListener('error', (e) => log('error', 'background', e.message || 'S
 self.addEventListener('unhandledrejection', (e) =>
   log('error', 'background', e.reason?.message || String(e.reason), { stack: e.reason?.stack })
 );
-const openLog = () => chrome.tabs.create({ url: chrome.runtime.getURL('src/log.html') });
+// Next to the tab it was opened from, in that tab's window (not the last-focused window).
+const openLog = (fromTab) =>
+  chrome.tabs.create({
+    url: chrome.runtime.getURL('src/log.html'),
+    ...(fromTab?.windowId != null ? { windowId: fromTab.windowId } : {}),
+    ...(fromTab?.index != null ? { index: fromTab.index + 1 } : {}),
+  });
 chrome.action.onClicked.addListener(openLog);
 
 const MENU_SELECTION = 'sftl-selection';
@@ -97,7 +103,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg?.type === 'sftl:openLog') {
-    openLog();
+    openLog(sender.tab);
     return;
   }
   if (msg?.type === 'sftl:pending' && sender.tab) {
