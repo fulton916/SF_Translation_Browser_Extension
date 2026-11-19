@@ -366,3 +366,20 @@ test('withObjectIds adds a custom object\'s Id to its paths, one query, none for
   const failed = await withObjectIds(s, [{ Id: '0Ko000000000005AAA', SobjectType: 'Demo_Gadget__c' }]);
   assert.equal(failed[0].SobjectId, null);
 });
+
+test('Custom object Name field: Rename Tabs and Labels, Custom Tabs, "Record Name" on the object page (no Step 2)', async () => {
+  const { buildGotoUrl } = await import('../src/locator.js');
+  const named = { ...gadget, fields: [...gadget.fields, { name: 'Name', label: 'Gadget Name', custom: false, type: 'string', picklistValues: [] }] };
+  const hints = { selectionNames: ['sfdc:RecordField.Demo_Gadget__c.Name'], fieldPart: 'label' };
+  const r = locate({ text: 'Gadget Name', org: baseOrg, describes: [named], hints }).results.find((x) => x.key === 'field:Demo_Gadget__c.Name');
+  assert.equal(r.source, SOURCE.RENAME_TABS);
+  assert.equal(r.title, 'Record name label: Gadget → Gadget Name');
+  assert.ok(r.steps.some((s) => /Custom Tabs list, find the "Gadgets" row/.test(s)), r.steps.join(' | '));
+  assert.ok(r.steps.some((s) => /change "Record Name"/.test(s)));
+  assert.ok(!r.steps.some((s) => /Step 2|click Next/.test(s)), 'a custom object has no Step 2 for its Name field');
+  const g = buildGotoUrl(r.goto, 'pl', 'en_US');
+  assert.equal(g.autofill.page, 'renameHome');
+  assert.equal(g.autofill.recordName, true);
+  assert.equal(g.autofill.recordNameLabel, 'Gadget Name');
+  assert.equal(g.autofill.fieldLabel, null, 'never treated as a Step 2 field');
+});

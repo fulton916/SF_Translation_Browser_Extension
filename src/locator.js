@@ -69,7 +69,8 @@ export function buildGotoUrl(goto, lang, orgDefault) {
       };
     }
     const candidates = goto.fieldLabel ? { candidates: renameFieldCandidates(goto.fieldLabel, goto.fieldName) } : {};
-    return { path: SETUP.renameTabs, autofill: { page: 'renameHome', lang: l, tabLabel: goto.tabLabel, fieldLabel: goto.fieldLabel || null, fieldName: goto.fieldName || null, plural: !!goto.plural, ...candidates } };
+    const recordName = goto.recordName ? { recordName: true, recordNameLabel: goto.recordNameLabel || null } : {};
+    return { path: SETUP.renameTabs, autofill: { page: 'renameHome', lang: l, tabLabel: goto.tabLabel, fieldLabel: goto.fieldLabel || null, fieldName: goto.fieldName || null, plural: !!goto.plural, ...candidates, ...recordName } };
   }
   if (goto.page === 'workbench' || goto.page === 'override') {
     return { path: goto.page === 'override' ? SETUP.override : SETUP.workbench, autofill: { ...goto, page: 'workbench', lang: lang || null } };
@@ -527,6 +528,26 @@ function fieldLabelResult(org, d, f, confidence) {
   // A custom object's standard fields (Owner ID, Record Type ID, Deleted) are Salesforce's own; Rename Tabs
   // and Labels was the wrong place for them (dev org A-10, A-13). Its Name field keeps the Rename Tabs card.
   if (!f.custom && d.custom && f.name !== 'Name') return systemFieldResult(d, f, confidence, 'Standard field');
+  // A custom object's Name field: Rename Tabs and Labels → Custom Tabs → Edit shows it as "Record Name" on
+  // the object's own page, next to the object names; there is no Step 2 (seen in an org, Polish, Nov 2026).
+  if (!f.custom && d.custom) {
+    const tabLabel = d.labelPlural || d.label;
+    return {
+      key: `field:${d.name}.${f.name}`,
+      source: SOURCE.RENAME_TABS,
+      confidence,
+      title: `Record name label: ${d.label} → ${f.label}`,
+      subtitle: `API name ${d.name}.${f.name}`,
+      steps: [
+        ...renameSteps(org, { custom: true, tabLabel }),
+        `On that page: change "Record Name" (now "${masterFieldLabel(org, d, f) || f.label}"), then Save`,
+      ],
+      url: SETUP.renameTabs,
+      goto: { page: 'rename', object: d.name, custom: true, tabLabel, recordName: true, recordNameLabel: masterFieldLabel(org, d, f) || f.label },
+      copy: `${d.name}.${f.name}`,
+      notes: [],
+    };
+  }
   if (!f.custom) {
     // Step 2 lists fields by their master label: in another language, the master describe's label.
     const shownLabel = f.label;

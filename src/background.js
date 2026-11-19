@@ -35,9 +35,18 @@ const SF_PAGES = ['https://*.force.com/*', 'https://*.my.salesforce.com/*', 'htt
 // Off unless the dev server wrote dev.json next to manifest.json: that file is gitignored and not in
 // the zip, so a normal install never polls anything.
 const DEV_ALARM = 'sftl-dev-reload';
-async function devVersion() {
+/** The dev server's port from dev.json, or null when there is no dev.json (a normal install). */
+async function devPort() {
   try {
-    const { port } = await (await fetch(chrome.runtime.getURL('dev.json'), { cache: 'no-store' })).json();
+    return (await (await fetch(chrome.runtime.getURL('dev.json'), { cache: 'no-store' })).json()).port || null;
+  } catch {
+    return null;
+  }
+}
+async function devVersion() {
+  const port = await devPort();
+  if (!port) return null;
+  try {
     return (await (await fetch(`http://127.0.0.1:${port}/__version`, { cache: 'no-store' })).json()).v || null;
   } catch {
     return null;
@@ -45,7 +54,9 @@ async function devVersion() {
 }
 async function devCheck() {
   const v = await devVersion();
-  if (!v) return chrome.alarms.clear(DEV_ALARM);
+  // Server down but dev.json still there (it was killed, not stopped with Ctrl+C): keep checking, so a
+  // restarted server works again without a manual reload. Ctrl+C removes dev.json and ends the checks.
+  if (!v) return (await devPort()) ? undefined : chrome.alarms.clear(DEV_ALARM);
   const { devV } = await chrome.storage.session.get('devV');
   if (!devV) return chrome.storage.session.set({ devV: v });
   if (devV !== v) {
@@ -54,8 +65,8 @@ async function devCheck() {
   }
 }
 // Alarms survive the worker going idle (a timer would not). Minimum period is 30 s.
-devVersion().then(async (v) => {
-  if (v && !(await chrome.alarms.get(DEV_ALARM))) chrome.alarms.create(DEV_ALARM, { periodInMinutes: 0.5 });
+devPort().then(async (port) => {
+  if (port && !(await chrome.alarms.get(DEV_ALARM))) chrome.alarms.create(DEV_ALARM, { periodInMinutes: 0.5 });
 });
 chrome.alarms.onAlarm.addListener((a) => a.name === DEV_ALARM && devCheck());
 // After a reload: remember the loaded version, and give open Salesforce tabs the new content script

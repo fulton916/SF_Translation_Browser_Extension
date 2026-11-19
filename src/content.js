@@ -643,6 +643,21 @@
 
   async function fillRenameStage(p) {
     const stage = document.querySelector('input[name=currentStage]')?.value;
+    if (p.recordName) {
+      // A custom object's Name field: "Record Name" on the object's own page, above the name cases. Found by
+      // its row label, else by its current value (the label may be in the page's language).
+      const rowLabel = (i) => i.closest('tr')?.cells[0]?.innerText || document.querySelector(`label[for="${i.id}"]`)?.innerText || '';
+      const inputs = [...document.querySelectorAll('input[type=text]')];
+      const input =
+        inputs.find((i) => /record name/i.test(rowLabel(i))) ||
+        (p.recordNameLabel ? inputs.find((i) => norm(i.value) === norm(p.recordNameLabel)) : null);
+      if (input) {
+        mark(input.closest('tr') || input, false);
+        focusInput(input);
+      }
+      toast(input ? 'Change the Record Name (marked), then Save.' : 'Change the Record Name field on this page, then Save.', !input);
+      return finish();
+    }
     if (!p.fieldLabel) {
       // Step 1 inputs (UAT2, Nov 2026): val___0 Singular, val___1 Plural. The page header can have its
       // own text inputs (search), so never take "the first input".
