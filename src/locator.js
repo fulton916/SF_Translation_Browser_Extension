@@ -1886,6 +1886,12 @@ function finalize(results, areas) {
     if (!prev || KEEP_RANK[r.confidence] < KEEP_RANK[prev.confidence]) byKey.set(r.key, r);
   }
   let unique = [...byKey.values()];
+  // One "Salesforce text" card: a page-area card (sfdctext:feed...) adds nothing next to a specific
+  // Salesforce text card that matched (R-05: Chatter "Post" also got a bare feed card).
+  const isAreaText = (r) => r.source === SOURCE.SALESFORCE && r.key.startsWith('sfdctext:');
+  const specific = unique.filter((r) => r.source === SOURCE.SALESFORCE && !isAreaText(r)).map((r) => r.confidence);
+  if (specific.includes('confirmed')) unique = unique.filter((r) => !isAreaText(r));
+  else if (specific.includes('exact')) unique = unique.filter((r) => !isAreaText(r) || r.confidence === 'confirmed');
   unique.forEach((r) => {
     r.source ||= SOURCE.WORKBENCH;
     if (r.packageNote) r.notes = [r.packageNote, ...(r.notes || [])];

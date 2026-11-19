@@ -97,3 +97,23 @@ test('ISS-02: a standard picklist value in no value list is confirmed "Not a val
   assert.ok(!inactive.some((x) => x.key.startsWith('value:')));
   assert.ok(inactive.some((x) => x.key === 'picklist:Opportunity.LeadSource.Old Fair'));
 });
+
+// ---------- ISS-03: one "Salesforce text" card, not a second bare page-area card ----------
+
+test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed action)', () => {
+  const contact = {
+    name: 'Contact', label: 'Contact', labelPlural: 'Contacts', custom: false, recordTypeInfos: [], fields: [],
+    quickActions: [{ label: 'Post', name: 'FeedItem.TextPost', type: 'Post' }],
+  };
+  const org = { ...baseOrg, customLabels: [lbl('101D00000000071', 'Example_Post', 'Post', 'exns')] };
+  for (const selectionNames of [['sfdc:QuickAction.FeedItem.TextPost'], []]) {
+    const out = locate({ text: 'Post', org, describes: [contact], hints: { selectionNames, sfComponents: ['forceChatter_exampleFeedPublisher'], tags: ['span', 'a', 'li'] } });
+    const sf = [...out.results, ...out.more].filter((r) => r.title === 'Salesforce text');
+    assert.equal(sf.length, 1, JSON.stringify(sf.map((r) => r.key)));
+    assert.equal(sf[0].key, 'stdaction:FeedItem.TextPost');
+    assert.equal(sf[0].subtitle, 'Standard feed action FeedItem.TextPost');
+  }
+  // Text in the feed that matched nothing else still gets the page-area card.
+  const other = locate({ text: 'updated this record.', org, describes: [contact], hints: { sfComponents: ['forceChatter_exampleFeedPublisher'] } }).results;
+  assert.equal(other[0].key, 'sfdctext:feed');
+});
