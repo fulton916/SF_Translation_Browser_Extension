@@ -555,7 +555,9 @@
   // iframe; when that frame's page matches, pick the dropdowns and highlight the row.
   // Nothing is ever saved: the user types the translation and clicks Save.
 
-  const AUTOFILL_PAGES = /^\/(i18n\/(TranslationWorkbench|LabelWorkbenchOverride)\.apexp|_ui\/common\/i18n\/RenameTabStageManager|ui\/setup\/RenameTabPage|01j\/e|lightning\/r\/)/;
+  // A standard object's rename page, and a custom object's (one page, no Step 2).
+  const RENAME_EDIT_PAGES = /^\/(_ui\/common\/i18n\/RenameTabStageManager|_ui\/core\/i18n\/entity\/RenameEntityUi\/e)/;
+  const AUTOFILL_PAGES = /^\/(i18n\/(TranslationWorkbench|LabelWorkbenchOverride)\.apexp|_ui\/common\/i18n\/RenameTabStageManager|_ui\/core\/i18n\/entity\/RenameEntityUi\/e|ui\/setup\/RenameTabPage|01j\/e|lightning\/r\/)/;
   if (AUTOFILL_PAGES.test(location.pathname)) {
     chrome.runtime.sendMessage({ type: 'sftl:pending' }, (p) => {
       if (chrome.runtime.lastError || !p) return;
@@ -603,7 +605,7 @@
     if (p.page === 'dataTranslation' && path.startsWith('/lightning/r/') && window.top === window) return fillDataTranslation(p);
     if (p.page === 'labelNew' && path.startsWith('/01j/e')) return fillLabelNew(p);
     if (p.page === 'renameHome' && path.startsWith('/ui/setup/RenameTabPage')) return fillRenameHome(p);
-    if (path.startsWith('/_ui/common/i18n/RenameTabStageManager')) return fillRenameStage(p);
+    if (RENAME_EDIT_PAGES.test(path)) return fillRenameStage(p);
   }
 
   async function fillLabelNew(p) {
@@ -632,7 +634,16 @@
     const link = [...document.querySelectorAll('a')]
       .filter((a) => /^edit$/i.test(a.textContent.trim()))
       .find((a) => [...(a.closest('tr')?.cells || [])].some((c) => norm(c.innerText) === want));
-    const id = link && /RenameTabStageManager\?id=([^&']+)/.exec(decodeURIComponent(link.getAttribute('href') || ''))?.[1];
+    const href = decodeURIComponent(link?.getAttribute('href') || '');
+    // A custom object's row (dev org, Nov 2026): Edit opens /_ui/core/i18n/entity/RenameEntityUi/e?id=01I…&Language=…
+    if (/RenameEntityUi\/e\?/.test(href)) {
+      await patch({ page: 'renameStage' });
+      const url = new URL(link.href, location.href);
+      url.searchParams.set('Language', p.lang);
+      location.href = url.href;
+      return;
+    }
+    const id = /RenameTabStageManager\?id=([^&']+)/.exec(href)?.[1];
     if (!id) {
       toast(`Could not find the "${p.tabLabel}" row. Custom objects only show in a non-default language.`, true);
       return finish();
@@ -649,6 +660,7 @@
       const rowLabel = (i) => i.closest('tr')?.cells[0]?.innerText || document.querySelector(`label[for="${i.id}"]`)?.innerText || '';
       const inputs = [...document.querySelectorAll('input[type=text]')];
       const input =
+        document.getElementById('entity_namefield') ||
         inputs.find((i) => /record name/i.test(rowLabel(i))) ||
         (p.recordNameLabel ? inputs.find((i) => norm(i.value) === norm(p.recordNameLabel)) : null);
       if (input) {
