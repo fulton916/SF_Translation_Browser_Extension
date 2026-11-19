@@ -1491,11 +1491,35 @@ function builderTextResult(org, pc) {
       'This label is plain text, so Salesforce never translates it.',
       same ? `Custom label ${same.Name} already has this text. Add its translations if needed.` : 'Setup → Custom Labels → New: create a label with this text, then add its translations.',
       `Lightning App Builder → ${pc.page} → click the ${kind.part} → set ${kind.field} to ${ref} → Save.`,
+      ...relatedListFallbackStep(org, pc),
     ],
     url: same ? SETUP.customLabel(same.Id) : SETUP.customLabels,
     copy: ref,
     notes: [],
   };
+}
+
+/**
+ * A related list whose label was typed (DV2 Opportunity page: Dynamic Related Lists "Involved Parties",
+ * "Showpad Activities", "PPG Tech"): with the label cleared, the list shows its standard title, which is translated.
+ */
+function relatedListFallbackStep(org, pc) {
+  if (!RELATED_LIST_COMPONENTS.has(pc.component)) return [];
+  const api = String(pc.props?.relatedListApiName || '');
+  const c = pc.child;
+  if (c?.childSObject && c.field) {
+    const objectLabel = c.objectLabel || (org.objects || []).find((o) => o.name === c.childSObject)?.label || c.childSObject;
+    // A managed package's lookup field (DV2: ShowpadForSF__…) is translated in Workbench → Override.
+    const pkg = namespaceOf(c.field);
+    const tool = pkg ? `Translation Workbench → Override (package ${pkg})` : 'Translation Workbench';
+    return [
+      `Or clear the ${pcKind(pc).field} → Save: the list then shows the Related List Label of the lookup field ${c.fieldLabel || c.field} on ${objectLabel} (${c.childSObject}.${c.field}), which is translated in ${tool} → Custom Field → ${objectLabel} → Related List Label.`,
+    ];
+  }
+  if (api && !/__r$/.test(api)) {
+    return [`Or clear the ${pcKind(pc).field} → Save: the list then shows its standard title (${api}). An object's plural name there is translated in Rename Tabs and Labels; other standard titles are Salesforce text.`];
+  }
+  return [];
 }
 
 const LABEL_REF = /^\{!\$Label\.(?:([A-Za-z0-9_]+)\.)?([A-Za-z0-9_]+)\}$/;
