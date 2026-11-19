@@ -73,6 +73,39 @@ test('2: the user language is read every 15 s; on a change only the language-dep
   assert.equal((await loadDescribe(s, 'Demo_Gadget__c', { language: 'en_US' })).label, 'Gadget');
 });
 
+// ---------- 4: "Translated into" lists every language of a label matched through a translation ----------
+import { loadLabelTranslations } from '../src/sfApi.js';
+
+test('4: a label found by its French text also gets its German translation, in one more query', async () => {
+  const urls = [];
+  const rows = {
+    fr: { attributes: {}, Id: '0B0000000000001AAA', ExternalStringId: '101000000000001AAA', Language: 'fr', Value: 'Bienvenue au gadget' },
+    de: { attributes: {}, Id: '0B0000000000002AAA', ExternalStringId: '101000000000001AAA', Language: 'de', Value: 'Willkommen beim Gadget' },
+  };
+  globalThis.fetch = async (u) => {
+    const url = decodeURIComponent(u);
+    urls.push(url);
+    const records = /Value LIKE/.test(url) ? [rows.fr] : [rows.fr, rows.de];
+    return { ok: true, json: async () => ({ done: true, records }) };
+  };
+  const out = await loadLabelTranslations({ host: 'retest-labels.my.salesforce.com', sid: 's' }, 'Bienvenue au gadget', []);
+  assert.deepEqual(out.map((r) => r.Language), ['fr', 'de']);
+  assert.equal(urls.length, 2);
+  assert.match(urls[1], /WHERE ExternalStringId IN \('101000000000001AAA'\) LIMIT 2000$/);
+  // Label already matched by its master value (its Id was passed): one query, as before.
+  urls.length = 0;
+  await loadLabelTranslations({ host: 'retest-labels.my.salesforce.com', sid: 's' }, 'Bienvenue au gadget', ['101000000000001AAA']);
+  assert.equal(urls.length, 1);
+  // Shown on the card.
+  const org = {
+    userLanguage: 'fr', defaultLanguage: 'en_US', objects: [], tabs: [], apps: [], validationRules: [],
+    customLabels: [{ Id: '101000000000001AAA', Name: 'Demo_Greeting', MasterLabel: 'Demo Greeting', NamespacePrefix: null, Value: 'Welcome to the gadget', Language: 'en_US' }],
+    labelTranslations: out,
+  };
+  const r = locate({ text: 'Bienvenue au gadget', org, describes: [] }).results[0];
+  assert.ok(r.notes.includes('Translated into: French, German'), r.notes.join(' | '));
+});
+
 // ---------- 3: a translated validation message under a field ----------
 import { locate, SOURCE } from '../src/locator.js';
 
