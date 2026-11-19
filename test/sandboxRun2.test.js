@@ -146,3 +146,23 @@ test('ISS-04: a highlight under 5 characters matches whole words only', () => {
   assert.equal(matchType('west', 'EX WEST (new)'), 'partial');
   assert.equal(matchType('portal', 'Welcome to the portals'), 'partial', '5+ characters still match inside words');
 });
+
+// ---------- ISS-06: Aura (page layout) section header ----------
+
+test('ISS-06: an Aura record layout section header is the Layout Section, not a same-text custom label', () => {
+  // Real path (Event Details): span < button < h3 < legend < fieldset[forcePageBlockSection] < div[forcePageBlock].
+  const header = { tags: ['span', 'button', 'h3', 'legend', 'fieldset', 'div'], auraClasses: ['forcePageBlockSection', 'forcePageBlock', 'force_detailPanel'] };
+  const event = { name: 'Event', label: 'Event', labelPlural: 'Events', custom: false, recordTypeInfos: [], quickActions: [], fields: [] };
+  const org = { ...baseOrg, customLabels: [lbl('101D00000000081', 'Example_Visit_Info', 'Visit Information')] };
+  const out = locate({ text: 'Visit Information', org, describes: [event], hints: header, record: { object: 'Event', id: '00U000000000001AAA' } });
+  assert.ok(out.areas.includes('layoutSection'));
+  assert.equal(out.results[0].key, 'area:layoutSection');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.equal(out.results[0].goto.component, 'LayoutSection');
+  assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL), 'same-text label is behind "Show more"');
+  // A field inside the section is not the section header.
+  const field = { tags: ['span', 'div', 'h3', 'legend', 'fieldset'], auraClasses: ['forcePageBlockItem', 'forcePageBlockSectionRow', 'forcePageBlockSection'] };
+  assert.ok(!locate({ text: 'Visit Information', org, describes: [event], hints: field }).areas.includes('layoutSection'));
+  // Blank space in the section (no heading in the path) is not the header either.
+  assert.ok(!locate({ text: 'Visit Information', org, describes: [event], hints: { tags: ['div', 'fieldset'], auraClasses: ['forcePageBlockSection'] } }).areas.includes('layoutSection'));
+});

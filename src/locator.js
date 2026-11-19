@@ -171,6 +171,11 @@ export function detectAreas(hints = {}) {
   // The app name left of the nav items (h1.appName inside one-appnav, outside one-app-nav-bar).
   else if (has(/^one-appnav$/)) areas.add('appName');
   if (has(/layout-section$/) && !has(/layout-item$/)) areas.add('layoutSection');
+  // Aura record layout (Event Details, checked live): span < button < h3.slds-section__title < legend <
+  // fieldset[data-aura-class="forcePageBlockSection ..."] < div.forcePageBlock. Fields are forcePageBlockItem.
+  const aura = hints.auraClasses || [];
+  const inAuraField = aura.includes('forcePageBlockItem') || (hints.selectionNames || []).some((s) => s.startsWith('sfdc:RecordField.'));
+  if (aura.includes('forcePageBlockSection') && has(/^(h[1-6]|legend)$/) && !inAuraField) areas.add('layoutSection');
   if (has(/^(flowruntime-|lightning-flow)/)) areas.add('flow');
   // A tab's own label, not anything inside its content (bug: a field section inside the
   // Details tab was reported as "Lightning page tab label").
@@ -198,7 +203,6 @@ export function detectAreas(hints = {}) {
   if (comp(/^flexipage_reportChart/)) areas.add('reportChart');
   // Path: the guidance is in Aura divs (no custom tag names), so read their data-aura-class too.
   // Verified live on an Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
-  const aura = hints.auraClasses || [];
   if (has(/(^lightning-path|pathassistant)/) || aura.some((a) => /pathassistant/i.test(a))) areas.add('path');
   if (aura.some((a) => /pathassistantPathAssistantInfo/i.test(a)) || has(/pathassistant-?info/i)) areas.add('pathGuidance');
   // Calendar page (/lightning/o/Event/home, checked live): Salesforce's own Aura calendar. Header buttons
@@ -1758,6 +1762,10 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     const existing = results.find((x) => x.key === r.key);
     if (!existing) add(r);
     else if (CONFIDENCE_RANK[r.confidence] < CONFIDENCE_RANK[existing.confidence]) existing.confidence = r.confidence;
+  }
+  // A page layout section header is translated in TW → Layout Section; layouts cannot use custom labels.
+  if (results.some((r) => r.key === 'area:layoutSection' && r.confidence === 'confirmed')) {
+    demoteLabelsToPartial(results, 'page layout section names are not custom labels.');
   }
 
   // Boost matches confirmed by the clicked element (e.g. sfdc:RecordField.Account.Industry)
