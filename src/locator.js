@@ -854,12 +854,12 @@ function validationResult(org, vr, confidence, objLabel) {
  * ErrorDisplayField; metadata names it errorDisplayField, the field's API name). Compared without case,
  * with or without the object prefix.
  */
-function errorRulesOfField(org, objectName, fieldName) {
-  const want = String(fieldName || '').toLowerCase();
+function errorRulesOfField(org, objectName, fieldName, labels = []) {
+  const want = new Set([fieldName, ...labels].filter(Boolean).map((x) => String(x).toLowerCase()));
   return (org.validationRules || []).filter((vr) => {
     if (vr.EntityDefinition?.QualifiedApiName !== objectName) return false;
     const df = String(vr.ErrorDisplayField || '').toLowerCase();
-    return !!df && (df === want || df.split('.').pop() === want);
+    return !!df && (want.has(df) || want.has(df.split('.').pop()));
   });
 }
 
@@ -1173,7 +1173,7 @@ function flowTextMatch(needle, f) {
 function flowNavigationResult(flow, needle) {
   const own = (flow?.screens || []).some((s) => (s.buttonLabels || []).some((l) => normalize(l) === needle));
   if (own) return null;
-  return salesforceTextResult('sfdctext:flowNavigation', 'confirmed', {
+  return salesforceTextResult('sfdctext:flowNavigation', flow ? 'confirmed' : 'context', {
     subtitle: 'A button in the flow\'s navigation bar (Next, Previous, Finish, Pause)',
     steps: ['To show different text: in Flow Builder, open the screen → Configure Footer → set a custom label for the button.'],
   });
@@ -2083,15 +2083,24 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     // Viewing another language, the message is its translation, which ErrorMessage (the master text) never
     // holds (dev org, French): the field's own active rules are the answer. In the default language a message
     // that differs from every rule is Salesforce's own ("Complete this field."), so nothing is added then.
-    const onField = ef ? errorRulesOfField(org, eo, ef) : [];
+    // ErrorDisplayField holds the field's label in the user's language (dev org: "Couleur de peinture").
+    const fieldLabels = ef ? [shown, org.masterDescribes?.[eo]?.fields?.find((f) => f.name === ef)?.label] : [];
+    const onField = ef ? errorRulesOfField(org, eo, ef, fieldLabels) : [];
     if (!found && onField.length && !isDefaultLanguage(org) && !SF_FIELD_ERRORS.includes(needle)) {
       const objLabel = describes.find((d) => d.name === eo)?.label;
-      for (const vr of onField) {
-        const r = validationResult(org, vr, 'confirmed', objLabel);
+      // The rule's message in this language (CustomObjectTranslation) equals the text: confirmed. Otherwise
+      // the text can also be Salesforce's own required-field message in this language, so the field's rules
+      // are listed as the rules that show their message there.
+      const translated = new Map((org.validationTranslations || []).map((v) => [v.name, v.errorMessage]));
+      const exact = onField.filter((vr) => normalize(translated.get(vr.ValidationName) || '') === needle);
+      for (const vr of exact.length ? exact : onField) {
+        const r = validationResult(org, vr, exact.length ? 'confirmed' : 'context', objLabel);
         r.subtitle = `"${truncate(String(text || '').trim(), 100)}"`;
         r.notes = [
-          `You pointed at the error message shown under the field ${shown}. ${onField.length > 1 ? `This is one of the ${onField.length} active rules that show their message there.` : 'This is the active rule that shows its message there.'}`,
-          `The page shows the message in ${languageName(org.userLanguage)}; its master text is "${truncate(vr.ErrorMessage, 120)}".`,
+          exact.length
+            ? `You pointed at the error message shown under the field ${shown}: this rule's ${languageName(org.userLanguage)} translation.`
+            : `You pointed at an error message shown under the field ${shown}. ${onField.length > 1 ? `These ${onField.length} active rules show their message there.` : 'This active rule shows its message there.'}`,
+          `Its master text is "${truncate(vr.ErrorMessage, 120)}".`,
           ...r.notes,
         ];
         add(r);
@@ -2156,7 +2165,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       continue;
     }
     // An error message whose rule was found: the field's label is not what you pointed at.
-    if (fieldPart === 'error' && results.some((x) => x.key.startsWith('vr:') && x.confidence === 'confirmed')) continue;
+    if (fieldPart === 'error' && results.some((x) => x.key.startsWith('vr:') && ['confirmed', 'context'].includes(x.confidence))) continue;
     const r = fieldLabelResult(org, d, f, 'context');
     r.notes = [fieldLabelNote(fieldPart === 'error' ? 'You pointed at an error message under this field.' : 'You pointed inside this field.', d, f, hints), ...r.notes];
     add(r);

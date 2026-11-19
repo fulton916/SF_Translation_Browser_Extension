@@ -261,6 +261,9 @@ test('A-17: the flow navigation bar buttons are Salesforce text, not the display
     assert.equal(r.source, SOURCE.SALESFORCE, text);
     assert.equal(r.confidence, 'confirmed', text);
   }
+  // The flow's screens were not read: a custom button label cannot be ruled out, so not confirmed.
+  const unread = locate({ text: 'Send Gadget', org: baseOrg, describes: [gadget], hints, pageComponent: { ...pc, flow: null } }).results.find((x) => x.key === 'sfdctext:flowNavigation');
+  assert.equal(unread.confidence, 'context');
   // A screen with its own button label: not Salesforce text.
   const own = flowPc([], { buttonLabels: ['Send Gadget'] });
   const out = locate({ text: 'Send Gadget', org: baseOrg, describes: [gadget], hints, pageComponent: own });
