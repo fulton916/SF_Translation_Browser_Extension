@@ -123,6 +123,14 @@ export function matchType(needle, candidate) {
   return null;
 }
 
+// A custom label whose value is a URL or path ("/lightning/page/home") is a setting, not page text: only an
+// exact match counts (C-05: it ranked first among Home's similar texts).
+const URL_VALUE = /^(\/|https?:\/\/)/i;
+function labelMatch(needle, value) {
+  const mt = matchType(needle, value);
+  return mt === 'partial' && URL_VALUE.test(String(value ?? '').trim()) ? null : mt;
+}
+
 function wordContains(haystack, word) {
   // Every occurrence: "gold old" holds the word "old" at its second one.
   for (let i = haystack.indexOf(word); i >= 0; i = haystack.indexOf(word, i + 1)) {
@@ -179,7 +187,13 @@ export function detectAreas(hints = {}) {
   if (has(/^(flowruntime-|lightning-flow)/)) areas.add('flow');
   // A tab's own label, not anything inside its content (bug: a field section inside the
   // Details tab was reported as "Lightning page tab label").
-  if (hints.tabRole ? hints.tabRole === 'tab' && has(/^(flexipage-tab|lightning-tab-bar)/) : has(/^(flexipage-tab|lightning-tab-bar)/)) {
+  // A role=tab must be in a page tab bar (lightning-tab-bar) that is nearer than any tab panel: the Chatter
+  // publisher's own Post/Poll tabs (Aura div[role=tablist]) inside a page's Chatter tab are not tab labels
+  // (checked live: a[role=tab] < ... < flexipage-tab2[role=tabpanel] < lightning-tabset, no tab bar).
+  const tabBarAt = tags.indexOf('lightning-tab-bar');
+  const tabPanelAt = tags.findIndex((t) => /^flexipage-tab\d*$/.test(t));
+  const onPageTabBar = tabBarAt >= 0 && (tabPanelAt < 0 || tabBarAt < tabPanelAt);
+  if (hints.tabRole ? hints.tabRole === 'tab' && onPageTabBar : has(/^(flexipage-tab|lightning-tab-bar)/)) {
     areas.add('lightningPageTab');
   }
   // Dynamic Forms field section header (not a field inside it).
@@ -1092,7 +1106,7 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
       key: 'area:layoutSection',
       confidence: onHeader ? 'confirmed' : 'context',
       title: 'Page layout section header',
-      subtitle: 'You clicked inside a record page section header',
+      subtitle: 'You pointed at a record page section header',
       ...workbench(org, { component: 'Layout Section', object: obj, objectLabel: obj ? objLabel(obj) : null, row: text || 'the section name' }),
       notes: [
         'The same section name can be in several page layouts. Go to translation opens every layout and lists each copy.',
@@ -1105,7 +1119,7 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
       key: 'area:flow',
       confidence: 'context',
       title: 'Flow screen text',
-      subtitle: 'You clicked inside a running flow',
+      subtitle: 'You pointed at text in a running flow',
       ...workbench(org, { component: 'Flow', row: 'pick the flow and version' }),
       url: SETUP.workbench,
       notes: ['Flow labels referencing {!$Label...} are translated in Custom Labels instead.'],
@@ -1611,7 +1625,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     const translationsById = groupBy(org.labelTranslations || [], 'ExternalStringId');
     const labelsById = new Map((org.customLabels || []).map((l) => [l.Id, l]));
     for (const label of org.customLabels || []) {
-      const mt = matchType(needle, label.Value);
+      const mt = labelMatch(needle, label.Value);
       if (mt) add(customLabelResult(org, label, mt, translationsById.get(label.Id)));
     }
     // A user viewing the org's default language sees master values: a match on another language's
@@ -1619,7 +1633,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     const otherLanguage = (lang) => org.userLanguage && org.userLanguage === org.defaultLanguage && lang !== org.userLanguage;
     for (const tr of org.labelTranslations || []) {
       const label = labelsById.get(tr.ExternalStringId);
-      const mt = label && matchType(needle, tr.Value);
+      const mt = label && labelMatch(needle, tr.Value);
       if (mt) add(customLabelResult(org, label, otherLanguage(tr.Language) ? 'partial' : mt, translationsById.get(label.Id), tr.Language));
     }
 
@@ -1734,7 +1748,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   const tabKnown = stdTab === 'home' || (Array.isArray(org.objects) && org.objects.length > 0);
   if (areas.has('navTab') && stdTab && tabKnown && !results.some((r) => /^(object|tab|app):/.test(r.key) && ['confirmed', 'exact'].includes(r.confidence))) {
     const shown = String(text || '').trim().slice(0, 60) || stdTab;
-    add(salesforceTextResult(`sfdctab:${stdTab}`, 'confirmed', { subtitle: `Standard tab standard-${stdTab}`, copy: `standard-${stdTab}` }));
+    add(salesforceTextResult(`sfdctab:${stdTab}`, 'confirmed', { subtitle: `Standard tab ${shown}` }));
     demoteLabelsToPartial(results, `the ${shown} tab is named by Salesforce, not by a custom label.`);
   }
   // The object name above the record name in the highlights panel (bug: "Account" ranked below custom labels).
@@ -1896,7 +1910,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       continue;
     }
     const r = fieldLabelResult(org, d, f, 'context');
-    r.notes = [fieldLabelNote('You clicked inside this field.', d, f, hints), ...r.notes];
+    r.notes = [fieldLabelNote('You pointed inside this field.', d, f, hints), ...r.notes];
     add(r);
   }
 
@@ -1906,7 +1920,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     for (const r of results) {
       if (r.source !== SOURCE.CUSTOM_LABEL) continue;
       r.confidence = 'partial';
-      r.notes = ['Same words only. Setup pages do not show custom labels.', ...(r.notes || [])];
+      r.notes = ['Same words only: Setup pages do not show custom labels.', ...(r.notes || [])];
     }
     add(setupTextResult());
   }
