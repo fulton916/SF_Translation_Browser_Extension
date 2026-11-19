@@ -222,6 +222,19 @@ Tests run on every push and pull request (GitHub Actions). They cover:
 - `test/logStore.test.js`: the test log (redaction, size cap, export).
 - `test/sweep.test.js`, `test/sweepPage.test.js`, `test/dv2.test.js`, `test/live2.test.js`: one test per finding from the
   live sandbox runs (made-up names and Ids), including the Alt+Shift+T pointer logic in `src/pointerTarget.js`.
+- `test/devVersion.test.js`: the code fingerprint used by the auto-reload below.
+
+### Auto-reload while developing
+
+```bash
+npm run dev
+```
+
+Leave it running. Within 30 seconds of a change to `manifest.json` or anything in `src/`, the extension
+reloads itself and puts the new content script into open Salesforce tabs without refreshing them.
+Panels that were open stop working: open them again. The server only listens on 127.0.0.1 and writes
+`dev.json` (gitignored, not in the zip). Without that file the extension does not poll anything.
+After a change to the reload code itself (in `src/background.js`), reload once by hand.
 
 Auto-fill (`src/content.js`) runs against live Salesforce pages and is tested by hand. Record what you test in an issue.
 

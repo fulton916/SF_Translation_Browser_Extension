@@ -6,3 +6,4 @@ Thumbs.db
 # Exported test logs and Workbench exports contain org details: keep them local
 sf-translation-log-*.json
 test-data/
+dev.json
