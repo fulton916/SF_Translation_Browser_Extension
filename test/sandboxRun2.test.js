@@ -117,6 +117,21 @@ test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed ac
     assert.equal(sf[0].key, 'stdaction:FeedItem.TextPost');
     assert.equal(sf[0].subtitle, 'Standard feed action FeedItem.TextPost');
   }
+  // UI-03: the publisher inside a page's Chatter tab (real path: the publisher's own a[role=tab] inside
+  // flexipage-tab2[role=tabpanel]) is not a "Lightning page tab label".
+  const inChatterTab = {
+    selectionNames: ['sfdc:QuickAction.FeedItem.TextPost'],
+    sfComponents: ['forceChatter_recordFeedContainer'],
+    tabRole: 'tab',
+    tags: ['span', 'a', 'li', 'ul', 'div', 'div', 'div', 'div', 'flexipage-aura-wrapper', 'slot', 'flexipage-component2', 'slot', 'flexipage-tab2', 'slot', 'slot', 'div', 'lightning-tabset', 'div', 'flexipage-tabset2'],
+    componentIds: ['forceChatter_recordFeedContainer', 'flexipage_tabset'],
+  };
+  const tabOut = locate({ text: 'Post', org, describes: [contact], hints: inChatterTab });
+  assert.equal(tabOut.results[0].key, 'stdaction:FeedItem.TextPost');
+  assert.ok(![...tabOut.results, ...tabOut.more].some((r) => r.key === 'area:lightningPageTab'), JSON.stringify(tabOut.results.map((r) => r.key)));
+  // The page tab label itself (a[role=tab] < li < ul < lightning-tab-bar < ... < flexipage-tabset2) still is.
+  const tabLabel = locate({ text: 'Example Tab', org, describes: [contact], hints: { tabRole: 'tab', tags: ['a', 'li', 'ul', 'lightning-tab-bar', 'div', 'lightning-tabset', 'div', 'flexipage-tabset2'] } });
+  assert.ok(tabLabel.results.some((r) => r.key === 'area:lightningPageTab'));
   // Text in the feed that matched nothing else still gets the page-area card.
   const other = locate({ text: 'updated this record.', org, describes: [contact], hints: { sfComponents: ['forceChatter_exampleFeedPublisher'] } }).results;
   assert.equal(other[0].key, 'sfdctext:feed');
