@@ -210,19 +210,27 @@ export function soqlLike(text) {
 /**
  * Custom label translations, searched per lookup. Big orgs have 100k+ of these
  * (one per label per language), so they are never loaded in full.
- * Returns translations of the given labels plus any translation whose value contains the text.
+ * Returns translations of the given labels plus any translation whose value contains the text, and every
+ * translation of a label found through one of its translations (dev org: "Bienvenue À L'atelier" listed
+ * French only, the label has German too).
  */
 export async function loadLabelTranslations(session, text, labelIds = []) {
   const term = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
   const where = [];
   if (term.length >= 3) where.push(`Value LIKE '%${soqlLike(term)}%'`);
   else if (term) where.push(`Value = '${soqlLike(term).replace(/\\([%_])/g, '$1')}'`);
-  const ids = labelIds.filter((id) => /^[a-zA-Z0-9]{15,18}$/.test(id)).slice(0, 300);
+  const validId = (id) => /^[a-zA-Z0-9]{15,18}$/.test(id || '');
+  const ids = labelIds.filter(validId).slice(0, 300);
   if (ids.length) where.push(`ExternalStringId IN ('${ids.join("','")}')`);
   if (!where.length) return [];
-  return queryAll(session, `SELECT Id, ExternalStringId, Language, Value FROM ExternalStringLocalization WHERE ${where.join(' OR ')} LIMIT 2000`, {
-    tooling: true,
-  });
+  const query = (w) => queryAll(session, `SELECT Id, ExternalStringId, Language, Value FROM ExternalStringLocalization WHERE ${w} LIMIT 2000`, { tooling: true });
+  const rows = await query(where.join(' OR '));
+  // Labels found by a translation's text: their other languages, in one more query.
+  const more = [...new Set(rows.map((r) => r.ExternalStringId))].filter((id) => validId(id) && !ids.includes(id)).slice(0, 300);
+  if (!more.length) return rows;
+  const extra = await query(`ExternalStringId IN ('${more.join("','")}')`).catch(() => []);
+  const seen = new Set(rows.map((r) => r.Id));
+  return [...rows, ...extra.filter((r) => !seen.has(r.Id))];
 }
 
 /**
