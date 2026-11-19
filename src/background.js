@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadSectionTranslations } from './sfApi.js';
+import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation } from './sfApi.js';
 import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
@@ -322,16 +322,18 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // row Paint Color). Read the master labels of the objects in play, and the page layout section names.
   let masterDescribes = null;
   let sectionTranslations = null;
+  let validationTranslations = null;
   if (org.userLanguage && org.defaultLanguage && org.userLanguage !== org.defaultLanguage) {
     const names = [...new Set([...liveDescribes.map((d) => d.name), pageComponent?.child?.childSObject].filter(Boolean))].slice(0, 4);
     const [masters, sections] = await Promise.all([
       Promise.all(names.map((n) => loadMasterDescribe(session, n, org.defaultLanguage))),
-      areas.has('layoutSection') && objects[0] ? loadSectionTranslations(session, objects[0], org.userLanguage) : null,
+      (areas.has('layoutSection') || hints.fieldPart === 'error') && objects[0] ? loadObjectTranslation(session, objects[0], org.userLanguage) : null,
     ]);
     masterDescribes = Object.fromEntries(names.map((n, i) => [n, masters[i]]).filter(([, m]) => m));
-    sectionTranslations = sections;
+    sectionTranslations = sections?.sections || null;
+    validationTranslations = sections?.validationRules || null;
   }
-  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
+  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
   return {
     ...located,
     hints,

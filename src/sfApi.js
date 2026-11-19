@@ -172,7 +172,8 @@ export function loadOrgData(session, { refresh = false, language = null } = {}) 
   if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) {
     if (!language) return hit.promise;
     return hit.promise.then((org) => {
-      if (!org.userLanguage || org.userLanguage === language) return org;
+      if (!org.userLanguage) org.userLanguage = language; // userinfo failed in the full load
+      if (org.userLanguage === language) return org;
       const now = orgCache.get(session.host);
       if (now !== hit) return now ? now.promise : loadOrgData(session, { language });
       // The other sources keep their own expiry time.
@@ -547,6 +548,13 @@ export function parseSectionTranslations(xml) {
   });
 }
 
+/** Validation rule messages in a CustomObjectTranslation: [{ name, errorMessage }]. */
+export function parseValidationTranslations(xml) {
+  return xmlBlocks(xml, 'validationRules')
+    .map((b) => ({ name: xmlValue(b, 'name'), errorMessage: xmlValue(b, 'errorMessage') }))
+    .filter((v) => v.name && v.errorMessage);
+}
+
 const sectionCache = new Map();
 
 /**
@@ -555,13 +563,23 @@ const sectionCache = new Map();
  * Workbench Layout Section tree lists sections by their master name. Returns [] when it cannot be read.
  */
 export function loadSectionTranslations(session, objectName, language) {
-  if (!/^[A-Za-z0-9_]+$/.test(objectName || '') || !/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve([]);
+  return loadObjectTranslation(session, objectName, language).then((t) => t.sections);
+}
+
+/**
+ * One object's CustomObjectTranslation in `language` (Metadata API readMetadata, cached): its layout
+ * section names and validation rule messages. Both are empty when it cannot be read (needs Modify Metadata
+ * or Modify All Data).
+ */
+export function loadObjectTranslation(session, objectName, language) {
+  const none = { sections: [], validationRules: [] };
+  if (!/^[A-Za-z0-9_]+$/.test(objectName || '') || !/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve(none);
   const key = `${session.host}|${language}|${objectName}`;
   const hit = sectionCache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
   const promise = soapCall(session, 'metadata', '', `<s:readMetadata><s:type>CustomObjectTranslation</s:type><s:fullNames>${objectName}-${language}</s:fullNames></s:readMetadata>`)
-    .then(parseSectionTranslations)
-    .catch(() => []);
+    .then((xml) => ({ sections: parseSectionTranslations(xml), validationRules: parseValidationTranslations(xml) }))
+    .catch(() => none);
   sectionCache.set(key, { at: Date.now(), promise });
   return promise;
 }

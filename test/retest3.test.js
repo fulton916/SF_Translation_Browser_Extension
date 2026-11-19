@@ -128,13 +128,28 @@ const vrOrg = (userLanguage) => ({
 const errorHints = { selectionNames: ['sfdc:RecordField.Demo_Gadget__c.Demo_Color__c'], fieldPart: 'error' };
 
 test('3: viewing French, the message under a field is that field\'s validation rule, not the field label', () => {
-  const rs = locate({ text: 'Les gadgets expédiés ont besoin d\'une couleur.', org: vrOrg('fr'), describes: [gadget], hints: errorHints }).results;
+  const fr = 'Les gadgets expédiés ont besoin d\'une couleur.';
+  // The rule's French translation (CustomObjectTranslation) is that text: confirmed.
+  const org = { ...vrOrg('fr'), validationTranslations: [{ name: 'Demo_Color_Required', errorMessage: fr }] };
+  const rs = locate({ text: fr, org, describes: [gadget], hints: errorHints }).results;
   assert.equal(rs[0].key, 'vr:03d000000000001AAA');
   assert.equal(rs[0].confidence, 'confirmed');
   assert.equal(rs[0].source, SOURCE.WORKBENCH);
   assert.equal(rs[0].subtitle, '"Les gadgets expédiés ont besoin d\'une couleur."');
-  assert.match(rs[0].notes[0], /^You pointed at the error message shown under the field Couleur du gadget\. This is the active rule/);
+  assert.match(rs[0].notes[0], /^You pointed at the error message shown under the field Couleur du gadget: this rule's French translation\./);
   assert.match(rs[0].notes[1], /master text is "Shipped gadgets need a coat color\."/);
+  // Without the translation (it could not be read), the text can also be Salesforce's own required-field
+  // message in French, so the field's rule is listed from the page area, not confirmed.
+  const plain = locate({ text: 'Complétez ce champ.', org: vrOrg('fr'), describes: [gadget], hints: errorHints }).results;
+  assert.equal(plain[0].key, 'vr:03d000000000001AAA');
+  assert.equal(plain[0].confidence, 'context');
+  assert.match(plain[0].notes[0], /^You pointed at an error message shown under the field Couleur du gadget\. This active rule shows its message there\./);
+  // Tooling ErrorDisplayField holds the field's label in the user's language (dev org: "Couleur de peinture").
+  const byLabel = vrOrg('fr');
+  byLabel.validationRules = byLabel.validationRules.map((v) => (v.ValidationName === 'Demo_Color_Required' ? { ...v, ErrorDisplayField: 'Couleur du gadget' } : v));
+  const rl = locate({ text: fr, org: { ...byLabel, validationTranslations: org.validationTranslations }, describes: [gadget], hints: errorHints }).results;
+  assert.equal(rl[0].key, 'vr:03d000000000001AAA');
+  assert.equal(rl[0].confidence, 'confirmed');
   assert.ok(!rs.some((r) => r.key === 'vr:03d000000000002AAA'), 'a rule shown at the top of the page is not offered');
   assert.ok(!rs.some((r) => r.key === 'field:Demo_Gadget__c.Demo_Color__c'), 'no "You pointed inside this field" card');
   assertWording(rs);
@@ -280,4 +295,13 @@ test('7: "We hit a snag." in the save error popup is Salesforce text; its list i
   const body = locate({ text: 'Couleur du gadget', org, describes: [gadget], hints: { tags: ['a', 'li', 'ul', 'section'], errorPopover: 'body' } });
   assert.ok(!body.results.some((r) => r.key === 'sfdctext:errorPopover'));
   assert.ok(body.results.some((r) => r.key === 'field:Demo_Gadget__c.Demo_Color__c'));
+});
+
+test('3: validation rule messages from CustomObjectTranslation', async () => {
+  const { parseValidationTranslations } = await import('../src/sfApi.js');
+  const xml = '<result><layouts><layout>Gadget Layout</layout><sections><label>Bases</label><section>Basics</section></sections></layouts><validationRules><errorMessage>Les gadgets exp&#233;di&#233;s ont besoin d&apos;une couleur.</errorMessage><name>Demo_Color_Required</name></validationRules><validationRules><name>Demo_Untranslated</name></validationRules></result>';
+  const out = parseValidationTranslations(xml);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].name, 'Demo_Color_Required');
+  assert.match(out[0].errorMessage, /^Les gadgets/);
 });

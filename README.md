@@ -33,9 +33,10 @@ Log in to Salesforce. Your user needs:
 - **API Enabled**: for every lookup.
 - **View Setup and Configuration**: for custom labels, validation rules, paths and path guidance,
   Lightning App Builder text, and picklist value sets. Without it, those answers are missing from the panel.
-- **Modify Metadata Through Metadata API Functions** (or **Modify All Data**): only to name a page layout
-  section by its master name while you view a language other than the org default. Without it, the section
-  card names the text you pointed at.
+- **Modify Metadata Through Metadata API Functions** (or **Modify All Data**): only while you view a language
+  other than the org default, to name a page layout section by its master name and to confirm a translated
+  validation message. Without it, the section card names the text you pointed at, and a translated message
+  under a field lists that field's rules from the page area instead of confirming one.
 - For **Go to translation**, the permissions of the screen it opens:
   - Translation Workbench: enabled in the org, plus **Manage Translation** (or you are set up as a
     translator for the target language).
@@ -124,7 +125,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Path step chevron | The path field's picklist value (above); the generic last "Closed" step is Salesforce text | Confirmed for the active path of the record's record type (read from the record) |
 | Record type | **Translation Workbench** → Record Type | Yes (current object) |
 | Quick action | **Translation Workbench** → Action; feed actions (`FeedItem.*`, e.g. New Note, Post) and standard global actions (NewTask, NewContact, NewCase, NewEvent, LogACall…) are Salesforce text: TW → Action does not list them | Yes (current object) |
-| Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects, master message). Confirmed when you point at the error message under a field (`.slds-form-element__help`) and an active rule of that object has this message. Viewing a language other than the org default, a message under a field that matches no master message gives that object's active rules whose error location is that field (`ErrorDisplayField`), confirmed, with the master message in a note |
+| Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects, master message). Confirmed when you point at the error message under a field (`.slds-form-element__help`) and an active rule of that object has this message. Viewing a language other than the org default, a message under a field that matches no master message gives that object's active rules whose error location is that field (`ErrorDisplayField`, which Salesforce returns as the API name or as the field label): confirmed when the rule's translation in that language (CustomObjectTranslation) is the text, otherwise listed from the page area (the text can also be Salesforce's own required-field message), with the master message in a note |
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
@@ -207,7 +208,8 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
   fewer "Owned by Salesforce" answers.
 - Path guidance is matched on its master text only. Viewing Salesforce in a translated language, the guidance shows the translation, which is not searched.
 - Validation messages are matched on their master text. A translated message is found only when it shows
-  under a field (by the rule's error location); a translated message at the top of the page is not searched.
+  under a field (by the rule's error location, confirmed through the rule's translation); a translated message
+  at the top of the page is not searched.
 - Viewing another language, quick action and button rows are named by the text on the page and their
   API name (their master label is not read).
 - Chrome's own page translation ("Translate this page", or "Always translate" for a language) rewrites
