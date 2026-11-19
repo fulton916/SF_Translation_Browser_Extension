@@ -154,6 +154,27 @@ test('A-17 / B-13: flow screen text names the flow, screen, screen component and
   assert.ok(!generic.steps.some((s) => /pick the flow and version/.test(s)));
 });
 
+test('B-04 / B-05 / B-14: tree search waits while loading and searches again until the row is there', async () => {
+  await import('../src/waitUntil.js');
+  const { untilFound } = globalThis.sftlWait;
+  let now = 0;
+  const clock = () => now;
+  const pause = async (ms) => void (now += ms);
+  // The node shows "loading" until 2.8 s, then the target tree replaces a stale one at 4 s.
+  const busy = () => now < 2800;
+  const tries = [];
+  const row = await untilFound((last) => (tries.push([now, last]), now >= 4000 ? 'North Zone row' : null), { busy, clock, pause });
+  assert.equal(row, 'North Zone row');
+  assert.equal(tries[0][0], 2800, 'nothing searched while loading');
+  assert.ok(tries.every(([, last]) => !last));
+  // Never found: one last try at the time limit, told it is the last (to log the miss once).
+  now = 0;
+  const lasts = [];
+  assert.deepEqual(await untilFound((last) => (lasts.push(last), []), { clock, pause, timeout: 3000 }), []);
+  assert.deepEqual(lasts.filter(Boolean), [true]);
+  assert.equal(lasts.at(-1), true);
+});
+
 test('A-15: a page with custom component identifiers is read; a {!$Label} tab title gets only the label card', async () => {
   const ci = (identifier, componentName, props) => ({ componentInstance: { identifier, componentName, componentInstanceProperties: Object.entries(props).map(([name, value]) => ({ name, value })) } });
   globalThis.fetch = async () => ({

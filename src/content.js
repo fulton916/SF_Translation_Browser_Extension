@@ -706,6 +706,9 @@
     if (document.readyState !== 'complete') window.addEventListener('load', () => setTimeout(again, 100), { once: true });
   }
 
+  // Translate page components shown as a tree (WB_COMPONENT values in locator.js).
+  const TREE_COMPONENTS = new Set(['PicklistMaster', 'SharedPicklistDefinition', 'LayoutSection']);
+
   async function fillWorkbench(p) {
     const q = (sfx) => document.querySelector(`select[id$="${sfx}"]`);
     await waitFor(() => q('setupEntSelect'), 10000);
@@ -763,17 +766,25 @@
       await choose(q, 'aspectSelect', [p.aspect]);
     }
 
-    // Most components show a grid; Picklist Value shows a tree (field node → values).
-    await waitFor(() => document.querySelector('.x-grid3-row, li.x-tree-node'), 10000).catch(() => null);
-    const isTree = !!document.querySelector('li.x-tree-node') && !document.querySelector('.x-grid3-row');
+    // Most components show a grid; Picklist Value, Global Value Set and Layout Section show a tree. Known by
+    // the component: the page can still show the previous session's grid or tree for a moment (B-15).
+    const treeComponent = TREE_COMPONENTS.has(p.component);
+    await waitFor(() => document.querySelector(treeComponent ? 'li.x-tree-node' : '.x-grid3-row, li.x-tree-node'), 10000).catch(() => null);
+    const isTree = treeComponent || (!!document.querySelector('li.x-tree-node') && !document.querySelector('.x-grid3-row'));
+    // A tree that is still loading, or about to be replaced by the target's tree, is searched again until
+    // the row is found or 15 s have passed (B-04, B-05, B-14: "not found" while the node was loading).
+    const busy = () => !!document.querySelector('.x-tree-node-loading, .x-mask-loading');
+    const untilFound = (fn) => globalThis.sftlWait.untilFound(fn, { busy });
     let row = null;
     if (p.rows?.length && isTree && !p.parent) {
       // Layout Section (layout → sections): one section name can sit in several layouts.
-      const hits = await findInEveryNode(p.rows);
+      const hits = await untilFound((last) => findInEveryNode(p.rows, last));
       row = hits[0]?.row || null;
       if (hits.length > 1) warnings.push(`Also in: ${hits.slice(1).map((h) => h.place).join(', ')}. Each layout has its own copy, so translate each one.`);
+    } else if (p.rows?.length && isTree) {
+      row = await untilFound((last) => findTreeRow(p.parent ? [p.parent] : [], p.rows, last));
     } else if (p.rows?.length) {
-      row = isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows, p.rowMatch === 'richText' ? richTextMatcher(p.rows) : null);
+      row = await findGridRow(p.rows, p.rowMatch === 'richText' ? richTextMatcher(p.rows) : null);
     }
     const shown = (r) => {
       const t = (r.querySelector('.x-grid3-col-masterLabel, .x-tree-node-anchor')?.innerText || p.rows[0]).trim();
@@ -881,7 +892,7 @@
   }
 
   /** Picklist Value tree: expand the field's node, then find the value under it. Verified in a real org (Nov 2026). */
-  async function findTreeRow(parents, candidates) {
+  async function findTreeRow(parents, candidates, log = true) {
     const want = candidates.filter(Boolean).map(norm);
     const pw = parents.filter(Boolean).map(norm);
     const label = (li) => norm(li.querySelector(':scope > .x-tree-node-el .x-tree-node-anchor')?.innerText);
@@ -897,9 +908,11 @@
       const hit = [...li.querySelectorAll('li.x-tree-node')].find((k) => want.includes(label(k)));
       if (hit) return hit.querySelector(':scope > .x-tree-node-el');
     }
-    // No field given or not found under it: a value already visible anywhere.
+    // No field given or not found under it: a value already visible anywhere. With a field given, only on
+    // the last try: a tree about to be replaced can show another field's value with the same label.
+    if (pw.length && !log) return null;
     const any = nodes().find((li) => want.includes(label(li)) && !pw.includes(label(li)));
-    if (!any) logEvent('warn', 'auto-fill', 'Picklist value not found in the tree', { field: parents, looking_for: candidates, fieldNodes: parentNodes.length });
+    if (!any && log) logEvent('warn', 'auto-fill', 'Picklist value not found in the tree', { field: parents, looking_for: candidates, fieldNodes: parentNodes.length });
     return any ? any.querySelector(':scope > .x-tree-node-el') : null;
   }
 
@@ -909,7 +922,7 @@
    * whichever layout happens to be open (bug: a section under a closed layout missed).
    * Returns [{ row, place }], first match first.
    */
-  async function findInEveryNode(candidates) {
+  async function findInEveryNode(candidates, log = true) {
     const want = candidates.filter(Boolean).map(norm);
     const anchor = (li) => (li.querySelector(':scope > .x-tree-node-el .x-tree-node-anchor')?.innerText || '').trim();
     const nodeEl = (li) => li.querySelector(':scope > .x-tree-node-el');
@@ -930,7 +943,7 @@
       if (hit) hits.push({ row: nodeEl(hit), place: anchor(li) });
       else if (opened) toggle(li); // close layouts opened for nothing, so the list stays short
     }
-    if (!hits.length) logEvent('warn', 'auto-fill', 'Section not found in any layout', { looking_for: candidates, layouts: tops.length });
+    if (!hits.length && log) logEvent('warn', 'auto-fill', 'Section not found in any layout', { looking_for: candidates, layouts: tops.length });
     else if (hits.length > 1) logEvent('info', 'auto-fill', `Section found in ${hits.length} layouts`, { looking_for: candidates, layouts: hits.map((h) => h.place) });
     return hits;
   }

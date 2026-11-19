@@ -298,7 +298,7 @@ async function sendToFrame(tabId, frameId, msg) {
   } catch {
     // Tab was open before the extension loaded: inject the content script now.
     try {
-      await chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ['src/pointerTarget.js', 'src/content.js'] });
+      await chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ['src/pointerTarget.js', 'src/waitUntil.js', 'src/content.js'] });
       return await chrome.tabs.sendMessage(tabId, msg, { frameId });
     } catch {
       return null;
