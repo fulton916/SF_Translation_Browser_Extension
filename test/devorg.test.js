@@ -103,6 +103,29 @@ test('A-10 / A-13: a custom object\'s standard fields never get a Rename Tabs an
   assert.equal(owner.subtitle, 'Standard field Demo_Gadget__c.OwnerId');
 });
 
+test('A-03 / A-24 / A-12 / A-27: wording of picklist, button and Object Manager cards', () => {
+  const g = {
+    ...gadget,
+    fields: [{ name: 'Demo_Status__c', label: 'Gadget Status', custom: true, type: 'picklist', picklistValues: [{ label: 'Drafting', value: 'Drafting', active: true }] }],
+  };
+  const known = { ...baseOrg, valueSets: { 'Demo_Gadget__c.Demo_Status__c': { name: null, values: [{ value: 'Drafting', label: 'Drafting', active: true }] } } };
+  const gvsNote = (r) => r.notes.some((n) => /Global Value Set/.test(n));
+  assert.ok(!gvsNote(locate({ text: 'Drafting', org: known, describes: [g] }).results[0]), 'value set read: no note');
+  assert.ok(gvsNote(locate({ text: 'Drafting', org: baseOrg, describes: [g] }).results[0]), 'value set not read: note stays');
+  const std = { ...gadget, name: 'Account', label: 'Account', custom: false, fields: [{ name: 'Rating', label: 'Rating', custom: false, type: 'picklist', picklistValues: [{ label: 'Warm', value: 'Warm', active: true }] }] };
+  assert.ok(!gvsNote(locate({ text: 'Warm', org: baseOrg, describes: [std] }).results[0]), 'standard picklist: no note');
+
+  const btn = locate({ text: 'Open Gadget Docs', org: baseOrg, describes: [gadget], hints: { selectionNames: ['sfdc:CustomButton.Demo_Gadget__c.Demo_Open_Docs'] } }).results[0];
+  assert.ok(btn.steps.includes('Find the row: Open Gadget Docs (Demo_Open_Docs)'));
+
+  const om = locate({ text: 'Coat Color', org: baseOrg, describes: [gadget], pageUrls: ['https://x.my.salesforce-setup.com/lightning/setup/ObjectManager/Demo_Gadget__c/FieldsAndRelationships/view'] });
+  assert.equal(om.results[0].key, 'field:Demo_Gadget__c.Demo_Color__c');
+  assert.ok(!om.results.some((r) => r.source === SOURCE.SALESFORCE));
+  // A Setup heading that matches nothing of the object is still Salesforce text.
+  const heading = locate({ text: 'Fields & Relationships', org: baseOrg, describes: [gadget], pageUrls: ['https://x.my.salesforce-setup.com/lightning/setup/ObjectManager/Demo_Gadget__c/FieldsAndRelationships/view'] });
+  assert.equal(heading.results[0].source, SOURCE.SALESFORCE);
+});
+
 test('A-15: a page with custom component identifiers is read; a {!$Label} tab title gets only the label card', async () => {
   const ci = (identifier, componentName, props) => ({ componentInstance: { identifier, componentName, componentInstanceProperties: Object.entries(props).map(([name, value]) => ({ name, value })) } });
   globalThis.fetch = async () => ({
