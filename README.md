@@ -33,6 +33,9 @@ Log in to Salesforce. Your user needs:
 - **API Enabled**: for every lookup.
 - **View Setup and Configuration**: for custom labels, validation rules, paths and path guidance,
   Lightning App Builder text, and picklist value sets. Without it, those answers are missing from the panel.
+- **Modify Metadata Through Metadata API Functions** (or **Modify All Data**): only to name a page layout
+  section by its master name while you view a language other than the org default. Without it, the section
+  card names the text you pointed at.
 - For **Go to translation**, the permissions of the screen it opens:
   - Translation Workbench: enabled in the org, plus **Manage Translation** (or you are set up as a
     translator for the target language).
@@ -92,8 +95,16 @@ Right-click
 ```
 
 Read-only. The extension never writes to your org. Org metadata is cached in memory for 5 minutes.
-Custom label translations are searched per lookup (by text and by matching label), not cached:
-large orgs have 150,000+ of them.
+Your language is read again on each lookup (cached 15 seconds): after you change it in your personal
+settings, the next lookup reads object names, tabs, apps and field labels again in the new language.
+Custom label translations are searched per lookup (by text and by matching label, then every language of
+each label found), not cached: large orgs have 150,000+ of them.
+
+Viewing a language other than the org default, the panel also reads the master labels of the objects in
+play (SOAP `describeSObject` with the `LocaleOptions` header in the org default language) and, for a page
+layout section header, the section translations (Metadata API `readMetadata` of `CustomObjectTranslation`
+`<Object>-<language>`). Translation Workbench lists rows by their master label, so "Find the row" and Go
+to translation use it, with the API name; the card still shows the text you pointed at.
 
 ## The decision map (what lives where)
 
@@ -113,7 +124,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Path step chevron | The path field's picklist value (above); the generic last "Closed" step is Salesforce text | Confirmed for the active path of the record's record type (read from the record) |
 | Record type | **Translation Workbench** → Record Type | Yes (current object) |
 | Quick action | **Translation Workbench** → Action; feed actions (`FeedItem.*`, e.g. New Note, Post) and standard global actions (NewTask, NewContact, NewCase, NewEvent, LogACall…) are Salesforce text: TW → Action does not list them | Yes (current object) |
-| Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects). Confirmed when you point at the error message under a field (`.slds-form-element__help`) and an active rule of that object has this message |
+| Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects, master message). Confirmed when you point at the error message under a field (`.slds-form-element__help`) and an active rule of that object has this message. Viewing a language other than the org default, a message under a field that matches no master message gives that object's active rules whose error location is that field (`ErrorDisplayField`), confirmed, with the master message in a note |
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
@@ -133,6 +144,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Value in a record field, record name in the highlights panel | Record data, formula output (change the formula), a value missing from the picklist: Admin work required to translate. Auto-number and currency name: Salesforce text. Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel). An event box on the Calendar page (`runtime_calendar-*-event`) gives "Record data: Event subject", confirmed, with no Salesforce text card |
 | Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart body, Calendar page (New Event, Today, day headers, the My Events / My Calendars / Other Calendars headings), global header (search) | Owned by Salesforce (Salesforce translates it) | Flagged from the page area |
 | Reminder and notification cards in the global header | The card frame is Salesforce text; event subjects and custom notification text in them come from your org | "From page area" |
+| Heading of the error popup after a failed save ("We hit a snag.") | Owned by Salesforce | From the page area (`.slds-popover_error` with `.slds-popover__header`, Aura `forcePageError`). The fields and messages listed below it are looked up as usual |
 
 Matching rule: a highlight of 1 or 2 characters matches only the same text. 3 or 4 characters also match
 whole words inside a longer text. 5 or more characters also match inside words. A highlight that contains
@@ -141,7 +153,8 @@ a whole name of 4 or more characters, at least 40% of the highlight's length, ma
 
 Language rule: if you are viewing Salesforce in the org default language, the text is the
 **master label**. Change it in Object Manager (or the label itself). Translations go into the
-other languages.
+other languages. In another language, cards name the master label (with its API name) for the
+Workbench row and for Object Manager.
 
 ## "Go to translation" (verified in real orgs, Nov 2026)
 
@@ -193,6 +206,14 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
 - Salesforce text is recognised by its English wording. Viewing Salesforce in another language gives
   fewer "Owned by Salesforce" answers.
 - Path guidance is matched on its master text only. Viewing Salesforce in a translated language, the guidance shows the translation, which is not searched.
+- Validation messages are matched on their master text. A translated message is found only when it shows
+  under a field (by the rule's error location); a translated message at the top of the page is not searched.
+- Viewing another language, quick action and button rows are named by the text on the page and their
+  API name (their master label is not read).
+- Chrome's own page translation ("Translate this page", or "Always translate" for a language) rewrites
+  Salesforce's text in the page, so the extension sees Chrome's translation, not Salesforce's. When you test
+  another language, turn it off for Salesforce: Chrome's translate icon in the address bar → ⋮ → Never
+  translate this site.
 - Gov Cloud (`.mil`) and China (`.sfcrmproducts.cn`) domains are not mapped yet.
 - Experience Cloud sites are not supported (different session).
 - Some Setup component names in Translation Workbench vary slightly by org edition. The panel says
