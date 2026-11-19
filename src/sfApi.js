@@ -139,26 +139,63 @@ export async function withObjectIds(session, paths) {
   return paths.map((p) => ({ ...p, SobjectId: ents.find((e) => e.QualifiedApiName === p.SobjectType)?.DurableId || null }));
 }
 
-export function loadOrgData(session, { refresh = false } = {}) {
+// Sources whose labels come back in the user's language (sobjects, TabDefinition and AppMenuItem labels).
+// Custom labels, validation messages, path guidance and metadata come back in the master language.
+const LANGUAGE_SOURCES = ['objects', 'tabs', 'apps'];
+
+async function loadSources(session, keys, org) {
+  const settled = await Promise.allSettled(keys.map((k) => ORG_SOURCES[k].load(session)));
+  const whats = keys.map((k) => ORG_SOURCES[k].what);
+  org.warnings = (org.warnings || []).filter((w) => !whats.some((what) => w.startsWith(`${what} not searched:`)));
+  settled.forEach((r, i) => {
+    const k = keys[i];
+    if (r.status === 'fulfilled') org[k] = r.value;
+    else {
+      org[k] = null;
+      if (r.reason?.status === 401) throw r.reason;
+      org.warnings.push(`${ORG_SOURCES[k].what} not searched: ${r.reason?.message || r.reason}`);
+    }
+  });
+  return org;
+}
+
+/**
+ * Org data, cached 5 minutes. `language`: the user's language now (loadUserLanguage). When it differs from
+ * the language the cached data was read in, only the language-dependent sources are read again (dev org:
+ * after a switch to French the panel said "Viewing in English" and missed "Brouillon" for 5 minutes).
+ */
+export function loadOrgData(session, { refresh = false, language = null } = {}) {
   const hit = orgCache.get(session.host);
-  if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
-  const promise = (async () => {
-    const keys = Object.keys(ORG_SOURCES);
-    const settled = await Promise.allSettled(keys.map((k) => ORG_SOURCES[k].load(session)));
-    const org = { warnings: [] };
-    settled.forEach((r, i) => {
-      const k = keys[i];
-      if (r.status === 'fulfilled') org[k] = r.value;
-      else {
-        org[k] = null;
-        if (r.reason?.status === 401) throw r.reason;
-        org.warnings.push(`${ORG_SOURCES[k].what} not searched: ${r.reason?.message || r.reason}`);
-      }
+  if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    if (!language) return hit.promise;
+    return hit.promise.then((org) => {
+      if (!org.userLanguage || org.userLanguage === language) return org;
+      const now = orgCache.get(session.host);
+      if (now !== hit) return now ? now.promise : loadOrgData(session, { language });
+      // The other sources keep their own expiry time.
+      const promise = loadSources(session, LANGUAGE_SOURCES, { ...org, warnings: [...(org.warnings || [])], userLanguage: language });
+      orgCache.set(session.host, { at: hit.at, promise });
+      promise.catch(() => orgCache.delete(session.host));
+      return promise;
     });
-    return org;
-  })();
+  }
+  const promise = loadSources(session, Object.keys(ORG_SOURCES), { warnings: [] });
   orgCache.set(session.host, { at: Date.now(), promise });
   promise.catch(() => orgCache.delete(session.host));
+  return promise;
+}
+
+const LANGUAGE_TTL_MS = 15 * 1000;
+const languageCache = new Map();
+
+/** The user's language now (userinfo), cached 15 s: a change in personal settings shows on the next lookup. */
+export function loadUserLanguage(session, { refresh = false } = {}) {
+  const hit = languageCache.get(session.host);
+  if (!refresh && hit && Date.now() - hit.at < LANGUAGE_TTL_MS) return hit.promise;
+  const promise = sfFetch(session, '/services/oauth2/userinfo')
+    .then((u) => u.language || null)
+    .catch(() => null);
+  languageCache.set(session.host, { at: Date.now(), promise });
   return promise;
 }
 
@@ -417,9 +454,12 @@ export function loadRecordTypeId(session, objectName, recordId, { refresh = fals
   return promise;
 }
 
-/** Describe + quick actions for one object. Returns null if the object is not visible. */
-export function loadDescribe(session, objectName, { refresh = false } = {}) {
-  const key = `${session.host}|${objectName}`;
+/**
+ * Describe + quick actions for one object. Returns null if the object is not visible.
+ * Its labels are in the user's language, so the cache keeps one copy per `language`.
+ */
+export function loadDescribe(session, objectName, { refresh = false, language = null } = {}) {
+  const key = `${session.host}|${language || ''}|${objectName}`;
   const hit = describeCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
   const promise = (async () => {

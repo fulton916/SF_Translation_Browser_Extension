@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId } from './sfApi.js';
+import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId } from './sfApi.js';
 import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
@@ -214,9 +214,11 @@ function logLookup(text, url, hints, result) {
 async function lookup({ text, hints, urls, refresh = false }) {
   const session = await getSession(urls[0]);
   const objects = contextObjects(urls, hints);
+  // The user's language now (one small call, cached 15 s): labels read in another language are read again.
+  const language = await loadUserLanguage(session, { refresh });
   const [org, ...describes] = await Promise.all([
-    loadOrgData(session, { refresh }),
-    ...objects.map((o) => loadDescribe(session, o, { refresh })),
+    loadOrgData(session, { refresh, language }),
+    ...objects.map((o) => loadDescribe(session, o, { refresh, language })),
   ]);
   // Record page (/lightning/r/Product2/01t.../view): check Data Translation for that record.
   const rec = urls.map((u) => /\/lightning\/r\/([A-Za-z0-9_]+)\/([a-zA-Z0-9]{15,18})\//.exec(u || '')).find(Boolean);
@@ -277,7 +279,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // the child object's lookup field (DV2: SalesAgreements__r → SalesAgreement.Opportunity_ID_LUR__c).
   const api = pageComponent?.props?.relatedListApiName;
   if (areas.has('relatedList') && !String(pageComponent?.label ?? '').trim() && /__r$/.test(api || '')) {
-    const child = await relatedChild(session, parentDescribe, api, refresh);
+    const child = await relatedChild(session, parentDescribe, api, refresh, language);
     if (child) pageComponent = { ...pageComponent, child: { ...child.rel, fieldLabel: child.field?.label || null, objectLabel: child.describe?.label || null } };
   }
   // Inside related list rows (DV2: "Stage:" in Opportunities on an Account): the rows are the child
@@ -286,7 +288,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   const listComponentId = (hints.componentIds || []).find((c) => /^(lst_|force_relatedList)/.test(c));
   if (areas.has('relatedListRow') && hints.flexipage && listComponentId) {
     const pc = await loadFlexiPageComponent(session, hints.flexipage, listComponentId, objects).catch(() => null);
-    const child = pc?.props?.relatedListApiName ? await relatedChild(session, parentDescribe, pc.props.relatedListApiName, refresh) : null;
+    const child = pc?.props?.relatedListApiName ? await relatedChild(session, parentDescribe, pc.props.relatedListApiName, refresh, language) : null;
     if (child?.describe) {
       listObject = child.describe.name;
       if (!liveDescribes.some((d) => d.name === listObject)) liveDescribes.push(child.describe);
@@ -326,10 +328,10 @@ async function lookup({ text, hints, urls, refresh = false }) {
 }
 
 /** The child relationship a related list shows (relationshipName = relatedListApiName), with the child describe. */
-async function relatedChild(session, parent, relationshipName, refresh) {
+async function relatedChild(session, parent, relationshipName, refresh, language) {
   const rel = (parent?.childRelationships || []).find((c) => c.relationshipName === relationshipName);
   if (!rel) return null;
-  const describe = await loadDescribe(session, rel.childSObject, { refresh });
+  const describe = await loadDescribe(session, rel.childSObject, { refresh, language });
   return { rel, describe, field: describe?.fields?.find((f) => f.name === rel.field) || null };
 }
 
