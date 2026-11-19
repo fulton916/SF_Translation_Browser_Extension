@@ -123,6 +123,14 @@ export function matchType(needle, candidate) {
   return null;
 }
 
+// A custom label whose value is a URL or path ("/lightning/page/home") is a setting, not page text: only an
+// exact match counts (C-05: it ranked first among Home's similar texts).
+const URL_VALUE = /^(\/|https?:\/\/)/i;
+function labelMatch(needle, value) {
+  const mt = matchType(needle, value);
+  return mt === 'partial' && URL_VALUE.test(String(value ?? '').trim()) ? null : mt;
+}
+
 function wordContains(haystack, word) {
   // Every occurrence: "ganz anz" holds the word "anz" at its second one.
   for (let i = haystack.indexOf(word); i >= 0; i = haystack.indexOf(word, i + 1)) {
@@ -1617,7 +1625,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     const translationsById = groupBy(org.labelTranslations || [], 'ExternalStringId');
     const labelsById = new Map((org.customLabels || []).map((l) => [l.Id, l]));
     for (const label of org.customLabels || []) {
-      const mt = matchType(needle, label.Value);
+      const mt = labelMatch(needle, label.Value);
       if (mt) add(customLabelResult(org, label, mt, translationsById.get(label.Id)));
     }
     // A user viewing the org's default language sees master values: a match on another language's
@@ -1625,7 +1633,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     const otherLanguage = (lang) => org.userLanguage && org.userLanguage === org.defaultLanguage && lang !== org.userLanguage;
     for (const tr of org.labelTranslations || []) {
       const label = labelsById.get(tr.ExternalStringId);
-      const mt = label && matchType(needle, tr.Value);
+      const mt = label && labelMatch(needle, tr.Value);
       if (mt) add(customLabelResult(org, label, otherLanguage(tr.Language) ? 'partial' : mt, translationsById.get(label.Id), tr.Language));
     }
 
