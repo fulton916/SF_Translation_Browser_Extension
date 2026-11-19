@@ -241,17 +241,62 @@ export async function loadFlexiPageComponent(session, flexipageTag, componentId,
 const valueSetCache = new Map();
 
 /**
+ * Picklist values from field or value set metadata, inactive ones included. Tooling names the value
+ * valueName (DV2 keys: color, default, description, isActive, label, urls, valueName); the Metadata API
+ * names it fullName. Either can be URL-encoded. Active values come back with isActive null.
+ */
+function valueList(raw) {
+  const decode = (s) => {
+    try {
+      return decodeURIComponent(String(s ?? ''));
+    } catch {
+      return String(s ?? '');
+    }
+  };
+  return (raw || [])
+    .map((v) => ({ v, name: v?.valueName ?? v?.fullName }))
+    .filter(({ name }) => name)
+    .map(({ v, name }) => ({ value: decode(name), label: v.label ?? decode(name), active: v.isActive !== false }));
+}
+
+// Standard picklists whose StandardValueSet name is not "<Object><Field>" or "<Field>".
+const STANDARD_VALUE_SET_NAMES = { 'Opportunity.StageName': 'OpportunityStage', 'Lead.Rating': 'AccountRating' };
+
+/**
+ * A standard picklist's values from its StandardValueSet (DV2, checked live: MasterLabel 'LeadSource',
+ * Metadata.standardValue[] with valueName, label, isActive). Names tried in order: known name,
+ * "<Object><Field>" (AccountType, CaseStatus), the field name (LeadSource, Industry).
+ * Returns { name: null, values } or null.
+ */
+async function loadStandardValueSet(session, objectName, fieldName) {
+  const names = [...new Set([STANDARD_VALUE_SET_NAMES[`${objectName}.${fieldName}`], objectName + fieldName, fieldName].filter(Boolean))];
+  const rows = await queryAll(session, `SELECT Id, MasterLabel FROM StandardValueSet WHERE MasterLabel IN ('${names.join("','")}')`, { tooling: true });
+  const row = names.map((n) => rows.find((r) => r.MasterLabel === n)).find(Boolean);
+  if (!row?.Id || !/^[a-zA-Z0-9]{15,18}$/.test(row.Id)) return null;
+  const full = await queryAll(session, `SELECT Metadata FROM StandardValueSet WHERE Id = '${row.Id}'`, { tooling: true });
+  const values = valueList(full[0]?.Metadata?.standardValue);
+  return values.length ? { name: null, values } : null;
+}
+
+/**
  * The Global Value Set a custom picklist field uses, or null (REST describe does not say).
  * Tooling CustomField Metadata can only be read one row at a time, so: find the Id, then read it.
  * Checked in UAT2 (Nov 2026): Account.Market_Unit_MST__c → valueSetName "Market_Unit_LST" (label "Market Unit").
- * Returns { name, label, namespace } or null.
+ * Returns { name, label, namespace }, { name: null, values } (the field's own values, or a standard
+ * picklist's StandardValueSet values) or null.
  */
 export function loadValueSet(session, objectName, fieldName) {
-  const m = /^(?:([A-Za-z0-9]+)__)?([A-Za-z0-9_]+?)__c$/.exec(fieldName || '');
-  if (!m || !/^[A-Za-z0-9_]+$/.test(objectName || '')) return Promise.resolve(null);
+  if (!/^[A-Za-z0-9_]+$/.test(objectName || '') || !/^[A-Za-z0-9_]+$/.test(fieldName || '')) return Promise.resolve(null);
+  const m = /^(?:([A-Za-z0-9]+)__)?([A-Za-z0-9_]+?)__c$/.exec(fieldName);
   const key = `${session.host}|${objectName}.${fieldName}`;
   const hit = valueSetCache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  if (!m) {
+    if (fieldName.includes('__')) return Promise.resolve(null);
+    const promise = loadStandardValueSet(session, objectName, fieldName).catch(() => null);
+    valueSetCache.set(key, { at: Date.now(), promise });
+    return promise;
+  }
   const [, ns, dev] = m;
   const promise = (async () => {
     const nsWhere = ns ? `NamespacePrefix = '${ns}'` : 'NamespacePrefix = null';
@@ -266,20 +311,8 @@ export function loadValueSet(session, objectName, fieldName) {
     const name = meta?.valueSetName;
     if (!name) {
       // The field's own values, inactive ones included (REST describe lists active values only;
-      // DV2: Contact Business Unit "EX EMEA" is inactive). Tooling names the value valueName (DV2 keys:
-      // color, default, description, isActive, label, urls, valueName); the Metadata API names it fullName.
-      // Either can be URL-encoded. Active values come back with isActive null.
-      const decode = (s) => {
-        try {
-          return decodeURIComponent(String(s ?? ''));
-        } catch {
-          return String(s ?? '');
-        }
-      };
-      const values = (meta?.valueSetDefinition?.value || [])
-        .map((v) => ({ v, name: v?.valueName ?? v?.fullName }))
-        .filter(({ name }) => name)
-        .map(({ v, name }) => ({ value: decode(name), label: v.label ?? decode(name), active: v.isActive !== false }));
+      // DV2: Contact Business Unit "EX EMEA" is inactive).
+      const values = valueList(meta?.valueSetDefinition?.value);
       return values.length ? { name: null, values } : null;
     }
     if (!/^[A-Za-z0-9_]+$/.test(name)) return null;
