@@ -1,46 +1,86 @@
 # SF Translation Locator (Chrome extension)
 
-[![Tests](https://github.com/fulton916/SF_Translation_Browser_Extension/actions/workflows/test.yml/badge.svg)](https://github.com/fulton916/SF_Translation_Browser_Extension/actions/workflows/test.yml)
-
-Right-click any text in Salesforce and see **where its translation lives**. It checks Custom Labels,
-Rename Tabs and Labels, Translation Workbench (Translate and Override), and Data Translation. Each
-result shows the exact click path and a **Go to translation** button. That button opens the exact
-screen and fills in the language and filters. You type the translation and click Save.
+Right-click any text in Salesforce (or point at it and press **Alt + Shift + T**) and see **where its
+translation lives**. It checks Custom Labels, Rename Tabs and Labels, Translation Workbench (Translate
+and Override), and Data Translation. Each result shows the click path. Results that have a translation
+screen also show a **Go to translation** button. It opens that screen and fills in the language and
+filters. You type the translation and click Save.
 
 ## Install (developer mode, about 2 minutes)
 
-1. Get the code: unzip the `SF-Translation-Locator-<version>.zip` you were sent, or (with access to
-   this private repository) click **Code → Download ZIP**, or run
-   `git clone https://github.com/fulton916/SF_Translation_Browser_Extension.git`.
+1. Unzip the `SF-Translation-Locator-<version>.zip` you were sent into a folder you will keep. Chrome
+   loads the extension from that folder: moving or deleting it removes the extension. Inside is a folder
+   named `SF-Translation-Locator`. That is the folder to pick in step 4.
 2. Open `chrome://extensions` in Chrome.
-3. Turn on **Developer mode** (top right).
-4. Click **Load unpacked** and pick the folder that holds `manifest.json`.
-5. Pin the extension (puzzle-piece menu). Its toolbar icon opens the test log.
+3. Turn on **Developer mode** (top right). On a company-managed Chrome, IT policy can block Developer
+   mode or **Load unpacked**. If so, ask IT.
+4. Click **Load unpacked** and pick the `SF-Translation-Locator` folder (the one that holds `manifest.json`).
+   "Manifest file is missing" means you picked the folder above it.
+5. Pin the extension: puzzle-piece menu → **SF Translation Locator** (a grey letter icon). Clicking it
+   opens the test log.
 6. Reload any open Salesforce tabs.
 7. In Salesforce, highlight a word, right-click, and choose **Find Salesforce translation for "..."**.
-   You can also right-click text without highlighting it, or point at it and press **Alt + Shift + T**.
+   With nothing highlighted, right-click the text and choose **Find Salesforce translation for this text**,
+   or point at it and press **Alt + Shift + T** (**Option + Shift + T** on a Mac).
 
-After you update the code: click reload on the extension in `chrome://extensions`, then press F5 on
-your Salesforce tabs. Panels left open from before the reload stop working.
+After an update: click reload on the extension in `chrome://extensions`, then press F5 on your
+Salesforce tabs. Panels left open from before the reload stop working.
 
-Requirements: you are logged in to Salesforce, and your user has **API Enabled**.
-Custom label, validation-rule and path guidance search also need **View Setup and Configuration**.
+## Requirements
 
-## Report a bug or test finding
+Log in to Salesforce. Your user needs:
 
-1. Open the test log (toolbar icon, or **Test log** at the bottom of the panel).
-2. Click **Copy all**.
-3. Open a [new issue](https://github.com/fulton916/SF_Translation_Browser_Extension/issues/new/choose),
-   pick **Bug report** or **Test finding**, and paste the log.
+- **API Enabled**: for every lookup.
+- **View Setup and Configuration**: for custom labels, validation rules, paths and path guidance,
+  Lightning App Builder text, and picklist value sets. Without it, those answers are missing from the panel.
+- For **Go to translation**, the permissions of the screen it opens:
+  - Translation Workbench: enabled in the org, plus **Manage Translation** (or you are set up as a
+    translator for the target language).
+  - Rename Tabs and Labels, and custom label translations: **Customize Application**.
+  - Data Translation (record data): **Modify All Data**.
 
-Labels: `bug` (something is wrong), `test-finding` (seen while testing in an org), `enhancement` (new idea).
+## Reading the panel
 
-This repository is private. Test logs can contain org details (field names, page addresses), so keep it private.
+Each card is one place the text can come from. The best answer is first.
+
+The **badge** (top left of a card) says who can change the text:
+
+| Badge | Meaning |
+|---|---|
+| Owned by Salesforce | Salesforce writes and translates this text. There is nothing to do. |
+| Admin work required to translate | An admin must change the setup first (the card lists the steps), for example move the text into a Custom Label. Then it can be translated. |
+| Custom Labels, Rename Tabs and Labels, Translation Workbench, Workbench Override (package), Data Translation (record data), Custom translation object | Translate it in that tool. |
+| Page context | The page area you pointed at, when no text in the org matched. |
+
+The **tag** (top right) says how the card was found, strongest first:
+
+| Tag | Meaning |
+|---|---|
+| Confirmed Location (green) | The page itself shows where this text comes from. |
+| Not Translatable (orange card) | Confirmed: Salesforce text, or text that needs admin work first. |
+| Same text | A place in your org with the same words. |
+| Similar text | A place in your org that shares words with it. |
+| From page area | Found from the part of the page you pointed at. |
+
+Lower matches are behind the link **Show N similar texts in your org**. Click it to add those cards.
+
+Buttons: **Go to translation** (only on cards with a translation screen), **Open page** (the Setup or record page for that card),
+**Copy ...** (the API name or label reference). At the bottom: **Refresh org data** (reload the org's
+metadata after a change), **Test log**, and **Report a problem**.
+
+## Report a problem
+
+In the panel, click **Report a problem**. A report of the lookup is copied. Paste it into an email or chat
+to the person who sent you the extension, and add a sentence about what was wrong. Or open the test log
+(toolbar icon, or **Test log** at the bottom of the panel), click **Copy all**, and send that.
+Do not paste logs in public places: they contain field names and page addresses.
 
 ## How it works
 
 ```
-Right-click ─► content.js records the clicked element + its Lightning metadata
+Right-click
+(or Alt+Shift+T)
+           ─► content.js records the element + its Lightning metadata
                (e.g. data-target-selection-name="sfdc:RecordField.Account.Industry")
            ─► background.js gets your session from the sid cookie (same method as
                Salesforce Inspector), then calls the REST + Tooling APIs
@@ -64,7 +104,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Custom object name | **Rename Tabs and Labels** → Custom Tabs (master label: Object Manager) | Yes |
 | Standard field label | **Rename Tabs and Labels** → object → Edit → Next (step 2) | Yes (current object) |
 | Standard tab (Chatter and others TabDefinition lists) | **Rename Tabs and Labels** | Yes |
-| Nav bar standard tab with no object/tab name match (Home, Calendar) | Salesforce text, not translatable, unless TabDefinition lists it with that name (then **Rename Tabs and Labels**) | From page metadata (`sfdc:TabDefinition.standard-<X>`, nav item `data-id="home"`) |
+| Nav bar standard tab with no object/tab name match (Home, Calendar) | Owned by Salesforce, unless TabDefinition lists it with that name (then **Rename Tabs and Labels**) | From page metadata (`sfdc:TabDefinition.standard-<X>`, nav item `data-id="home"`) |
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
 | Standard field help text | **Translation Workbench** → Standard Field Help | Yes (current object) |
 | Picklist value | **Translation Workbench** → Picklist Value, or → Global Value Set (tree: value set label → values) when the field uses one | Yes (current object). The value set is read from Tooling `CustomField.Metadata` for matching custom picklists, and from `StandardValueSet.Metadata` for a standard picklist you point at (inactive values too) |
@@ -83,12 +123,18 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Record data: Product / Product Category Name and Description, plus enabled custom fields | **Data Translation**: the record's Translations tab (an admin adds it in Lightning App Builder) | Yes, on record pages; says how to enable it if off |
 | Record data in an org-built translation object (e.g. `Demo_Translations__c`) | That object's related list on the record | Yes: any custom child object with "Translat" in its name |
 | Standard button (Edit, Delete) | Owned by Salesforce (Salesforce translates it) | Flagged |
-| Text typed into a custom LWC/Aura or Lightning App Builder | Not translatable until moved into a Custom Label | Flagged |
-| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → not translatable | Read from the FlexiPage for the clicked section, list header or tab. A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field |
-| Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), auto-number (Salesforce), a value missing from the picklist, or currency name (Salesforce). Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel). An event box on the Calendar page (`runtime_calendar-*-event`) gives "Record data: Event subject", confirmed, with no Salesforce text card |
-| Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart, Calendar page (New Event, Today, day headers, My Calendars), global header (search, reminders) | Owned by Salesforce (Salesforce translates it) | Flagged from the page area |
+| Text typed into a custom LWC/Aura component or into Lightning App Builder | Admin work required to translate: move the text into a Custom Label | Flagged |
+| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → Admin work required to translate | Read from the FlexiPage for the section, list header or tab you point at. A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field |
+| Report chart title (Report Chart component) | Admin work required to translate: set its Label to a Custom Label | From the page area |
+| User calendar names in My Calendars / Other Calendars | Admin work required to translate: a user named it; only its owner can change it | From the page area |
+| Value in a record field, record name in the highlights panel | Record data, formula output (change the formula), a value missing from the picklist: Admin work required to translate. Auto-number and currency name: Salesforce text. Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel). An event box on the Calendar page (`runtime_calendar-*-event`) gives "Record data: Event subject", confirmed, with no Salesforce text card |
+| Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart body, Calendar page (New Event, Today, day headers, the My Events / My Calendars / Other Calendars headings), global header (search) | Owned by Salesforce (Salesforce translates it) | Flagged from the page area |
+| Reminder and notification cards in the global header | The card frame is Salesforce text; event subjects and custom notification text in them come from your org | "From page area" |
 
-Matching rule: a highlight under 5 characters matches whole words only; 5 or more characters also match inside words.
+Matching rule: a highlight of 1 or 2 characters matches only the same text. 3 or 4 characters also match
+whole words inside a longer text. 5 or more characters also match inside words. A highlight that contains
+a whole name of 4 or more characters, at least 40% of the highlight's length, matches that name too:
+"Edit Industry" matches "Industry".
 
 Language rule: if you are viewing Salesforce in the org default language, the text is the
 **master label**. Change it in Object Manager (or the label itself). Translations go into the
@@ -100,11 +146,11 @@ Salesforce has no documented deep links for these pages. These were found by ins
 
 | Result | Opens | Auto-fill |
 |---|---|---|
-| Custom label | `/01j/e?Parent=<label Id>` (New Translation), or `/<translation Id>/e` if one exists for the language | Picks the Language |
-| Standard object / field | `/_ui/common/i18n/RenameTabStageManager?id=<Object>&l=<lang>` | For a field: clicks Next (saves nothing), highlights the field on Step 2 |
-| Custom object | Rename Tabs and Labels list | Switches language, opens the object's Edit page |
-| Translation Workbench item | Translate page (`/i18n/TranslationWorkbench.apexp`) | Sets Language, Setup Component, Object, Aspect; finds the row (pages through the grid); opens its edit box. Path guidance: matches the row's raw HTML, or its text without tags |
-| Package item | Override page (`/i18n/LabelWorkbenchOverride.apexp`) | Same as Translate, plus picks the Package by namespace (warns if two packages share it) |
+| Custom label | Setup → Custom Labels → the label's New Translation page (`/01j/e?Parent=<label Id>` inside `/lightning/setup/ExternalStrings/page`), or the existing translation's edit page for that language | Picks the Language |
+| Standard object / field | Setup → Rename Tabs and Labels → the object's Edit page (`RenameTabStageManager?id=<Object>&l=<lang>` inside `/lightning/setup/RenameTab/page`) | For a field: clicks Next (saves nothing), highlights the field on Step 2 |
+| Custom object | Setup → Rename Tabs and Labels (`/lightning/setup/RenameTab/home`) | Switches language, opens the object's Edit page |
+| Translation Workbench item | Setup → Translate (`/lightning/setup/LabelWorkbenchTranslate/home`) | Sets Language, Setup Component, Object, Aspect; finds the row (pages through the grid); opens its edit box. Path guidance: matches the row's raw HTML, or its text without tags |
+| Package item | Setup → Override (`/lightning/setup/LabelWorkbenchOverride/home`) | Same as Translate, plus picks the Package by namespace (warns if two packages share it) |
 | Record data | The record page | Clicks the Translations tab. If the page has none, says so |
 
 Pick the target language in the panel ("Translate into"). It starts on the org default language; every
@@ -113,10 +159,10 @@ auto-fill runs, it keeps going, and retries a failed step when you come back.
 
 ## Test log
 
-Click the extension's toolbar icon (or **Test log** at the bottom of the panel) to open the log.
+Click the extension's icon in the toolbar (or **Test log** at the bottom of the panel) to open the log.
 It records each lookup and its top results, each Go to translation, every auto-fill step and message,
-and all errors with details. It updates live while you test. **Copy all** gives plain text to paste
-into an issue. **Download** saves JSON. Stored only in this browser (last 500 entries);
+and all errors with details. It updates live while you test. **Copy all** gives plain text to send
+to the person who sent you the extension. **Download** saves JSON. Stored only in this browser (last 500 entries);
 session IDs and URL query strings are removed before saving.
 
 ## Roadmap
@@ -137,14 +183,29 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
 
 ## Known limits
 
-- Fields, picklists, record types, and actions are searched for the object on the current page only.
+- Fields, picklists, record types, and actions are searched for the object on the current page only. In a
+  related list's rows, the child object's field labels are searched too.
+- Per lookup, the full value list (inactive values and value sets) is read for at most 4 picklist fields,
+  the one you point at first.
+- Salesforce text is recognised by its English wording. Viewing Salesforce in another language gives
+  fewer "Owned by Salesforce" answers.
 - Path guidance is matched on its master text only. Viewing Salesforce in a translated language, the guidance shows the translation, which is not searched.
 - Gov Cloud (`.mil`) and China (`.sfcrmproducts.cn`) domains are not mapped yet.
 - Experience Cloud sites are not supported (different session).
 - Some Setup component names in Translation Workbench vary slightly by org edition. The panel says
   which to pick; if it is missing in your dropdown, check the nearest match.
 
-## Develop
+## Develop (repository collaborators only)
+
+The zip does not hold the tests; this section is for people with access to the repository.
+
+[![Tests](https://github.com/fulton916/SF_Translation_Browser_Extension/actions/workflows/test.yml/badge.svg)](https://github.com/fulton916/SF_Translation_Browser_Extension/actions/workflows/test.yml)
+
+Get the code: on GitHub click **Code → Download ZIP**, or run
+`git clone https://github.com/fulton916/SF_Translation_Browser_Extension.git`.
+Bugs and test findings: open a [new issue](https://github.com/fulton916/SF_Translation_Browser_Extension/issues/new/choose)
+(**Bug report** or **Test finding**) and paste the test log. Labels: `bug`, `test-finding`, `enhancement`.
+The repository is private: test logs contain org details (field names, page addresses).
 
 Needs Node.js 20 or newer. No dependencies to install.
 

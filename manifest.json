@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SF Translation Locator",
-  "version": "0.2.2",
-  "description": "Right-click text in Salesforce to see where its translation lives: Custom Labels, Rename Tabs and Labels, or Translation Workbench.",
+  "version": "0.2.3",
+  "description": "Right-click Salesforce text or press Alt+Shift+T to find its translation: Custom Labels, Rename Tabs, Workbench, Data Translation",
   "permissions": ["contextMenus", "cookies", "scripting", "storage"],
   "host_permissions": [
     "https://*.force.com/*",
