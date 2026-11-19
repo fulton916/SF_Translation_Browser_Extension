@@ -270,10 +270,13 @@ const STANDARD_VALUE_SET_NAMES = { 'Opportunity.StageName': 'OpportunityStage', 
  */
 async function loadStandardValueSet(session, objectName, fieldName) {
   const names = [...new Set([STANDARD_VALUE_SET_NAMES[`${objectName}.${fieldName}`], objectName + fieldName, fieldName].filter(Boolean))];
-  const rows = await queryAll(session, `SELECT Id, MasterLabel FROM StandardValueSet WHERE MasterLabel IN ('${names.join("','")}')`, { tooling: true });
-  const row = names.map((n) => rows.find((r) => r.MasterLabel === n)).find(Boolean);
-  if (!row?.Id || !/^[a-zA-Z0-9]{15,18}$/.test(row.Id)) return null;
-  const full = await queryAll(session, `SELECT Metadata FROM StandardValueSet WHERE Id = '${row.Id}'`, { tooling: true });
+  const rows = await queryAll(session, `SELECT MasterLabel FROM StandardValueSet WHERE MasterLabel IN ('${names.join("','")}')`, { tooling: true });
+  const name = names.find((n) => rows.some((r) => r.MasterLabel === n));
+  if (!name) return null;
+  // Read Metadata by MasterLabel, not by Id: DV2 (checked live, v62.0) returns the placeholder Id
+  // '000000000000000AAA' for every StandardValueSet, and `WHERE Id = ...` fails with MALFORMED_QUERY
+  // "filtered column Id not found". `name` is one of `names`, which are [A-Za-z0-9_] only.
+  const full = await queryAll(session, `SELECT Metadata FROM StandardValueSet WHERE MasterLabel = '${name}'`, { tooling: true });
   const values = valueList(full[0]?.Metadata?.standardValue);
   return values.length ? { name: null, values } : null;
 }
