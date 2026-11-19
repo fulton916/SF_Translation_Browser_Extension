@@ -792,13 +792,9 @@
     };
     if (row) {
       mark(row, false);
-      const cell = row.querySelector('.x-grid3-td-translation .x-grid3-cell-inner, .x-grid3-td-translation, .x-tree-col.translation');
-      if (cell) {
-        for (const type of ['mousedown', 'mouseup', 'click', 'dblclick']) {
-          cell.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
-        }
-      }
-      toast(`Found "${shown(row)}". Type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
+      // The edit box is not opened for you: one opened by a script closed on the next click, and the
+      // text typed into it was lost with no warning (dev org B-07, B-09). A double-click opens a stable one.
+      toast(`Found "${shown(row)}" (marked). Double-click its translation cell, type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
     } else {
       toast(`Filters are set. ${p.rows?.length ? `Row "${p.rowLabel || p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
     }
