@@ -81,6 +81,28 @@ test('A-23 / B-10: a list in the standard Related Lists component names the chil
   assert.equal(generic.goto.objectLabel, null);
 });
 
+test('A-10 / A-13: a custom object\'s standard fields never get a Rename Tabs and Labels card', () => {
+  const g = {
+    ...gadget,
+    recordTypeInfos: [{ name: 'Standard Gadget', developerName: 'Standard_Gadget', master: false, recordTypeId: '012000000000001AAA' }],
+    fields: [
+      { name: 'RecordTypeId', label: 'Record Type ID', custom: false, type: 'reference', picklistValues: [] },
+      { name: 'OwnerId', label: 'Owner ID', custom: false, type: 'reference', picklistValues: [] },
+      { name: 'IsDeleted', label: 'Deleted', custom: false, type: 'boolean', picklistValues: [] },
+    ],
+  };
+  const hints = { selectionNames: ['sfdc:RecordField.Demo_Gadget__c.RecordTypeId'], fieldPart: 'value' };
+  const out = locate({ text: 'Standard Gadget', org: baseOrg, describes: [g], hints });
+  assert.equal(out.results[0].key, 'rt:Demo_Gadget__c.Standard_Gadget');
+  for (const text of ['Record Type ID', 'Owner', 'Deleted']) {
+    const all = [...locate({ text, org: baseOrg, describes: [g] }).results, ...out.results];
+    assert.ok(!all.some((r) => r.source === SOURCE.RENAME_TABS && r.key.startsWith('field:')), text);
+  }
+  const owner = locate({ text: 'Owner ID', org: baseOrg, describes: [g] }).results.find((r) => r.key === 'field:Demo_Gadget__c.OwnerId');
+  assert.equal(owner.source, SOURCE.SALESFORCE);
+  assert.equal(owner.subtitle, 'Standard field Demo_Gadget__c.OwnerId');
+});
+
 test('A-15: a page with custom component identifiers is read; a {!$Label} tab title gets only the label card', async () => {
   const ci = (identifier, componentName, props) => ({ componentInstance: { identifier, componentName, componentInstanceProperties: Object.entries(props).map(([name, value]) => ({ name, value })) } });
   globalThis.fetch = async () => ({

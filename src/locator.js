@@ -460,9 +460,9 @@ function salesforceTextResult(key, confidence, extra = {}) {
   };
 }
 
-function systemFieldResult(d, f, confidence) {
+function systemFieldResult(d, f, confidence, what = 'System field') {
   return {
-    ...salesforceTextResult(`field:${d.name}.${f.name}`, confidence, { subtitle: `System field ${d.name}.${f.name}` }),
+    ...salesforceTextResult(`field:${d.name}.${f.name}`, confidence, { subtitle: `${what} ${d.name}.${f.name}` }),
     url: SETUP.objectFields(d.name),
     copy: `${d.name}.${f.name}`,
   };
@@ -489,6 +489,9 @@ function fieldLabelNote(prefix, d, f, hints = {}) {
 
 function fieldLabelResult(org, d, f, confidence) {
   if (SYSTEM_FIELDS.has(f.name)) return systemFieldResult(d, f, confidence);
+  // A custom object's standard fields (Owner ID, Record Type ID, Deleted) are Salesforce's own; Rename Tabs
+  // and Labels was the wrong place for them (dev org A-10, A-13). Its Name field keeps the Rename Tabs card.
+  if (!f.custom && d.custom && f.name !== 'Name') return systemFieldResult(d, f, confidence, 'Standard field');
   if (!f.custom) {
     return {
       key: `field:${d.name}.${f.name}`,
