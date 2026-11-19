@@ -140,7 +140,9 @@
       if (tsn?.startsWith('sfdc:RecordField.')) inField = true;
       // Lightning App Builder component ids, as in the page metadata: flexipage_fieldSection6,
       // flexipage_tab2Tab (tab flexipage_tab2), lst_dynamicRelatedList16, force_relatedListSingleContainer15.
-      if (tsn && /^(flexipage_|lst_|force_)/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
+      // A page deployed from metadata can use any identifier (dev org: sftl_tab_greetingTab, sftl_tabset), so
+      // every identifier-shaped name is kept; sfdc:… names and FeedItem.… tabs are not identifiers.
+      if (tsn && /^[A-Za-z][A-Za-z0-9_]*$/.test(tsn) && hints.componentIds.length < 10) hints.componentIds.push(tsn.slice(0, 100));
       // Salesforce's own record page components (seen in UAT2): runtime_sales_activities_activityPanel,
       // runtime_sales_merge_mergeCandidatesPreviewCard2 (duplicates), forceChatter_recordFeedContainer.
       if (tsn && /^(runtime_|forceChatter_)/.test(tsn) && hints.sfComponents.length < 10) hints.sfComponents.push(tsn.slice(0, 100));

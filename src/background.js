@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadValueSet, loadRecordTypeId } from './sfApi.js';
+import { getSession, loadOrgData, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadValueSet, loadRecordTypeId } from './sfApi.js';
 import { locate, contextObjects, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
 import { addEntry, getEntries, formatEntries } from './logStore.js';
 
@@ -208,7 +208,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   const areas = detectAreas(hints);
   const wantsPage = areas.has('fieldSection') || areas.has('relatedList') || areas.has('lightningPageTab');
   if (wantsPage && hints.flexipage && hints.componentIds?.length) {
-    pageComponent = await loadFlexiPageComponent(session, hints.flexipage, hints.componentIds[0], objects).catch((e) => {
+    pageComponent = await loadNearestFlexiPageComponent(session, hints.flexipage, hints.componentIds, objects).catch((e) => {
       warnings.push(`Lightning page not read: ${e.message}`);
       return null;
     });
