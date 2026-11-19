@@ -166,3 +166,33 @@ test('ISS-06: an Aura record layout section header is the Layout Section, not a 
   // Blank space in the section (no heading in the path) is not the header either.
   assert.ok(!locate({ text: 'Visit Information', org, describes: [event], hints: { tags: ['div', 'fieldset'], auraClasses: ['forcePageBlockSection'] } }).areas.includes('layoutSection'));
 });
+
+// ---------- ISS-08: path page-area cards have no subtitle ----------
+
+test('ISS-08: the Closed path step card has no subtitle; step 2 explains the closed values', () => {
+  const chevron = { tags: ['span', 'a', 'li', 'ul', 'div'], auraClasses: ['runtime_sales_pathassistantPathAssistantTabSet', 'runtime_sales_pathassistantPathAssistant'] };
+  const r = locate({ text: 'Closed', org: baseOrg, describes: [], hints: chevron }).results[0];
+  assert.equal(r.key, 'sfdctext:pathClosed');
+  assert.equal(r.title, 'Salesforce text');
+  assert.equal(r.subtitle, undefined);
+  assert.equal(r.steps[0], 'Salesforce writes and translates this text. Admins cannot change or translate it.');
+  assert.match(r.steps[1], /groups the closed values/);
+});
+
+// ---------- ISS-09: an event box on the Calendar page is the Event's subject ----------
+
+test('ISS-09: an event box in the calendar week grid is record data (Event subject), confirmed', () => {
+  // Real path (DV2): a.subject-link < div.eventBox < div.calendarEvent < runtime_calendar-timed-event < ... day-timed-events.
+  const ev = { tags: ['a', 'div', 'div', 'runtime_calendar-timed-event', 'ul', 'runtime_calendar-day-timed-events', 'div'], auraClasses: ['forceCalendarDay', 'forceCalendarDayWeekView', 'forceCalendar', 'calendarHome'] };
+  const org = { ...baseOrg, customLabels: [lbl('101D00000000091', 'Example_Visit', 'Example customer visit')] };
+  const out = locate({ text: 'Example customer visit', org, describes: [], hints: ev, pageUrls: ['https://example.lightning.force.com/lightning/o/Event/home'] });
+  assert.ok(out.areas.includes('calendarEvent'));
+  assert.equal(out.results[0].key, 'value:Event.Subject');
+  assert.equal(out.results[0].title, 'Record data: Event subject');
+  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.ok(!out.results.some((r) => r.title === 'Salesforce text' || r.source === SOURCE.CUSTOM_LABEL));
+  assert.equal(out.notFoundHelp, null);
+  // The day column itself (no event box in the path) is not an event.
+  assert.ok(!locate({ text: 'WED 18', org, describes: [], hints: { tags: ['ul', 'runtime_calendar-day-timed-events', 'div'], auraClasses: ['forceCalendarDay'] } }).areas.includes('calendarEvent'));
+});
