@@ -914,24 +914,40 @@ export function pathStepMatch(needle, info, rawText = null) {
 }
 
 /**
- * The path a step belongs to. Step DeveloperNames seen in a real org (Nov 2026):
- * "X<num>_<picklist value Id 01J…>_<record type Id 012… or null>_<Object>_<field without __c>"
- * and the older "<Object>_<record type or null>_<field>_<01J…>_<num>".
+ * The path a step belongs to. Step DeveloperNames seen in real orgs (Nov 2026):
+ * "X<num>_<picklist value Id 01J…>_<record type Id 012… or null>_<Object>_<field without __c>",
+ * the older "<Object>_<record type or null>_<field>_<01J…>_<num>", and for a custom object the object's
+ * Id instead of its name, cut at 80 characters (dev org: "X…_01J…_012…_01I…_SFTL_Stat" for SFTL_Status__c).
+ * A record type has one path, so its Id alone names the path. With no record type, the object (name, or
+ * Id from sfApi's SobjectId) and the field (its start, when the name was cut) must match.
  */
 export function pathOfStep(dn, paths = [], objects = []) {
   dn = String(dn || '');
+  const cut = dn.length >= 80;
+  const parts = /_01J[A-Za-z0-9]{12,15}_(012[A-Za-z0-9]{12,15}|null)_(.+)$/.exec(dn);
   const hits = (paths || []).filter((p) => {
     const field = String(p.SobjectProcessField || '').replace(/__c$/, '');
     const rts = p.RecordTypeId ? [p.RecordTypeId, p.RecordTypeId.slice(0, 15)] : ['null'];
-    return rts.some((rt) => dn.endsWith(`_${rt}_${p.SobjectType}_${field}`) || dn.startsWith(`${p.SobjectType}_${rt}_${field}_`));
+    if (rts.some((rt) => dn.endsWith(`_${rt}_${p.SobjectType}_${field}`) || dn.startsWith(`${p.SobjectType}_${rt}_${field}_`))) return true;
+    if (!parts) return false;
+    const [, rt, rest] = parts;
+    if (rt !== 'null') return !!p.RecordTypeId && id15(rt) === id15(p.RecordTypeId);
+    if (p.RecordTypeId) return false;
+    return [p.SobjectType, p.SobjectId && id15(p.SobjectId)].filter(Boolean).some((o) => {
+      const full = `${o}_${field}`;
+      return rest === full || (cut && rest.length > o.length + 1 && full.startsWith(rest));
+    });
   });
   const path = hits.find((p) => p.IsActive) || hits[0] || null;
   if (path) return { path, object: path.SobjectType, field: path.SobjectProcessField };
   // No path data: read object and field from the name itself.
   const old = /^(.+?)_(?:012[A-Za-z0-9]{12,15}|null)_(.+?)_01J[A-Za-z0-9]{12,15}_\d+$/.exec(dn);
   if (old) return { path: null, object: old[1], field: old[2] };
-  const rest = /_01J[A-Za-z0-9]{12,15}_(?:012[A-Za-z0-9]{12,15}|null)_(.+)$/.exec(dn)?.[1];
+  const rest = parts?.[2];
   if (!rest) return { path: null, object: null, field: null };
+  // A custom object's Id (01I…) is not a name to show: keep only a field name that was not cut.
+  const byId = /^01I[A-Za-z0-9]{12}(?:_(.*))?$/.exec(rest);
+  if (byId) return { path: null, object: null, field: byId[1] && !cut ? byId[1] : null };
   const obj = (objects || [])
     .map((o) => o.name)
     .filter((n) => rest.startsWith(n.replace(/__c$/, '') + '_'))
@@ -948,17 +964,17 @@ function pathStepResult(org, step, where, describes, confidence) {
   const f = d?.fields?.find((x) => x.name === fieldName || x.name === `${fieldName}__c`);
   const objectLabel = d?.label || (org.objects || []).find((o) => o.name === where.object)?.label || where.object;
   const fieldLabel = f?.label || fieldName.replace(/__c$/, '').replace(/_/g, ' ');
-  const pathName = where.path?.MasterLabel || where.path?.DeveloperName || 'unknown path';
+  const pathName = where.path?.MasterLabel || where.path?.DeveloperName || null;
   const where2 = [objectLabel, fieldLabel].filter(Boolean).join(' › ');
   const base = workbench(org, { component: 'Path Step Rich Text' });
   const notes = [];
   if (where.path && where.path.IsActive === false) notes.push('This path is inactive.');
   if (step.Language && org.defaultLanguage && step.Language !== org.defaultLanguage) notes.push(`This guidance is written in ${languageName(step.Language)}.`);
-  if (isDefaultLanguage(org)) notes.push(`Master text: Setup → Path Settings → ${pathName} → Edit → the step's Guidance for Success.`);
+  if (isDefaultLanguage(org)) notes.push(`Master text: Setup → Path Settings → ${pathName || `the path for ${where2 || 'this step'}`} → Edit → the step's Guidance for Success.`);
   return {
     key: `path:${step.Id || step.DeveloperName}`,
     confidence,
-    title: `Path guidance: ${pathName}${where2 ? ` (${where2})` : ''}`,
+    title: pathName ? `Path guidance: ${pathName}${where2 ? ` (${where2})` : ''}` : `Path guidance${where2 ? `: ${where2}` : ''}`,
     subtitle: `"${truncate(lines.join(' '), 100)}"`,
     ...base,
     steps: [
