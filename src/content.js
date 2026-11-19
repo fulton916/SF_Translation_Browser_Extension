@@ -37,6 +37,37 @@
     true
   );
 
+  // Keyboard shortcut Alt+Shift+T: same lookup as the right-click menu, for the element under the mouse
+  // (or the highlighted text). A page listener, not chrome.commands, so automated key presses reach it too.
+  // pointermove too: Chrome sends no mousemove over disabled buttons (C-02: calendar "Today").
+  let pointerPath = null;
+  let pointerXY = null;
+  const onPointer = (e) => {
+    pointerPath = e.composedPath();
+    pointerXY = [e.clientX, e.clientY];
+  };
+  document.addEventListener('mousemove', onPointer, { capture: true, passive: true });
+  document.addEventListener('pointermove', onPointer, { capture: true, passive: true });
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!(e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyT') || !window.__sftlAlive()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Highlighted text: its own element; else the element under the pointer (src/pointerTarget.js).
+      let path = (pointerPath || []).filter((n) => n instanceof Element);
+      try {
+        path = globalThis.sftlPointer?.shortcutPath({ doc: document, selection: window.getSelection(), pointerPath, pointerXY }) || path;
+      } catch (err) {
+        logEvent('warn', 'shortcut', 'Could not read the element under the pointer', { error: String(err) });
+      }
+      lastTarget = { path, at: Date.now() };
+      const selectionText = String(window.getSelection() || '').trim();
+      chrome.runtime.sendMessage({ type: 'sftl:shortcut', selectionText }, () => void chrome.runtime.lastError);
+    },
+    true
+  );
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'sftl:getTarget') {
       sendResponse(describeTarget());
@@ -52,33 +83,88 @@
     // componentIds: Lightning App Builder component ids (e.g. flexipage_fieldSection6), nearest first.
     // flexipage: the record page's generated tag, which carries its developer name.
     // tabRole: 'tab' when the click was on a tab's label, 'tabpanel' when inside its content.
-    const hints = { selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null };
+    // auraClasses: data-aura-class values on the path, e.g. runtime_sales_pathassistantPathAssistantInfo
+    // (Path "Guidance for Success" is plain Aura divs, so tag names alone do not show it).
+    // fieldPart: 'label' or 'value' of a record field (classes checked on a UAT2 Account, Nov 2026:
+    // span.test-id__field-label / span.test-id__field-value.slds-form-element__static).
+    // helpIcon: pointed at a field's (i) icon (lightning-helptext); its text is the assistive "Help <label>".
+    // listHeader: true on a related list's title bar (h2.slds-card__header-title), false inside its rows.
+    // recordTitle: the record name in the highlights panel (lightning-formatted-text slot="primaryField").
+    const hints = {
+      selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null,
+      fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [], highlightsLabel: null,
+    };
     const path = lastTarget && Date.now() - lastTarget.at < 60000 ? lastTarget.path : [];
+    let inField = false;
+    let headerSeen = false;
+    let titleSeen = false;
+    let valueSeen = false;
     for (const el of path.slice(0, 60)) {
       const tag = el.tagName.toLowerCase();
       hints.tags.push(tag);
+      const cls = typeof el.className === 'string' ? el.className : '';
+      if (!inField && !hints.fieldPart) {
+        if (/\btest-id__field-label\b|\bslds-form-element__label\b/.test(cls)) hints.fieldPart = 'label';
+        else if (/\btest-id__field-value\b|\bslds-form-element__static\b|\bslds-form-element__control\b/.test(cls)) hints.fieldPart = 'value';
+      }
+      // Highlights panel (compact layout) field, seen in DV2 (Nov 2026): records-highlights-details-item
+      // (shadow) > div > p.slds-text-title (label) + p.fieldComponent > slot (value). No RecordField name here,
+      // so keep the item's label text too: locator.js finds the field by it.
+      if (/\bslds-text-title\b/.test(cls)) titleSeen = true;
+      if (/\bfieldComponent\b/.test(cls)) valueSeen = true;
+      if (tag === 'records-highlights-details-item' && !hints.highlightsLabel) {
+        const t = (el.shadowRoot || el).querySelector?.('.slds-text-title');
+        hints.highlightsLabel = (t?.getAttribute('title') || t?.innerText || '').trim().slice(0, 200) || null;
+        if (!hints.fieldPart) hints.fieldPart = titleSeen ? 'label' : valueSeen ? 'value' : null;
+      }
+      if (tag === 'lightning-helptext') hints.helpIcon = true;
+      if (tag === 'h2' || /\bslds-card__header\b|\bslds-card__header-title\b/.test(cls)) headerSeen = true;
+      if (hints.listHeader === null && /^(lst-related-list|force-related-list|lst-dynamic-related-list)/.test(tag)) hints.listHeader = headerSeen;
+      if (el.getAttribute('slot') === 'primaryField' && path.some((p) => p.tagName === 'RECORDS-HIGHLIGHTS2')) hints.recordTitle = true;
       if (!hints.flexipage && tag.startsWith('forcegenerated-flexipage_')) hints.flexipage = tag.slice(0, 200);
       const role = el.getAttribute('role');
       if (!hints.tabRole && (role === 'tab' || role === 'tabpanel')) hints.tabRole = role;
       const tsn = el.getAttribute('data-target-selection-name');
-      if (tsn && /^flexipage_/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
+      if (tsn?.startsWith('sfdc:RecordField.')) inField = true;
+      // Lightning App Builder component ids, as in the page metadata: flexipage_fieldSection6,
+      // flexipage_tab2Tab (tab flexipage_tab2), lst_dynamicRelatedList16, force_relatedListSingleContainer15.
+      if (tsn && /^(flexipage_|lst_|force_)/.test(tsn)) hints.componentIds.push(tsn.slice(0, 100));
+      // Salesforce's own record page components (seen in UAT2): runtime_sales_activities_activityPanel,
+      // runtime_sales_merge_mergeCandidatesPreviewCard2 (duplicates), forceChatter_recordFeedContainer.
+      if (tsn && /^(runtime_|forceChatter_)/.test(tsn) && hints.sfComponents.length < 10) hints.sfComponents.push(tsn.slice(0, 100));
       const aura = el.getAttribute('data-aura-class');
       if (aura && /^c[A-Z]/.test(aura)) hints.auraCustom.push(aura);
+      if (aura && hints.auraClasses.length < 20) hints.auraClasses.push(aura.split(/\s+/)[0].slice(0, 100));
       for (const a of HINT_ATTRS) {
         const v = el.getAttribute(a);
         if (!v) continue;
         if (a === 'data-target-selection-name' && v.startsWith('sfdc:')) hints.selectionNames.push(v);
+        // Publisher tabs carry no sfdc: prefix (DV2 R-21: "Post" is FeedItem.TextPostTab): the feed action.
+        const feedTab = a === 'data-target-selection-name' && /^FeedItem\.(\w+?)Tab$/.exec(v);
+        if (feedTab) hints.selectionNames.push(`sfdc:QuickAction.FeedItem.${feedTab[1]}`);
         if (a === 'object-api-name') hints.objectApiNames.push(v);
         if (!(a in hints.attrs)) hints.attrs[a] = v.slice(0, 200);
       }
     }
     hints.selectionNames = [...new Set(hints.selectionNames)];
     hints.tags = [...new Set(hints.tags)];
-    return { text: elementText(path), hints, url: location.href };
+    hints.auraClasses = [...new Set(hints.auraClasses)];
+    let text = elementText(path);
+    // The (i) icon only holds "Help <field label>" for screen readers (the help text itself is in a
+    // popup that is not in the path). Keep the label; locator.js lists the field's help text.
+    if (hints.helpIcon) {
+      text = text.replace(/^Help\s+/i, '');
+      hints.fieldPart = null;
+    }
+    return { text, hints, url: location.href };
   }
+
+  // Screen-reader-only text (seen in UAT2: "Enable table equivalent for screen reader users" on a chart).
+  const isAssistive = (el) => /\b(slds-assistive-text|assistiveText)\b/.test(typeof el.className === 'string' ? el.className : '');
 
   function elementText(path) {
     for (const el of path.slice(0, 6)) {
+      if (isAssistive(el)) continue;
       const t = (el.innerText || '').trim();
       if (t && t.length <= 300) return t.split('\n')[0].trim();
       const label = el.getAttribute('title') || el.getAttribute('aria-label');
@@ -135,7 +221,15 @@
     for (const r of p.results || []) list.append(card(r));
     panel.append(list);
 
-    if (p.droppedPartial) panel.append(el('div', 'muted', `${p.droppedPartial} weaker partial matches hidden.`));
+    if (p.more?.length) {
+      const n = p.more.length;
+      panel.append(
+        button(`Show ${n} similar text${n === 1 ? '' : 's'} in your org`, 'link', 'Org text that shares words with what you pointed at', (ev) => {
+          ev.currentTarget.remove();
+          for (const r of p.more) list.append(card(r));
+        })
+      );
+    }
     if (p.notFoundHelp) {
       const nf = el('div', 'card');
       nf.append(el('div', 'card-title', 'No match found'));
@@ -168,9 +262,11 @@
   }
 
   function card(r) {
-    const c = el('div', 'card');
+    // A confirmed "not translatable" result is the right answer but has no translation location.
+    const conf = r.confidence === 'confirmed' && (r.source === 'Admin work required to translate' || r.source === 'Owned by Salesforce') ? 'confirmed-none' : r.confidence;
+    const c = el('div', `card card-${conf}`);
     const top = el('div', 'card-top');
-    top.append(el('span', `badge ${badgeClass(r.source)}`, r.source), el('span', `conf ${r.confidence}`, confidenceText(r.confidence)));
+    top.append(el('span', `badge ${badgeClass(r.source)}`, r.source), el('span', `conf ${conf}`, confidenceText(conf)));
     c.append(top, el('div', 'card-title', r.title));
     if (r.subtitle) c.append(el('div', 'muted', r.subtitle));
     const ol = el('ol', 'steps');
@@ -261,14 +357,15 @@
         'Workbench Override (package)': 'b-override',
         'Data Translation (record data)': 'b-data',
         'Custom translation object': 'b-data',
-        'Not translatable as-is': 'b-none',
+        'Admin work required to translate': 'b-none',
+        'Owned by Salesforce': 'b-none',
       }[source] || 'b-context'
     );
   }
 
   function confidenceText(c) {
     // "Same text" (not "Exact match"): equal words do not prove this is where the text comes from.
-    return { confirmed: 'Confirmed by page', exact: 'Same text', partial: 'Similar text', context: 'From page area' }[c] || c;
+    return { confirmed: 'Confirmed Location', 'confirmed-none': 'Not Translatable', exact: 'Same text', partial: 'Similar text', context: 'From page area' }[c] || c;
   }
 
   function langName(code) {
@@ -338,7 +435,7 @@
       '',
       'Results shown:',
       ...(p.results || []).map((r, i) => `  ${i + 1}. ${r.confidence} | ${r.source} | ${r.title}`),
-      p.droppedPartial ? `  (+${p.droppedPartial} weaker matches hidden)` : null,
+      p.more?.length ? `  (+${p.more.length} similar texts behind the "Show similar" button)` : null,
       ...(p.warnings || []).map((w) => `Warning: ${w}`),
       '',
       `Extension version: ${chrome.runtime.getManifest?.().version || '?'}`,
@@ -403,7 +500,12 @@
       .badge { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 10px; color: #fff; }
       .b-label { background: #0b5cab; } .b-rename { background: #2e844a; } .b-workbench { background: #7526e3; }
       .b-none { background: #747474; } .b-override { background: #a43ec0; } .b-data { background: #0d7d8c; } .b-context { background: #a96404; }
-      .conf { font-size: 11px; color: #5c5c5c; } .conf.confirmed, .conf.exact { color: #2e844a; font-weight: 600; }
+      .conf { font-size: 11px; color: #5c5c5c; } .conf.exact { color: #2e844a; font-weight: 600; }
+      .card-confirmed { border: 2px solid #2e844a; background: #f3faf5; box-shadow: 0 0 0 3px rgba(46,132,74,.15); }
+      .conf.confirmed { font-size: 12px; font-weight: 700; color: #fff; background: #2e844a; padding: 2px 8px; border-radius: 10px; }
+      .conf.confirmed::before { content: '\\2713  '; }
+      .card-confirmed-none { border: 2px solid #dd7a01; background: #fef6ec; box-shadow: 0 0 0 3px rgba(221,122,1,.15); }
+      .conf.confirmed-none { font-size: 12px; font-weight: 700; color: #fff; background: #747474; padding: 2px 8px; border-radius: 10px; }
       .steps { margin: 6px 0 4px 18px; padding: 0; } .steps li { margin: 1px 0; }
       .notes { margin: 4px 0 0 16px; padding: 0; color: #5c5c5c; font-size: 12px; }
       .actions { display: flex; gap: 6px; margin-top: 6px; }
@@ -513,9 +615,17 @@
   async function fillRenameStage(p) {
     const stage = document.querySelector('input[name=currentStage]')?.value;
     if (!p.fieldLabel) {
-      const singular = [...document.querySelectorAll('input[type=text]')][0];
-      if (singular) mark(singular, true);
-      toast('Change the Singular and Plural names, then Save.');
+      // Step 1 inputs (UAT2, Nov 2026): val___0 Singular, val___1 Plural. The page header can have its
+      // own text inputs (search), so never take "the first input".
+      const byLabel = (re) => [...document.querySelectorAll('input[type=text]')].find((i) => re.test(document.querySelector(`label[for="${i.id}"]`)?.innerText || ''));
+      // German (DV2, a3-13): one input per case, val___0-n / val___1-n (nominative) / -a / -g / -d.
+      const byId = (i) => document.getElementById(`val___${i}`) || document.getElementById(`val___${i}-n`);
+      const input = p.plural ? byId(1) || byLabel(/plural/i) : byId(0) || byLabel(/singular/i);
+      if (input) {
+        mark(input.closest('tr') || input, false);
+        focusInput(input);
+      }
+      toast(`Change the ${p.plural ? 'Plural' : 'Singular'} name${input ? ' (marked)' : ''}, then Save.`);
       return finish();
     }
     if (stage === '0') {
@@ -528,25 +638,55 @@
       return;
     }
     const inputs = [...document.querySelectorAll('input[type=text]')];
+    const firstCell = (i) => norm(i.closest('tr')?.cells[0]?.innerText);
     // Row = <th>master label</th><td><input value="current translation"></td>…gender options.
-    // Try the label first, then the API name (Lead.Name is "Full Name" in the API, "Name" here).
-    const input = [p.fieldLabel, p.fieldName]
-      .filter(Boolean)
-      .map(norm)
-      .reduce(
-        (found, want) =>
-          found || inputs.find((i) => norm(i.closest('tr')?.cells[0]?.innerText) === want) || inputs.find((i) => norm(i.value) === want),
-        null
-      );
+    // Try the label first, then the API name (Lead.Name is "Full Name" in the API, "Name" here), then
+    // the other candidates from locator.js: the first column is the Salesforce master label, so a renamed
+    // label ("Billing Address/Account Address") is found by its parts or its API name in words.
+    const wants = [...new Set((p.candidates?.length ? p.candidates : [p.fieldLabel, p.fieldName]).filter(Boolean).map(norm))];
+    let input = wants.reduce(
+      (found, want) => found || inputs.find((i) => firstCell(i) === want) || inputs.find((i) => norm(i.value) === want),
+      null
+    );
+    // Last resort: a row whose master label starts the wanted label at a word break ("billing address" in
+    // "billing address/account address"); the longest such label wins.
+    if (!input) {
+      const label = norm(p.fieldLabel);
+      input = inputs
+        .filter((i) => {
+          const c = firstCell(i);
+          return c.length >= 4 && label.startsWith(c) && !/[\p{L}\p{N}]/u.test(label[c.length] || ' ');
+        })
+        .sort((a, b) => firstCell(b).length - firstCell(a).length)[0] || null;
+    }
     if (!input) {
       toast(`Could not find the "${p.fieldLabel}" field on Step 2. Look for it in the list.`, true);
       return finish();
     }
     mark(input.closest('tr') || input, false);
-    input.focus();
-    input.select();
+    focusInput(input);
     toast(`Found "${p.fieldLabel}". Change it, then Save.`);
     finish();
+  }
+
+  /**
+   * Focus and select an input, and again after the classic page's own onload focus (setFocusOnLoad
+   * moves focus to the first input, e.g. "Action Visibility", after this script ran). Stops once the
+   * user has moved focus somewhere else themselves.
+   */
+  function focusInput(input) {
+    const go = () => {
+      input.focus();
+      input.select?.();
+    };
+    go();
+    let userActed = false;
+    const acted = () => (userActed = true);
+    document.addEventListener('mousedown', acted, { once: true, capture: true });
+    document.addEventListener('keydown', acted, { once: true, capture: true });
+    const again = () => !userActed && document.activeElement !== input && go();
+    for (const ms of [400, 1200, 2500]) setTimeout(again, ms);
+    if (document.readyState !== 'complete') window.addEventListener('load', () => setTimeout(again, 100), { once: true });
   }
 
   async function fillWorkbench(p) {
@@ -581,6 +721,25 @@
         warnings.push(`Object "${p.objectLabel || p.object}" is not listed for ${p.componentLabel}.`);
       }
     }
+    // Action: a "Quick Action Selection" list appears after the object (UAT2, Nov 2026). Its option values
+    // are 09D Ids that do not equal the Tooling QuickActionDefinition Ids, and labels can repeat
+    // ("Initiate Customer Creation" twice), so pick by label and say when there is more than one.
+    if (p.component === 'QuickActionDefinition' && p.rows?.[0]) {
+      const qa = await waitFor(() => q('quickActionSelect'), 5000).catch(() => null);
+      if (qa) {
+        const want = norm(p.rows[0]);
+        const opts = [...qa.options].filter((o) => norm(o.text) === want);
+        if (!opts.length) warnings.push(`Action "${p.rows[0]}" is not in the Quick Action Selection list for ${p.objectLabel || 'this object'}.`);
+        else {
+          if (!opts.some((o) => o.value === qa.value)) {
+            qa.value = opts[0].value;
+            qa.dispatchEvent(new Event('change', { bubbles: true }));
+            await quiet();
+          }
+          if (opts.length > 1) warnings.push(`${opts.length} actions are named "${p.rows[0]}". Picked the first in Quick Action Selection; the other is in the same list.`);
+        }
+      }
+    }
     if (p.aspect) {
       await waitFor(() => q('aspectSelect') && !q('aspectSelect').disabled, 5000).catch(() => null);
       await choose(q, 'aspectSelect', [p.aspect]);
@@ -589,7 +748,19 @@
     // Most components show a grid; Picklist Value shows a tree (field node → values).
     await waitFor(() => document.querySelector('.x-grid3-row, li.x-tree-node'), 10000).catch(() => null);
     const isTree = !!document.querySelector('li.x-tree-node') && !document.querySelector('.x-grid3-row');
-    const row = !p.rows?.length ? null : isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows);
+    let row = null;
+    if (p.rows?.length && isTree && !p.parent) {
+      // Layout Section (layout → sections): one section name can sit in several layouts.
+      const hits = await findInEveryNode(p.rows);
+      row = hits[0]?.row || null;
+      if (hits.length > 1) warnings.push(`Also in: ${hits.slice(1).map((h) => h.place).join(', ')}. Each layout has its own copy, so translate each one.`);
+    } else if (p.rows?.length) {
+      row = isTree ? await findTreeRow(p.parent ? [p.parent] : [], p.rows) : await findGridRow(p.rows, p.rowMatch === 'richText' ? richTextMatcher(p.rows) : null);
+    }
+    const shown = (r) => {
+      const t = (r.querySelector('.x-grid3-col-masterLabel, .x-tree-node-anchor')?.innerText || p.rows[0]).trim();
+      return p.rowMatch === 'richText' ? p.rowLabel || t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : t;
+    };
     if (row) {
       mark(row, false);
       const cell = row.querySelector('.x-grid3-td-translation .x-grid3-cell-inner, .x-grid3-td-translation, .x-tree-col.translation');
@@ -598,9 +769,9 @@
           cell.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
         }
       }
-      toast(`Found "${(row.querySelector('.x-grid3-col-masterLabel, .x-tree-node-anchor')?.innerText || p.rows[0]).trim()}". Type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
+      toast(`Found "${shown(row)}". Type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
     } else {
-      toast(`Filters are set. ${p.rows?.length ? `Row "${p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
+      toast(`Filters are set. ${p.rows?.length ? `Row "${p.rowLabel || p.rows[0]}" was not found; scroll to it.` : 'Pick the row in the list.'} ${warnings.join(' ')}`, true);
     }
     finish();
   }
@@ -676,14 +847,85 @@
     return any ? any.querySelector(':scope > .x-tree-node-el') : null;
   }
 
-  async function findGridRow(candidates) {
+  /**
+   * Layout Section tree (layout → sections), parent unknown: open each layout and collect every
+   * match. A closed node's children are not on the page, so a search of what is visible stops at
+   * whichever layout happens to be open (bug: "Business Unit" under Buying Account Layout missed).
+   * Returns [{ row, place }], first match first.
+   */
+  async function findInEveryNode(candidates) {
+    const want = candidates.filter(Boolean).map(norm);
+    const anchor = (li) => (li.querySelector(':scope > .x-tree-node-el .x-tree-node-anchor')?.innerText || '').trim();
+    const nodeEl = (li) => li.querySelector(':scope > .x-tree-node-el');
+    const isClosed = (li) => nodeEl(li)?.classList.contains('x-tree-node-collapsed');
+    const toggle = (li) => li.querySelector(':scope > .x-tree-node-el .x-tree-ec-icon')?.dispatchEvent(new MouseEvent('click', { bubbles: true, view: window }));
+    const tops = [...document.querySelectorAll('li.x-tree-node')].filter((li) => !li.parentElement?.closest('li.x-tree-node'));
+    const hits = [];
+    const stopAt = Date.now() + 60000; // ponytail: 60 s budget; a layout list longer than that gets a partial search
+    for (const li of tops) {
+      if (Date.now() > stopAt) break;
+      const opened = isClosed(li);
+      if (opened) {
+        toggle(li);
+        // Done once it is no longer closed (an empty layout turns into a leaf, with no children).
+        await waitFor(() => !isClosed(li) && !nodeEl(li).classList.contains('x-tree-node-loading'), 4000).catch(() => null);
+      }
+      const hit = [...li.querySelectorAll('li.x-tree-node')].find((k) => want.includes(norm(anchor(k))));
+      if (hit) hits.push({ row: nodeEl(hit), place: anchor(li) });
+      else if (opened) toggle(li); // close layouts opened for nothing, so the list stays short
+    }
+    if (!hits.length) logEvent('warn', 'auto-fill', 'Section not found in any layout', { looking_for: candidates, layouts: tops.length });
+    else if (hits.length > 1) logEvent('info', 'auto-fill', `Section found in ${hits.length} layouts`, { looking_for: candidates, layouts: hits.map((h) => h.place) });
+    return hits;
+  }
+
+  /**
+   * Path Step Rich Text: the master cell shows the guidance as raw HTML (in UAT2 it equals Info exactly).
+   * Fallback when the exact compare misses: compare the text without tags, entities and spaces, and
+   * accept a prefix either way (a cut-off cell, or a shortened candidate). Returns a row scorer.
+   */
+  function richTextMatcher(candidates) {
+    // Same entity rules as htmlLines() in locator.js (no innerHTML: Salesforce pages may enforce Trusted Types).
+    const ENT = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+    const decode = (s) =>
+      s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) =>
+        e[0] === '#' ? cp(/^#x/i.test(e) ? parseInt(e.slice(2), 16) : Number(e.slice(1)), m) : ENT[e.toLowerCase()] ?? m
+      );
+    const cp = (n, m) => (n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m);
+    const key = (s) =>
+      decode(String(s ?? '').replace(/<[^>]*>/g, ' ').replace(/<[^>]*$/, ' '))
+        .replace(/(\.\.\.|…)\s*$/, '')
+        .replace(/[\s\u200B-\u200D\uFEFF]+/g, '')
+        .toLowerCase();
+    const want = candidates.filter(Boolean).map(key).filter(Boolean);
+    return (row) => {
+      const c = key(row.querySelector('.x-grid3-col-masterLabel')?.innerText);
+      if (!c) return 0;
+      if (want.includes(c)) return 3;
+      if (c.length >= 12 && want.some((w) => w.startsWith(c))) return 2;
+      if (want.some((w) => w.length >= 12 && c.startsWith(w))) return 1;
+      return 0;
+    };
+  }
+
+  async function findGridRow(candidates, scorer = null) {
     const want = candidates.filter(Boolean).map(norm);
     await waitFor(() => document.querySelector('.x-grid3-row'), 10000).catch(() => null);
+    const bestBy = (rows) => {
+      let top = null;
+      let topScore = 0;
+      for (const r of rows) {
+        const s = scorer(r);
+        if (s > topScore) [top, topScore] = [r, s];
+      }
+      return top;
+    };
     for (let page = 0; page < 40; page++) {
       const rows = [...document.querySelectorAll('.x-grid3-row')];
       const hit =
         rows.find((r) => want.includes(norm(r.querySelector('.x-grid3-col-masterLabel')?.innerText))) ||
-        rows.find((r) => [...r.querySelectorAll('.x-grid3-cell-inner')].some((c) => want.includes(norm(c.innerText))));
+        rows.find((r) => [...r.querySelectorAll('.x-grid3-cell-inner')].some((c) => want.includes(norm(c.innerText)))) ||
+        (scorer && bestBy(rows));
       if (hit) return hit;
       // Workbench pager: <table id="nextBtn" class="x-btn ..."><button>. Verified in a 238-row grid (Nov 2026).
       const nextWrap = document.querySelector('#nextBtn') || document.querySelector('.x-tbar-page-next')?.closest('table');

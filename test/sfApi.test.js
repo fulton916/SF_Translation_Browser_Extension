@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { soqlLike, loadLabelTranslations, stripAttributes, loadFlexiPageComponent } from '../src/sfApi.js';
+import { soqlLike, loadLabelTranslations, stripAttributes, loadFlexiPageComponent, loadOrgData } from '../src/sfApi.js';
 
 test('soqlLike escapes quotes, backslash, % and _', () => {
   assert.equal(soqlLike(String.raw`it's 50%_x\y`), String.raw`it\'s 50\%\_x\\y`);
@@ -58,4 +58,23 @@ test('loadFlexiPageComponent reads a field section label (real UAT2 shape)', asy
   assert.equal(pc.label, '{!$Label.Business_Unit}');
   assert.equal(pc.page, 'Prospect Record Page Three Column');
   assert.match(urls[0], /DeveloperName = 'prospect_record_page_three_column' LIMIT 1/);
+});
+
+test('loadOrgData: path guidance queries fail → warnings only, other sources still load', async () => {
+  globalThis.fetch = async (u) => {
+    const url = decodeURIComponent(u);
+    if (/FROM (PathAssistantStepInfo|PathAssistant)\b/.test(url)) {
+      return { ok: false, status: 400, text: async () => JSON.stringify([{ message: "sObject type 'PathAssistant' is not supported." }]) };
+    }
+    if (url.includes('/userinfo')) return { ok: true, json: async () => ({ language: 'en_US' }) };
+    if (url.endsWith('/sobjects')) return { ok: true, json: async () => ({ sobjects: [] }) };
+    return { ok: true, json: async () => ({ records: [], done: true }) };
+  };
+  const org = await loadOrgData({ host: 'paths-fail.my.salesforce.com', sid: 's' }, { refresh: true });
+  assert.equal(org.pathSteps, null);
+  assert.equal(org.paths, null);
+  assert.deepEqual(org.customLabels, []);
+  assert.equal(org.userLanguage, 'en_US');
+  assert.ok(org.warnings.some((w) => w.startsWith('Path guidance not searched')));
+  assert.ok(org.warnings.some((w) => w.startsWith('Paths not searched')));
 });

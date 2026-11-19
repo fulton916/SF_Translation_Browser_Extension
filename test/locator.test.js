@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { locate, normalize, matchType, contextObjects, parseSelectionName, buildGotoUrl, namespaceOf, isSetupPage, SOURCE } from '../src/locator.js';
+import { locate, normalize, matchType, contextObjects, parseSelectionName, buildGotoUrl, namespaceOf, isSetupPage, SOURCE, htmlLines, htmlToText, pathStepMatch, pathOfStep } from '../src/locator.js';
 
 const org = {
   userLanguage: 'en_US',
@@ -56,7 +56,8 @@ const accountDescribe = {
     { name: 'Partner Account', developerName: 'Partner', master: false },
     { name: 'Master', developerName: 'Master', master: true },
   ],
-  quickActions: [{ label: 'Log a Call', name: 'LogACall', type: 'LogACall' }],
+  // A custom global action (standard ones like LogACall are not in TW → Action).
+  quickActions: [{ label: 'Log a Call', name: 'Example_Log_Call', type: 'LogACall' }],
 };
 
 const run = (text, extra = {}) => locate({ text, org, describes: [accountDescribe], ...extra });
@@ -136,7 +137,10 @@ test('picklist, record type, quick action, validation, app, web tab', () => {
   assert.ok(vr.steps.includes('Object: Invoice'));
   assert.ok(first('Billing Console').steps.includes('Setup Component: App'));
   assert.ok(first('Training Portal').steps.includes('Setup Component: Web Tab'));
-  assert.equal(first('Sales').source, SOURCE.NOT_TRANSLATABLE);
+  // Renamed standard apps are listed in Translation Workbench → App (e.g. LightningSales "Acme Sales").
+  assert.equal(first('Sales').source, SOURCE.WORKBENCH);
+  assert.ok(first('Sales').steps.includes('Setup Component: App'));
+  assert.match(first('Sales').notes.join(' '), /Standard app: if it was renamed/);
   assert.equal(first('Home').source, SOURCE.RENAME_TABS);
 });
 
@@ -222,6 +226,7 @@ test('screenshot 3: "Activity" on a Lightning page tab shows one answer, partial
   const out = runLead('Activity', { tags: ['a', 'lightning-tab-bar', 'flexipage-tab2'] });
   assert.deepEqual(out.results.map((r) => r.key), ['area:lightningPageTab']);
   assert.equal(out.droppedPartial, 1); // "Last Activity" field label
+  assert.equal(out.more.length, 1); // still available behind "Show more"
 });
 
 test('only partials → at most 3 shown', () => {
@@ -229,6 +234,8 @@ test('only partials → at most 3 shown', () => {
   const out = locate({ text: 'Activity', org: many, describes: [] });
   assert.equal(out.results.length, 3);
   assert.equal(out.droppedPartial, 5);
+  assert.equal(out.more.length, 5);
+  assert.ok(out.more.every((r) => r.confidence === 'partial'));
 });
 
 test('Rename Tabs steps name the real row on the page', () => {
@@ -268,7 +275,7 @@ test('buildGotoUrl: standard field → Rename edit page + Step 2 auto-fill', () 
     decodeURIComponent(b.path),
     '/lightning/setup/RenameTab/page?address=/_ui/common/i18n/RenameTabStageManager?id=Account&l=de&setupid=RenameTab'
   );
-  assert.deepEqual(b.autofill, { page: 'renameStage', lang: 'de', fieldLabel: 'Industry', fieldName: 'Industry' });
+  assert.deepEqual(b.autofill, { page: 'renameStage', lang: 'de', fieldLabel: 'Industry', fieldName: 'Industry', candidates: ['Industry'] });
 });
 
 test('buildGotoUrl: no language chosen → rename uses org default', () => {
@@ -301,6 +308,38 @@ test('layout section goto searches for the clicked text', () => {
   const r = run('Additional Information', { hints: { tags: ['span', 'records-record-layout-section'] } }).results.find((x) => x.key === 'area:layoutSection');
   assert.equal(r.goto.component, 'LayoutSection');
   assert.deepEqual(r.goto.rows, ['Additional Information']);
+});
+
+// Bug (Nov 2026): right-clicking the "Business Unit" section header showed the Account field
+// "Business Unit" first, because the section card ranked below every exact match.
+const layoutHeaderHints = { tags: ['span', 'button', 'h3', 'records-record-layout-section', 'records-record-layout-block'] };
+const withBusinessUnitField = { ...accountDescribe, fields: [...accountDescribe.fields, { name: 'Business_Unit__c', label: 'Business Unit', custom: true, type: 'picklist', picklistValues: [] }] };
+const runSection = (extra = {}) => locate({ text: 'Business Unit', hints: layoutHeaderHints, org, describes: [withBusinessUnitField], ...extra });
+
+test('section header click ranks the layout section above a field with the same name', () => {
+  const out = runSection();
+  assert.equal(out.results[0].key, 'area:layoutSection');
+  assert.equal(out.results[0].confidence, 'confirmed');
+  assert.ok(out.results.some((r) => r.key.includes('Business_Unit__c')), 'field still listed lower down');
+});
+
+test('section header goto has no parent, so auto-fill opens every layout', () => {
+  const r = runSection().results[0];
+  assert.equal(r.goto.parent, null);
+  assert.deepEqual(r.goto.rows, ['Business Unit']);
+  assert.ok(r.notes.some((n) => /several page layouts/.test(n)));
+});
+
+test('blank space inside a section (no heading in the path) is not promoted over an exact match', () => {
+  const out = locate({ text: 'Business Unit', hints: { tags: ['div', 'records-record-layout-section'] }, org, describes: [withBusinessUnitField] });
+  const r = out.results.find((x) => x.key === 'area:layoutSection');
+  assert.equal(r.confidence, 'context');
+  assert.notEqual(out.results[0].key, 'area:layoutSection');
+});
+
+test('a field inside a section is not treated as the section header', () => {
+  const out = locate({ text: 'Business Unit', hints: { tags: ['span', 'records-record-layout-item', 'records-record-layout-section'] }, org, describes: [withBusinessUnitField] });
+  assert.ok(!out.results.some((r) => r.key === 'area:layoutSection'));
 });
 
 test('every Translation Workbench result has a goto', () => {
@@ -457,8 +496,8 @@ test('isSetupPage: Setup yes, record pages no', () => {
 
 test('Setup heading that equals a custom label → Salesforce text first, label hidden', () => {
   const out = locate({ text: 'Submit request', org, pageUrls: SETUP_URLS });
-  assert.equal(out.results[0].title, "Salesforce's own Setup text");
-  assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(out.results[0].title, 'Salesforce text');
+  assert.equal(out.results[0].source, SOURCE.SALESFORCE);
   assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
   assert.equal(out.droppedPartial, 1);
 });
@@ -558,4 +597,132 @@ test('field section, page not readable, label matched → no extra card, label s
 test('field section, page not readable, no label matched → the section card explains', () => {
   const out = locate({ text: 'Unmatched Header Text', hints: sectionHints, org: orgBU });
   assert.ok(out.results.some((r) => r.key === 'area:fieldSection'));
+});
+
+// ---------- Path guidance ("Guidance for Success" → Translation Workbench → Path Step Rich Text) ----------
+// Real UAT2 data (Nov 2026): PathAssistantStepInfo.Info is rich text HTML; DeveloperName carries the
+// picklist value Id, record type Id, object and field. The Workbench grid shows Info as raw HTML.
+
+const PATH_INFO =
+  '<ol><li><u>Build network of influencers</u><ol><li>Who needs to be contacted?</li><li>How will you connect with your Client?</li>' +
+  '<li>What is your timescale for contacting your Clients?  </li><li>Who else needs to be contacted?</li></ol></li></ol><p><br></p>';
+const pathOrg = {
+  ...org,
+  objects: [...org.objects, { name: 'Opportunity', label: 'Opportunity', labelPlural: 'Opportunities', custom: false }],
+  pathSteps: [
+    { Id: '1CF000000000001', DeveloperName: 'X80069814330387_01JVD00000Ed5rF2AR_012VD000008OBM4YAO_Opportunity_Sub_Stage_LST', MasterLabel: 'X80069814330387_01JVD00000Ed5rF2AR_012VD000008OBM4YAO_Opportunity_Sub_Stage_LST', Language: 'en_US', Info: PATH_INFO },
+    { Id: '1CF000000000002', DeveloperName: 'Lead_null_Status_01JD00000080e3FMAQ_810225277674347', MasterLabel: 'x', Language: 'en_US', Info: '<p>Call within 24 hours &amp; log the outcome</p>' },
+  ],
+  paths: [
+    { DeveloperName: 'Default_Opportunity', MasterLabel: 'Default', SobjectType: 'Opportunity', SobjectProcessField: 'StageName', RecordTypeId: null, IsActive: false },
+    { DeveloperName: 'Open_Opportunity', MasterLabel: 'Open Opportunity', SobjectType: 'Opportunity', SobjectProcessField: 'StageName', RecordTypeId: '012Ui000004aO4kIAE', IsActive: true },
+    { DeveloperName: 'Specification_Path', MasterLabel: 'Specification Path', SobjectType: 'Opportunity', SobjectProcessField: 'Sub_Stage_LST__c', RecordTypeId: '012VD000008OBM4YAO', IsActive: true },
+    { DeveloperName: 'Lead_Path', MasterLabel: 'Lead Path', SobjectType: 'Lead', SobjectProcessField: 'Status', RecordTypeId: null, IsActive: true },
+  ],
+};
+const oppDescribe = {
+  name: 'Opportunity', label: 'Opportunity', labelPlural: 'Opportunities', custom: false,
+  fields: [{ name: 'Sub_Stage_LST__c', label: 'Sub Stage', custom: true, type: 'picklist', picklistValues: [] }],
+  recordTypeInfos: [], quickActions: [],
+};
+// Real path from the record page: the guidance is Aura divs, found by data-aura-class.
+const guidanceHints = {
+  tags: ['li', 'ol', 'div', 'section', 'span', 'flexipage-aura-wrapper', 'forcegenerated-flexipage_opportunity_specification_record_page_three_column_opportunity__view_js___lmt___1'],
+  auraClasses: ['uiOutputRichText', 'runtime_sales_pathassistantPathAssistantInfo', 'runtime_sales_pathassistantPathAssistantBody', 'runtime_sales_pathassistantCollapsibleDrawer', 'runtime_sales_pathassistantPathAssistant'],
+};
+const runPath = (text, extra = {}) => locate({ text, org: pathOrg, describes: [oppDescribe], ...extra });
+const pathHit = (out) => out.results.find((r) => r.key.startsWith('path:'));
+
+test('htmlLines strips tags, decodes entities, one line per list item', () => {
+  assert.deepEqual(htmlLines(PATH_INFO), [
+    'Build network of influencers',
+    'Who needs to be contacted?',
+    'How will you connect with your Client?',
+    'What is your timescale for contacting your Clients?',
+    'Who else needs to be contacted?',
+  ]);
+  assert.equal(htmlToText('<p>A &amp; B&nbsp;&#8211; C&#x21;\u200B</p><p><br></p>'), 'A & B – C!');
+  assert.equal(htmlToText('<ol><li>Cut off here<o'), 'Cut off here');
+});
+
+test('pathStepMatch: a list line is exact, a phrase is partial, short words never match', () => {
+  assert.equal(pathStepMatch(normalize('Who needs to be contacted?'), PATH_INFO), 'exact');
+  assert.equal(pathStepMatch(normalize('Build network of influencers'), PATH_INFO), 'exact');
+  assert.equal(pathStepMatch(normalize('connect with your Client'), PATH_INFO), 'partial');
+  for (const t of ['a', 'Who', 'your', 'Client', 'contacted', 'Clients?']) assert.equal(pathStepMatch(normalize(t), PATH_INFO), null, t);
+  // Highlighted across list items: lines join with a space.
+  assert.equal(pathStepMatch(normalize('Who needs to be contacted?\nHow will you connect'), PATH_INFO), 'partial');
+});
+
+test('pathOfStep reads both real DeveloperName shapes', () => {
+  const steps = pathOrg.pathSteps;
+  assert.equal(pathOfStep(steps[0].DeveloperName, pathOrg.paths).path.DeveloperName, 'Specification_Path');
+  assert.equal(pathOfStep('X653945998243627_01J3i00000BITICEA5_null_Opportunity_StageName', pathOrg.paths).path.DeveloperName, 'Default_Opportunity');
+  assert.equal(pathOfStep(steps[1].DeveloperName, pathOrg.paths).path.DeveloperName, 'Lead_Path');
+  // No path data: object and field still come from the name.
+  assert.deepEqual(pathOfStep(steps[0].DeveloperName, null, pathOrg.objects), { path: null, object: 'Opportunity', field: 'Sub_Stage_LST' });
+  assert.deepEqual(pathOfStep(steps[1].DeveloperName, []), { path: null, object: 'Lead', field: 'Status' });
+});
+
+test('guidance line in the path guidance area → Workbench Path Step Rich Text, confirmed', () => {
+  const out = runPath('Who needs to be contacted?', { hints: guidanceHints });
+  assert.ok(out.areas.includes('path') && out.areas.includes('pathGuidance'));
+  const r = out.results[0];
+  assert.equal(r.key, 'path:1CF000000000001');
+  assert.equal(r.source, SOURCE.WORKBENCH);
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.title, 'Path guidance: Specification Path (Opportunity › Sub Stage)');
+  assert.ok(r.steps.includes('Setup Component: Path Step Rich Text'));
+  assert.ok(r.steps.some((s) => s.startsWith('Find the row that starts with "<ol><li><u>Build network')));
+  assert.ok(r.steps.some((s) => /one translation: keep its formatting/.test(s)));
+  assert.ok(!r.steps.some((s) => /^(Object|Aspect):/.test(s)));
+  assert.equal(r.goto.component, 'PathAssistantStepInfo');
+  assert.equal(r.goto.object, null);
+  assert.equal(r.goto.aspect, null);
+  assert.equal(r.goto.rows[0], PATH_INFO, 'raw HTML first: the grid cell equals Info exactly');
+  assert.equal(r.goto.rowMatch, 'richText');
+  assert.equal(r.goto.rowLabel, 'Build network of influencers');
+  const b = buildGotoUrl(r.goto, 'fr');
+  assert.equal(b.path, '/lightning/setup/LabelWorkbenchTranslate/home');
+  assert.equal(b.autofill.page, 'workbench');
+  assert.equal(b.autofill.component, 'PathAssistantStepInfo');
+  assert.equal(b.autofill.componentLabel, 'Path Step Rich Text');
+  assert.equal(b.autofill.lang, 'fr');
+});
+
+test('guidance line outside the path area is same text, a phrase is a guess', () => {
+  assert.equal(pathHit(runPath('Who needs to be contacted?')).confidence, 'exact');
+  assert.equal(pathHit(runPath('connect with your Client')).confidence, 'partial');
+  // Path chevrons are in the path area but not the guidance: a phrase there is not confirmed.
+  const chevron = { tags: ['a', 'li'], auraClasses: ['runtime_sales_pathassistantCollapsibleDrawer'] };
+  assert.equal(pathHit(runPath('connect with your Client', { hints: chevron })).confidence, 'partial');
+  assert.equal(pathHit(runPath('Who needs to be contacted?', { hints: chevron })).confidence, 'confirmed');
+});
+
+test('short words never produce a path guidance card', () => {
+  for (const t of ['Who', 'Client', 'a']) assert.equal(pathHit(runPath(t, { hints: guidanceHints })), undefined, t);
+});
+
+test('guidance from another object on the page is never confirmed', () => {
+  const r = pathHit(runPath('Call within 24 hours & log the outcome', { hints: guidanceHints }));
+  assert.equal(r.title, 'Path guidance: Lead Path (Lead › Status)');
+  assert.equal(r.confidence, 'partial');
+});
+
+test('path guidance still works without PathAssistant data (query failed)', () => {
+  const out = locate({ text: 'Who needs to be contacted?', hints: guidanceHints, org: { ...pathOrg, paths: null }, describes: [oppDescribe] });
+  const r = out.results[0];
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.title, 'Path guidance: unknown path (Opportunity › Sub Stage)');
+  assert.equal(r.goto.component, 'PathAssistantStepInfo');
+});
+
+test('no path guidance loaded → no path card, no crash', () => {
+  const out = locate({ text: 'Who needs to be contacted?', hints: guidanceHints, org: { ...pathOrg, pathSteps: null, paths: null }, describes: [oppDescribe] });
+  assert.equal(pathHit(out), undefined);
+});
+
+test('older content.js without auraClasses: tags only, still same text', () => {
+  const r = pathHit(runPath('Who needs to be contacted?', { hints: { tags: ['li', 'ol', 'div'] } }));
+  assert.equal(r.confidence, 'exact');
 });

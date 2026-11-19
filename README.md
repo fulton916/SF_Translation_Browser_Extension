@@ -17,13 +17,13 @@ screen and fills in the language and filters. You type the translation and click
 5. Pin the extension (puzzle-piece menu). Its toolbar icon opens the test log.
 6. Reload any open Salesforce tabs.
 7. In Salesforce, highlight a word, right-click, and choose **Find Salesforce translation for "..."**.
-   You can also right-click text without highlighting it.
+   You can also right-click text without highlighting it, or point at it and press **Alt + Shift + T**.
 
 After you update the code: click reload on the extension in `chrome://extensions`, then press F5 on
 your Salesforce tabs. Panels left open from before the reload stop working.
 
 Requirements: you are logged in to Salesforce, and your user has **API Enabled**.
-Custom label and validation-rule search also need **View Setup and Configuration**.
+Custom label, validation-rule and path guidance search also need **View Setup and Configuration**.
 
 ## Report a bug or test finding
 
@@ -62,24 +62,32 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Standard object name (Account, Opportunity) | **Rename Tabs and Labels** → Standard Tabs | Yes |
 | Custom object name | **Rename Tabs and Labels** → Custom Tabs (master label: Object Manager) | Yes |
 | Standard field label | **Rename Tabs and Labels** → object → Edit → Next (step 2) | Yes (current object) |
-| Standard tab (Home, Chatter) | **Rename Tabs and Labels** | Yes |
+| Standard tab (Chatter and others TabDefinition lists) | **Rename Tabs and Labels** | Yes |
+| Nav bar standard tab with no object/tab name match (Home, Calendar) | Salesforce text, not translatable, unless TabDefinition lists it with that name (then **Rename Tabs and Labels**) | From page metadata (`sfdc:TabDefinition.standard-<X>`, nav item `data-id="home"`) |
 | Custom field label / help text | **Translation Workbench** → Custom Field | Yes (current object) |
 | Standard field help text | **Translation Workbench** → Standard Field Help | Yes (current object) |
-| Picklist value | **Translation Workbench** → Picklist Value (or Global Value Set) | Yes (current object) |
+| Picklist value | **Translation Workbench** → Picklist Value, or → Global Value Set (tree: value set label → values) when the field uses one | Yes (current object). The value set is read from Tooling `CustomField.Metadata` for matching custom picklists, and from `StandardValueSet.Metadata` for a standard picklist you point at (inactive values too) |
+| Path step chevron | The path field's picklist value (above); the generic last "Closed" step is Salesforce text | Confirmed for the active path of the record's record type (read from the record) |
 | Record type | **Translation Workbench** → Record Type | Yes (current object) |
-| Quick action | **Translation Workbench** → Action | Yes (current object) |
+| Quick action | **Translation Workbench** → Action; feed actions (`FeedItem.*`, e.g. New Note, Post) and standard global actions (NewTask, NewContact, NewCase, NewEvent, LogACall…) are Salesforce text: TW → Action does not list them | Yes (current object) |
 | Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects) |
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
-| Page layout section header | **Translation Workbench** → Layout Section | From page metadata only |
+| Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Also detected on Aura classic record layouts: a `forcePageBlockSection` header (an `h1`–`h6` or `legend` in the path), not a `forcePageBlockItem` field; a custom label with the same text then drops to similar text. Auto-fill opens every layout and lists each copy of the section |
 | Flow screen text | **Translation Workbench** → Flow | From page metadata only |
+| Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance of the record's own path |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
 | Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
 | Record data: Product / Product Category Name and Description, plus enabled custom fields | **Data Translation**: the record's Translations tab (an admin adds it in Lightning App Builder) | Yes, on record pages; says how to enable it if off |
 | Record data in an org-built translation object (e.g. `Product_Translations__c`) | That object's related list on the record | Yes: any custom child object with "Translat" in its name |
-| Standard button (Edit, Delete) | Not translatable (Salesforce translates it) | Flagged |
+| Standard button (Edit, Delete) | Owned by Salesforce (Salesforce translates it) | Flagged |
 | Text typed into a custom LWC/Aura or Lightning App Builder | Not translatable until moved into a Custom Label | Flagged |
+| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → not translatable | Read from the FlexiPage for the clicked section, list header or tab. A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field |
+| Value in a record field, record name in the highlights panel | Record data (not translatable), formula output (change the formula), auto-number (Salesforce), a value missing from the picklist, or currency name (Salesforce). Inactive picklist values go to Picklist Value | When you point at the value, not the label (Details or highlights panel). An event box on the Calendar page (`runtime_calendar-*-event`) gives "Record data: Event subject", confirmed, with no Salesforce text card |
+| Salesforce text: path heading and buttons, activity timeline, duplicates card, Chatter feed, report chart, Calendar page (New Event, Today, day headers, My Calendars), global header (search, reminders) | Owned by Salesforce (Salesforce translates it) | Flagged from the page area |
+
+Matching rule: a highlight under 5 characters matches whole words only; 5 or more characters also match inside words.
 
 Language rule: if you are viewing Salesforce in the org default language, the text is the
 **master label**. Change it in Object Manager (or the label itself). Translations go into the
@@ -94,7 +102,7 @@ Salesforce has no documented deep links for these pages. These were found by ins
 | Custom label | `/01j/e?Parent=<label Id>` (New Translation), or `/<translation Id>/e` if one exists for the language | Picks the Language |
 | Standard object / field | `/_ui/common/i18n/RenameTabStageManager?id=<Object>&l=<lang>` | For a field: clicks Next (saves nothing), highlights the field on Step 2 |
 | Custom object | Rename Tabs and Labels list | Switches language, opens the object's Edit page |
-| Translation Workbench item | Translate page (`/i18n/TranslationWorkbench.apexp`) | Sets Language, Setup Component, Object, Aspect; finds the row (pages through the grid); opens its edit box |
+| Translation Workbench item | Translate page (`/i18n/TranslationWorkbench.apexp`) | Sets Language, Setup Component, Object, Aspect; finds the row (pages through the grid); opens its edit box. Path guidance: matches the row's raw HTML, or its text without tags |
 | Package item | Override page (`/i18n/LabelWorkbenchOverride.apexp`) | Same as Translate, plus picks the Package by namespace (warns if two packages share it) |
 | Record data | The record page | Clicks the Translations tab. If the page has none, says so |
 
@@ -129,6 +137,7 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
 ## Known limits
 
 - Fields, picklists, record types, and actions are searched for the object on the current page only.
+- Path guidance is matched on its master text only. Viewing Salesforce in a translated language, the guidance shows the translation, which is not searched.
 - Gov Cloud (`.mil`) and China (`.sfcrmproducts.cn`) domains are not mapped yet.
 - Experience Cloud sites are not supported (different session).
 - Some Setup component names in Translation Workbench vary slightly by org edition. The panel says
@@ -156,6 +165,7 @@ Auto-fill (`src/content.js`) runs against live Salesforce pages and is tested by
 |---|---|
 | `manifest.json` | Chrome extension setup (permissions, scripts) |
 | `src/background.js` | Right-click menu, Salesforce API calls, opens translation pages, writes the log |
+| `src/pointerTarget.js` | Picks the element the Alt+Shift+T shortcut describes: the highlighted text, else the element under the pointer (unit tested) |
 | `src/content.js` | Reads the clicked element, shows the panel, auto-fills Setup pages |
 | `src/locator.js` | Decides where each text is translated (no browser code; unit tested) |
 | `src/sfApi.js` | REST and Tooling API queries |
