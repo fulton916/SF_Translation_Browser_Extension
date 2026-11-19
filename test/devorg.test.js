@@ -37,3 +37,20 @@ test('A-26: the error message under a field is its validation rule, not the fiel
   assert.equal(rs[0].notes[0], 'You pointed at the error message shown under the field Coat Color.');
   assert.ok(!rs.some((r) => r.key.startsWith('value:')), 'not "Record data"');
 });
+
+test('A-16: text in a Lightning App Builder Rich Text component → Admin work required', () => {
+  const hints = {
+    tags: ['p', 'div', 'div', 'div', 'flexipage-aura-wrapper', 'slot', 'flexipage-component2', 'flexipage-tab2'],
+    auraClasses: ['uiOutputRichText', 'flexipageRichText'],
+    componentIds: ['demo_richText'],
+    tabRole: 'tabpanel',
+  };
+  const out = locate({ text: 'Ask the lead before shipping.', org: baseOrg, describes: [gadget], hints });
+  assert.ok(out.areas.includes('richText'));
+  const r = out.results[0];
+  assert.equal(r.key, 'area:richText');
+  assert.equal(r.source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.title, 'Rich text typed in Lightning App Builder');
+  assert.ok(!out.results.some((x) => x.key === 'area:lightningPageTab'));
+});

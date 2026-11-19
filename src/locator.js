@@ -215,6 +215,9 @@ export function detectAreas(hints = {}) {
   if (comp(/^runtime_sales_merge/)) areas.add('duplicates');
   if (comp(/^forceChatter_/)) areas.add('feed');
   if (comp(/^flexipage_reportChart/)) areas.add('reportChart');
+  // Lightning App Builder Rich Text component (dev org, checked live: p < div.uiOutputRichText <
+  // div[data-aura-class=flexipageRichText] < flexipage-aura-wrapper < flexipage-component2).
+  if (aura.includes('flexipageRichText') || has(/^flexipage-rich-?text/) || comp(/^flexipage_richText/)) areas.add('richText');
   // Path: the guidance is in Aura divs (no custom tag names), so read their data-aura-class too.
   // Verified live on an Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
   if (has(/(^lightning-path|pathassistant)/) || aura.some((a) => /pathassistant/i.test(a))) areas.add('path');
@@ -1168,6 +1171,22 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false) {
       notes: ['For standard relationships, the title is the plural object name: use Rename Tabs and Labels.'],
     });
   }
+  if (areas.has('richText')) {
+    out.push({
+      key: 'area:richText',
+      source: SOURCE.NOT_TRANSLATABLE,
+      confidence: 'confirmed',
+      title: 'Rich text typed in Lightning App Builder',
+      subtitle: 'Text of a Rich Text component on this Lightning page',
+      steps: [
+        'The text of a Rich Text component is typed in Lightning App Builder. Salesforce does not translate it.',
+        'To translate it, an admin replaces the component with one that shows a Custom Label (for example a custom Lightning component that reads $Label), then translates that label.',
+        'Or: one Rich Text component per language, each with a Component Visibility filter on the user\'s Language.',
+      ],
+      url: SETUP.customLabels,
+      notes: [],
+    });
+  }
   if (areas.has('customComponent')) {
     const names = [...(hints.tags || []).filter((t) => /^c-/.test(t)), ...(hints.auraCustom || [])];
     out.push({
@@ -1819,6 +1838,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   if (results.some((r) => r.key === 'area:layoutSection' && r.confidence === 'confirmed')) {
     demoteLabelsToPartial(results, 'page layout section names are not custom labels.');
   }
+  if (areas.has('richText')) demoteSameTextLabels(results, 'a Rich Text component shows typed text, not a custom label.');
 
   // Boost matches confirmed by the clicked element (e.g. sfdc:RecordField.Account.Industry)
   const confirmedFields = (hints.selectionNames || [])
