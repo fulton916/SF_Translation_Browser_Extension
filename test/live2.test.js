@@ -245,3 +245,20 @@ test('ISS-07: a disabled button under the pointer is found again at the pointer 
   doc.at = null;
   assert.equal(shortcutPath({ doc, selection: noSelection, pointerPath: [prevBtn, body, html], pointerXY: [10, 10] })[0], prevBtn);
 });
+
+test('disabled Today (pointer-events: none): the pointer hits the button container, the Today button inside is found', () => {
+  const box = (left, top, width, height) => () => ({ left, top, right: left + width, bottom: top + height, width, height });
+  const controls = { ...el('div', body), getBoundingClientRect: box(645, 162, 200, 32) };
+  const prev = { ...el('button', controls), getBoundingClientRect: box(645, 162, 32, 32) };
+  const next = { ...el('button', controls), getBoundingClientRect: box(677, 162, 32, 32) };
+  const today = { ...el('button', controls), getBoundingClientRect: box(717, 162, 69, 32) };
+  controls.children = [prev, next, today];
+  doc.at = controls; // elementFromPoint skips the disabled button
+  const path = shortcutPath({ doc, selection: noSelection, pointerPath: [controls, body, html], pointerXY: [751, 178] });
+  assert.equal(path[0], today);
+  assert.ok(path.includes(controls));
+  // Pointer on Previous Week: still Previous Week.
+  assert.equal(shortcutPath({ doc, selection: noSelection, pointerPath: [controls, body, html], pointerXY: [660, 178] })[0], prev);
+  // Pointer on the container's gap between buttons: the container.
+  assert.equal(shortcutPath({ doc, selection: noSelection, pointerPath: [controls, body, html], pointerXY: [712, 178] })[0], controls);
+});
