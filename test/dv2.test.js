@@ -464,6 +464,9 @@ test('R-67: nav bar Calendar (standard-Event) is Salesforce\'s own tab; same-tex
   assert.equal(out.results[0].key, 'sfdctab:Event');
   assert.equal(out.results[0].confidence, 'confirmed');
   assert.equal(out.results[0].title, 'Salesforce text');
+  // WORD-01 (C-05): plain subtitle, no "standard-Event" jargon and no copy button for Salesforce-owned text.
+  assert.equal(out.results[0].subtitle, 'Standard tab Calendar');
+  assert.equal(out.results[0].copy, undefined);
   assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
   // An object tab whose object name matches stays the Rename Tabs answer.
   const acct = locate({ text: 'Accounts', org, describes: [], hints: { ...hints, selectionNames: ['sfdc:TabDefinition.standard-Account'], attrs: { 'data-id': 'Account' } } }).results;
@@ -623,7 +626,7 @@ test('R-05: inside the Record Type field, the note names the page label, not onl
   const rs = locate({ text: 'Example Type', org: baseOrg, describes: [acct], hints: { selectionNames: ['sfdc:RecordField.Account.RecordTypeId'], fieldPart: 'value' } }).results;
   assert.equal(rs[0].key, 'rt:Account.Example_Type');
   const r = rs.find((x) => x.key === 'field:Account.RecordTypeId');
-  assert.equal(r.notes[0], 'You clicked inside this field. The page shows it as "Account Record Type"; its API label is "Record Type ID".');
+  assert.equal(r.notes[0], 'You pointed inside this field. The page shows it as "Account Record Type"; its API label is "Record Type ID".');
 });
 
 test('R-01: a renamed standard field tells which row to find on Step 2 and how the page shows it', () => {
