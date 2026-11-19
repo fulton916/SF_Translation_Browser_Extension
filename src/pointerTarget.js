@@ -24,6 +24,25 @@ globalThis.sftlPointer = (() => {
   }
 
   /**
+   * The innermost child of el (shadow children too) whose box holds the point. elementFromPoint skips
+   * elements with pointer-events: none, such as Lightning's disabled buttons (seen live: the disabled calendar
+   * "Today" gave its container, whose first label is "Previous Week").
+   */
+  function innermostAt(el, x, y) {
+    let cur = el;
+    for (let depth = 0; cur && depth < 60; depth++) {
+      const kids = [...(cur.shadowRoot?.children || []), ...(cur.children || [])];
+      const hit = kids.findLast((k) => {
+        const r = k.getBoundingClientRect?.();
+        return r && r.width > 0 && r.height > 0 && x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+      });
+      if (!hit) break;
+      cur = hit;
+    }
+    return cur;
+  }
+
+  /**
    * Path for the shortcut: the highlighted text's element when text is selected (R-06: a selection made
    * away from the mouse got the hovered element's page area), else the element under the pointer, looked
    * up again at the last pointer position (C-02: a disabled "Today" button gets no mousemove, so the path
@@ -32,7 +51,8 @@ globalThis.sftlPointer = (() => {
   function shortcutPath({ doc, selection, pointerPath, pointerXY }) {
     let path = (pointerPath || []).filter((n) => n && n.nodeType === 1);
     if (pointerXY) {
-      const el = deepElementAt(doc, pointerXY[0], pointerXY[1]);
+      const at = deepElementAt(doc, pointerXY[0], pointerXY[1]);
+      const el = at && innermostAt(at, pointerXY[0], pointerXY[1]);
       if (el && el !== path[0]) path = composedAncestors(el);
     }
     if (selection && selection.rangeCount && String(selection).trim()) {
@@ -43,5 +63,5 @@ globalThis.sftlPointer = (() => {
     return path;
   }
 
-  return { composedAncestors, deepElementAt, shortcutPath };
+  return { composedAncestors, deepElementAt, innermostAt, shortcutPath };
 })();
