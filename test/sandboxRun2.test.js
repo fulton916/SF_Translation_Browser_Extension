@@ -68,8 +68,11 @@ test('ISS-02: loadValueSet reads a standard picklist from its StandardValueSet (
   globalThis.fetch = async (u) => {
     const url = decodeURIComponent(u);
     urls.push(url);
-    const records = /SELECT Id, MasterLabel FROM StandardValueSet/.test(url)
-      ? [{ attributes: {}, Id: '0s8000000000001AAA', MasterLabel: 'LeadSource' }]
+    // Checked live (v62.0): every StandardValueSet row carries this placeholder Id, and a Metadata
+    // query filtered by Id fails with MALFORMED_QUERY.
+    if (/FROM StandardValueSet WHERE Id/.test(url)) return { ok: false, status: 400, text: async () => '[{"message":"StandardValueSet: filtered column Id not found","errorCode":"MALFORMED_QUERY"}]' };
+    const records = /SELECT (Id, )?MasterLabel FROM StandardValueSet/.test(url)
+      ? [{ attributes: {}, Id: '000000000000000AAA', MasterLabel: 'LeadSource' }]
       : [{ attributes: {}, Metadata: { sorted: false, standardValue: [
           { valueName: 'Web', label: 'Web', isActive: null, default: false },
           { valueName: 'Old%20Fair', label: 'Old Fair', isActive: false, default: false },
@@ -79,7 +82,8 @@ test('ISS-02: loadValueSet reads a standard picklist from its StandardValueSet (
   const vs = await loadValueSet({ host: 'sandbox-std.my.salesforce.com', sid: 's' }, 'Opportunity', 'LeadSource');
   assert.deepEqual(vs, { name: null, values: [{ value: 'Web', label: 'Web', active: true }, { value: 'Old Fair', label: 'Old Fair', active: false }] });
   assert.match(urls[0], /\/tooling\/query\/.*WHERE MasterLabel IN \('OpportunityLeadSource','LeadSource'\)/);
-  assert.match(urls[1], /SELECT Metadata FROM StandardValueSet WHERE Id = '0s8000000000001AAA'/);
+  assert.match(urls[1], /SELECT Metadata FROM StandardValueSet WHERE MasterLabel = 'LeadSource'/);
+  assert.ok(!urls.some((u) => /StandardValueSet WHERE Id/.test(u)), 'never filters StandardValueSet Metadata by Id');
   // Known names first: StageName is in the OpportunityStage set.
   await loadValueSet({ host: 'sandbox-std.my.salesforce.com', sid: 's' }, 'Opportunity', 'StageName');
   assert.match(urls[2], /MasterLabel IN \('OpportunityStage','OpportunityStageName','StageName'\)/);
