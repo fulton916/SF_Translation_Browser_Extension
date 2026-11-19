@@ -311,7 +311,7 @@ export function loadValueSet(session, objectName, fieldName) {
     const name = meta?.valueSetName;
     if (!name) {
       // The field's own values, inactive ones included (REST describe lists active values only;
-      // DV2: Contact Business Unit "EX EMEA" is inactive).
+      // DV2: an inactive Contact picklist value).
       const values = valueList(meta?.valueSetDefinition?.value);
       return values.length ? { name: null, values } : null;
     }
