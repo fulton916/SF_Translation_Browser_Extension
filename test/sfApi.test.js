@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { soqlLike, loadLabelTranslations, stripAttributes, loadFlexiPageComponent, loadOrgData, utilityItems, loadUtilityApps, loadUtilityBar, loadPipelineMetrics } from '../src/sfApi.js';
+import { soqlLike, loadLabelTranslations, stripAttributes, loadFlexiPageComponent, loadOrgData, utilityItems, loadUtilityApps, loadUtilityBar, loadPipelineMetrics, parsePipelineMetricTranslations, loadPipelineMetricTranslations, translationsTabIds, loadTranslationsTabIds } from '../src/sfApi.js';
 
 test('soqlLike escapes quotes, backslash, % and _', () => {
   assert.equal(soqlLike(String.raw`it's 50%_x\y`), String.raw`it\'s 50\%\_x\\y`);
@@ -164,4 +164,67 @@ test('loadPipelineMetrics: an org without Pipeline Inspection has no metric name
   const rows = await loadPipelineMetrics({ host: 'pipeline.example.com', sid: 's' });
   assert.equal(rows[0].MasterLabel, 'Example Open Deals');
   assert.match(urls[0], /\/services\/data\/v\d+\.0\/query\/\?q=SELECT Id, DeveloperName, MasterLabel, Language, Metric FROM PipelineInspMetricConfig$/);
+});
+
+// Issue #23. Shapes as read live in the dev org (Nov 2026): readMetadata Translations "fr" (a row with no
+// translation has a comment as its label) and the FlexiPage of a Product2 page with a Translations tab.
+const translationsXml =
+  '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns="http://soap.sforce.com/2006/04/metadata"><soapenv:Body><readMetadataResponse><result><records xsi:type="Translations"><fullName>fr</fullName>' +
+  '<customLabels><label>Bienvenue à l&apos;atelier</label><name>SFTL_Greeting</name></customLabels>' +
+  '<pipelineInspMetricConfigs><label>Affaires perdues</label><name>LostDeals</name></pipelineInspMetricConfigs>' +
+  '<pipelineInspMetricConfigs><description><!-- x --></description><label><!-- Open Deals --></label><name>OpenDeals</name></pipelineInspMetricConfigs>' +
+  '<pipelineInspMetricConfigs><label>L&apos;entonnoir</label><name>Funnel</name></pipelineInspMetricConfigs>' +
+  '</records></result></readMetadataResponse></soapenv:Body></soapenv:Envelope>';
+
+test('#23: renamed metric translations are read from Translations, untranslated rows left out', async () => {
+  assert.deepEqual(parsePipelineMetricTranslations(translationsXml), [
+    { name: 'LostDeals', label: 'Affaires perdues' },
+    { name: 'Funnel', label: "L'entonnoir" },
+  ]);
+  const bodies = [];
+  globalThis.fetch = async (u, init) => {
+    bodies.push(init.body);
+    return { ok: true, status: 200, text: async () => translationsXml };
+  };
+  const session = { host: 'metrics23.my.salesforce.com', sid: 'x' };
+  const rows = await loadPipelineMetricTranslations(session, 'fr');
+  assert.equal(rows.length, 2);
+  assert.match(bodies[0], /<s:type>Translations<\/s:type><s:fullNames>fr<\/s:fullNames>/);
+  assert.equal(await loadPipelineMetricTranslations(session, "fr'); x"), null);
+});
+
+const productPage = {
+  DeveloperName: 'SFTL_Product_Record_Page',
+  MasterLabel: 'SFTL Product Record Page',
+  Metadata: {
+    flexiPageRegions: [
+      {
+        name: 'Facet-p-tabs',
+        type: 'Facet',
+        itemInstances: [
+          { componentInstance: { componentName: 'flexipage:tab', identifier: 'flexipage_tab1', componentInstanceProperties: [{ name: 'title', value: 'Standard.Tab.detail' }] } },
+          { componentInstance: { componentName: 'flexipage:tab', identifier: 'flexipage_tab2', componentInstanceProperties: [{ name: 'body', value: 'Facet-p-tr' }, { name: 'title', value: 'Standard.Tab.translations' }] } },
+        ],
+      },
+      { name: 'main', type: 'Region', itemInstances: [{ componentInstance: { componentName: 'flexipage:tabset', identifier: 'flexipage_tabset' } }] },
+    ],
+  },
+};
+
+test('#23: the Translations tab is found by its title key in the page metadata, in any language', async () => {
+  assert.deepEqual(translationsTabIds(productPage), ['flexipage_tab2']);
+  assert.deepEqual(translationsTabIds({ Metadata: { flexiPageRegions: [] } }), []);
+  // A title the admin typed: the same text in every language.
+  const typed = { componentInstance: { componentName: 'flexipage:tab', identifier: 'sftl_tab_tr', componentInstanceProperties: [{ name: 'title', value: 'Translations' }] } };
+  assert.deepEqual(translationsTabIds({ Metadata: { flexiPageRegions: [{ itemInstances: [typed] }] } }), ['sftl_tab_tr']);
+  const urls = [];
+  globalThis.fetch = async (u) => {
+    urls.push(decodeURIComponent(u));
+    return { ok: true, status: 200, json: async () => ({ records: [productPage], done: true }) };
+  };
+  const session = { host: 'tabs23.my.salesforce.com', sid: 'x' };
+  const ids = await loadTranslationsTabIds(session, 'forcegenerated-flexipage_sftl_product_record_page_product2__view_js', ['Product2']);
+  assert.deepEqual(ids, ['flexipage_tab2']);
+  assert.match(urls[0], /FROM FlexiPage WHERE DeveloperName = 'sftl_product_record_page'/);
+  assert.deepEqual(await loadTranslationsTabIds(session, 'not-a-page', []), []);
 });

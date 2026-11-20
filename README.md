@@ -187,7 +187,7 @@ Salesforce has no documented deep links for these pages. These were found by ins
 | Custom object | Setup → Rename Tabs and Labels (`/lightning/setup/RenameTab/home`) | Switches language, opens the object's Edit page (`RenameEntityUi/e`, one page, no Next); highlights Singular, Plural, or for its Name field Record Name |
 | Translation Workbench item | Setup → Translate (`/lightning/setup/LabelWorkbenchTranslate/home`) | Sets Language, Setup Component, Object, Aspect (for a flow: Flow, Flow Component, Screen, Screen Component, Aspect); finds the row (pages through the grid; a tree is searched again until it has loaded, up to 15 s) and marks it. Double-click its translation cell to type: a script-opened edit box closed on the next click and lost the text. Path guidance: matches the row's raw HTML, or its text without tags |
 | Package item | Setup → Override (`/lightning/setup/LabelWorkbenchOverride/home`) | Same as Translate, plus picks the Package by namespace (warns if two packages share it) |
-| Record data | The record page | Clicks the Translations tab. If the page has none, says so |
+| Record data | The record page | Clicks the Translations tab, found by its App Builder identifier in any language. If the page has none, says so |
 
 Pick the target language in the panel ("Translate into"). It starts on the org default language; every
 language, including English, can be picked. The extension never clicks Save. If you switch tabs while
@@ -227,10 +227,14 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
   related list's rows, the child object's field labels are searched too.
 - Per lookup, the full value list (inactive values and value sets) is read for at most 4 picklist fields,
   the one you point at first.
-- Salesforce text is recognised by page markers, in any language. A few checks still use English words
-  (#23): the help icon's `Help ` prefix, the auto-fill search for the record's Translations tab, a path
-  guidance highlight that starts with its heading, and Salesforce's required-field messages. Viewing another
-  language, a Pipeline metric tile lists every renamed metric as context instead of naming one.
+- Salesforce text is recognised by page markers, in any language. Two checks still use English words: a
+  path guidance highlight that starts with its heading, and Salesforce's required-field messages.
+- The record's Translations tab is found by the page metadata (Lightning App Builder's standard
+  "Translations" tab title, or a title typed as "Translations"), so auto-fill needs the View Setup permission
+  to read the page. A tab with any other title is not found.
+- Viewing another language, a renamed Pipeline metric tile is named from its Translation Workbench row
+  (Metadata API, needs Modify Metadata or Modify All Data). Without that access, every renamed metric is listed
+  as context.
 - Path guidance is matched on its master text only. Viewing Salesforce in a translated language, the guidance shows the translation, which is not searched.
 - Validation messages are matched on their master text. A translated message is found only when it shows
   under a field (by the rule's error location, confirmed through the rule's translation); a translated message

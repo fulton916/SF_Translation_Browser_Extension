@@ -1,4 +1,4 @@
-import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation, loadUtilityApps, loadUtilityBar, loadPipelineMetrics } from './sfApi.js';
+import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation, loadUtilityApps, loadUtilityBar, loadPipelineMetrics, loadPipelineMetricTranslations, loadTranslationsTabIds } from './sfApi.js';
 import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas, findUtilityItem } from './locator.js';
 import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
 
@@ -144,6 +144,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       log('error', 'go-to-translation', e.message, { page: pathOf(sender.tab.url), details: { goto: msg.goto, lang: msg.lang }, stack: e.stack });
       sendResponse({ error: e.message });
     });
+    return true;
+  }
+  // Auto-fill on a record page: the Translations tab's App Builder identifier, read from the page metadata.
+  if (msg?.type === 'sftl:translationsTab' && sender.tab) {
+    getSession(sender.tab.url)
+      .then((session) => loadTranslationsTabIds(session, msg.flexipage, msg.object ? [msg.object] : []))
+      .then((ids) => sendResponse({ ids }), (e) => sendResponse({ error: e.message || String(e) }));
     return true;
   }
   if (msg?.type === 'sftl:log') {
@@ -375,7 +382,17 @@ async function lookup({ text, hints, urls, refresh = false }) {
       return null;
     });
   }
-  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations, utilityBars, pipelineMetrics }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
+  // Viewing another language: a renamed metric's tile shows its translation (Translation Workbench), which
+  // PipelineInspMetricConfig never holds. Read it only when the org has a renamed metric.
+  let pipelineMetricTranslations = null;
+  const isMasterLabel = (pipelineMetrics || []).some((m) => m.MasterLabel && normalize(m.MasterLabel) === needle);
+  if (pipelineMetrics?.length && !isMasterLabel && org.userLanguage && org.defaultLanguage && org.userLanguage !== org.defaultLanguage) {
+    pipelineMetricTranslations = await loadPipelineMetricTranslations(session, org.userLanguage, { refresh }).catch((e) => {
+      warnings.push(`Pipeline Inspection metric translations not read: ${e.message || e}`);
+      return null;
+    });
+  }
+  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations, utilityBars, pipelineMetrics, pipelineMetricTranslations }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
   return {
     ...located,
     hints,

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SF Translation Locator",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Right-click Salesforce text or press Alt+Shift+T to find its translation: Custom Labels, Rename Tabs, Workbench, Data Translation",
   "permissions": ["alarms", "contextMenus", "cookies", "scripting", "storage"],
   "host_permissions": [
