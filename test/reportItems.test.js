@@ -195,7 +195,10 @@ test('the whole report only reads (GET queries and readMetadata) and lists the m
     if (/FROM Organization/.test(url)) rows = [{ LanguageLocaleKey: 'en_US' }];
     else if (/FROM Translation/.test(url)) rows = [{ Language: 'fr', IsActive: true }, { Language: 'en_US', IsActive: true }];
     else if (/FROM ExternalString$/.test(url)) rows = [{ Id: '101000000000002AAA', Name: 'Demo_Bye', NamespacePrefix: null, Value: 'Bye', Language: 'en_US' }];
-    else if (/FROM TabDefinition/.test(url)) rows = [{ Name: 'Demo_Gadget__c', Label: 'Gadgets', IsCustom: true, SobjectName: 'Demo_Gadget__c' }];
+    else if (/FROM TabDefinition/.test(url)) rows = [
+      { Name: 'Demo_Gadget__c', Label: 'Gadgets', IsCustom: true, SobjectName: 'Demo_Gadget__c' },
+      { Name: 'Demo_Help', Label: 'Help Desk', IsCustom: true, SobjectName: null },
+    ];
     return { ok: true, json: async () => ({ records: rows, done: true }) };
   };
   const steps = [];
@@ -211,5 +214,7 @@ test('the whole report only reads (GET queries and readMetadata) and lists the m
   }
   const meta = calls.filter((c) => c.method === 'POST').map((c) => c.body);
   assert.ok(meta.some((b) => /CustomObjectTranslation.*Demo_Gadget__c-en_US.*Demo_Gadget__c-fr/.test(b)));
-  assert.ok(meta.some((b) => /<s:type>Translations<\/s:type><s:fullNames>en_US<\/s:fullNames><s:fullNames>fr<\/s:fullNames>/.test(b)));
+  // The Translations file is large (every label, flow and report type): one language per call.
+  const translations = meta.filter((b) => /<s:type>Translations<\/s:type>/.test(b)).map((b) => [...b.matchAll(/<s:fullNames>([^<]+)</g)].map((m) => m[1]));
+  assert.deepEqual(translations.sort(), [['en_US'], ['fr']]);
 });
