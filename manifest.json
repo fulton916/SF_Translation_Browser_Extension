@@ -10,7 +10,8 @@
     "https://*.salesforce-setup.com/*"
   ],
   "action": {
-    "default_title": "SF Translation Locator: open the test log"
+    "default_title": "SF Translation Locator: missing translations report and test log",
+    "default_popup": "src/popup.html"
   },
   "background": {
     "service_worker": "src/background.js",
