@@ -218,3 +218,26 @@ test('the whole report only reads (GET queries and readMetadata) and lists the m
   const translations = meta.filter((b) => /<s:type>Translations<\/s:type>/.test(b)).map((b) => [...b.matchAll(/<s:fullNames>([^<]+)</g)].map((m) => m[1]));
   assert.deepEqual(translations.sort(), [['en_US'], ['fr']]);
 });
+
+test('CSV: header, one row per item, quoting, formula guard, BOM and CRLF', async () => {
+  const { toCsv, csvCell, CSV_COLUMNS } = await import('../src/report.js');
+  assert.equal(csvCell('plain'), 'plain');
+  assert.equal(csvCell('a, "b"'), '"a, ""b"""');
+  assert.equal(csvCell('two\nlines'), '"two\nlines"');
+  assert.equal(csvCell('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"');
+  assert.equal(csvCell('-5'), "'-5");
+  assert.equal(csvCell(null), '');
+  const csv = toCsv(
+    [
+      { language: 'fr', type: ITEM_TYPE.FIELD_LABEL, objectLabel: 'Gadget', name: 'Demo_Gadget__c.Demo_Color__c', master: 'Coat, Color' },
+      { language: 'de', type: ITEM_TYPE.CUSTOM_LABEL, objectLabel: null, name: 'Demo_Bye', master: 'Tschüss' },
+    ],
+    { languageNames: { fr: 'French' }, pageOf: (i) => (i.language === 'fr' ? 'https://demo.lightning.force.com/lightning/setup/LabelWorkbenchTranslate/home' : '') }
+  );
+  assert.ok(csv.startsWith('\uFEFF'));
+  const lines = csv.slice(1).split('\r\n');
+  assert.equal(lines[0], CSV_COLUMNS.join(','));
+  assert.equal(lines[1], 'fr,French,Field label,Gadget,Demo_Gadget__c.Demo_Color__c,"Coat, Color",https://demo.lightning.force.com/lightning/setup/LabelWorkbenchTranslate/home');
+  assert.equal(lines[2], 'de,German,Custom label,,Demo_Bye,Tschüss,');
+  assert.equal(lines[3], '');
+});
