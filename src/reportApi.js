@@ -39,10 +39,14 @@ const LANGUAGE = /^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/;
 const READ_BATCH = 10; // readMetadata reads at most 10 names per call
 const PARALLEL = 3;
 
-/** readMetadata of `type` for many names: { fullName → record XML }, 10 names per call, 3 calls at a time. */
-export async function readMetadata(session, type, fullNames, onProgress) {
+/**
+ * readMetadata of `type` for many names: { fullName → record XML }, `batch` names per call (at most 10),
+ * 3 calls at a time.
+ */
+export async function readMetadata(session, type, fullNames, onProgress, { batch = READ_BATCH } = {}) {
+  const size = Math.max(1, Math.min(batch, READ_BATCH));
   const chunks = [];
-  for (let i = 0; i < fullNames.length; i += READ_BATCH) chunks.push(fullNames.slice(i, i + READ_BATCH));
+  for (let i = 0; i < fullNames.length; i += size) chunks.push(fullNames.slice(i, i + size));
   const out = {};
   let next = 0;
   let done = 0;
@@ -125,12 +129,23 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
     }
   }
 
-  say('Reading tabs and global value sets…');
+  // Web tabs are in the Translations file of each language, which also holds every custom label, flow and
+  // report type: over 1 MB and many seconds per language in a large test sandbox. Read only when the org has a web tab
+  // of its own, one language per call.
   const sets = (valueSets || []).filter((v) => API_NAME.test(v.DeveloperName || ''));
+  const webTabs = (org.tabs || []).filter((t) => t.IsCustom && !t.SobjectName && isOwnItem(t.Name));
+  const progress = { tabs: 0, tabsOf: webTabs.length ? codes.length + 1 : 0, sets: 0, setsOf: 0 };
+  const sayTabs = () =>
+    say(`Reading ${[progress.tabsOf ? `tab translations… ${progress.tabs} of ${progress.tabsOf}` : '', progress.setsOf ? `global value sets… ${progress.sets} of ${progress.setsOf}` : ''].filter(Boolean).join(', ') || 'tabs and global value sets…'}`);
+  sayTabs();
   const [tabXml, setXml] = await Promise.all([
-    readMetadata(session, 'Translations', [orgDefault, ...codes]).catch(soft('Web tabs')),
+    webTabs.length
+      ? readMetadata(session, 'Translations', [orgDefault, ...codes], (d) => ((progress.tabs = d), sayTabs()), { batch: 1 }).catch(soft('Web tabs'))
+      : {},
     sets.length
-      ? readMetadata(session, 'GlobalValueSetTranslation', sets.flatMap((v) => codes.map((c) => `${v.DeveloperName}-${c}`))).catch(soft('Global value set values'))
+      ? readMetadata(session, 'GlobalValueSetTranslation', sets.flatMap((v) => codes.map((c) => `${v.DeveloperName}-${c}`)), (d, n) => ((progress.sets = d), (progress.setsOf = n), sayTabs())).catch(
+          soft('Global value set values')
+        )
       : {},
   ]);
   if (tabXml) {
