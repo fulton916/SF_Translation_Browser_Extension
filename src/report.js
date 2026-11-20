@@ -261,3 +261,23 @@ export function summarize(languages, items) {
     missing,
   };
 }
+
+// ---------- CSV export ----------
+
+export const CSV_COLUMNS = ['Language code', 'Language', 'Type', 'Object', 'API name', 'Master text', 'Translation page'];
+
+/** One CSV cell: quoted when needed, and text a spreadsheet would run as a formula (=, +, -, @) starts with '. */
+export function csvCell(value) {
+  let s = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Missing items as CSV (RFC 4180, CRLF line ends, UTF-8 BOM so Excel reads accents).
+ * `pageOf(item)`: the item's translation page URL, or '' (reportPage.js passes buildGotoUrl with the org origin).
+ */
+export function toCsv(items, { languageNames = {}, pageOf = () => '' } = {}) {
+  const lines = [CSV_COLUMNS, ...(items || []).map((i) => [i.language, languageNames[i.language] || languageName(i.language) || i.language, i.type, i.objectLabel || '', i.name, i.master, pageOf(i) || ''])];
+  return '\uFEFF' + lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}

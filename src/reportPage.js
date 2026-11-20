@@ -5,7 +5,7 @@
 import { getSession } from './sfApi.js';
 import { buildGotoUrl } from './locator.js';
 import { loadMissingTranslations } from './reportApi.js';
-import { ITEM_TYPES } from './report.js';
+import { ITEM_TYPES, toCsv } from './report.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE_SIZE = 500;
@@ -160,7 +160,27 @@ async function goTo(item, button) {
   }
 }
 
+/** The rows that match the filter, as a CSV file (saved by the browser; nothing is sent anywhere). */
+function exportCsv() {
+  const items = filtered();
+  const languageNames = Object.fromEntries(report.languages.map((l) => [l.code, l.name]));
+  const pageOf = (i) => {
+    const built = buildGotoUrl(i.goto, i.language, report.orgDefault);
+    return built ? origin + built.path : '';
+  };
+  const url = URL.createObjectURL(new Blob([toCsv(items, { languageNames, pageOf })], { type: 'text/csv;charset=utf-8' }));
+  const a = el('a');
+  a.href = url;
+  a.download = `missing-translations-${new URL(origin).hostname.split('.')[0]}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  log('info', `Report: exported ${items.length} rows as CSV`);
+}
+
 $('run').addEventListener('click', run);
+$('csv').addEventListener('click', exportCsv);
 for (const id of ['f-lang', 'f-type']) $(id).addEventListener('change', () => ((shownCount = PAGE_SIZE), renderRows()));
 $('f-text').addEventListener('input', () => ((shownCount = PAGE_SIZE), renderRows()));
 
