@@ -78,3 +78,51 @@ test('Files related list: Upload Files and Or drop files are Salesforce text', (
     assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL), text);
   }
 });
+
+// Utility bars read from the org (sfApi loadUtilityBar; dev org Sales app, checked live): the "label" decorator is
+// the label typed in App Manager, an item without one shows the name Salesforce gives its component.
+const salesBar = {
+  app: 'Sales', page: 'Sales App Utility Bar', current: true,
+  items: [
+    { id: 'runtime_sales_todo_list_unifiedToDoListAuraWrapper', component: 'runtime_sales_todo_list:unifiedToDoListAuraWrapper', label: null },
+    { id: 'flexipage_richText', component: 'flexipage:richText', label: 'Example Tips' },
+    { id: 'console_history', component: 'console:history', label: null },
+  ],
+};
+const itemHints = (id) => ({ ...todoItem, sfComponents: [], componentIds: [id] });
+
+test('Utility item with a label typed in App Manager: confirmed, names the app and the item', () => {
+  const orgBars = { ...org, utilityBars: [salesBar], customLabels: [...org.customLabels, lbl('101D00000000062', 'Example_Tips', 'Example Tips')] };
+  const out = locate({ text: 'Example Tips', org: orgBars, describes: [], hints: itemHints('flexipage_richText') });
+  const r = out.results[0];
+  assert.equal(r.key, 'utility:flexipage_richText');
+  assert.equal(r.source, SOURCE.NOT_TRANSLATABLE);
+  assert.equal(r.confidence, 'confirmed');
+  assert.match(r.subtitle, /"Example Tips" utility item in the Sales app/);
+  assert.ok(r.steps.some((s) => s === 'To change it: Setup → App Manager → Sales → Edit → Utility Items (Desktop Only) → Example Tips → Label.'));
+  assert.ok(!out.results.some((x) => x.source === SOURCE.CUSTOM_LABEL), 'same-text label is partial and hidden');
+  assert.ok(!out.results.some((x) => x.key === 'area:utilityItem'));
+});
+
+test('Utility item label found in another app bar when the component id is not on the element', () => {
+  const other = { app: 'Example Console', page: 'Example Console Utility Bar', current: false, items: [{ id: 'example_notes', component: 'c:exampleNotes', label: 'Example Notes' }] };
+  const r = locate({ text: 'Example Notes', org: { ...org, utilityBars: [salesBar, other] }, describes: [], hints: itemHints('unknown_item') }).results[0];
+  assert.equal(r.key, 'utility:example_notes');
+  assert.match(r.subtitle, /Example Console app/);
+});
+
+test('Utility item without a label of its own: the name Salesforce gives it', () => {
+  const r = locate({ text: 'History', org: { ...org, utilityBars: [salesBar] }, describes: [], hints: itemHints('console_history') }).results[0];
+  assert.equal(r.key, 'sfdctext:utilityBar');
+  assert.equal(r.source, SOURCE.SALESFORCE);
+  assert.equal(r.confidence, 'confirmed');
+  assert.match(r.subtitle, /console:history utility item \(Sales app\)/);
+});
+
+test('To Do List stays Salesforce text with the utility bar read; an unknown item keeps the App Manager card', () => {
+  const todo = locate({ text: 'To Do List', org: { ...org, utilityBars: [salesBar] }, describes: [], hints: todoItem }).results[0];
+  assert.equal(todo.key, 'sfdctext:utilityBar');
+  assert.equal(todo.subtitle, 'Label of the To Do List utility');
+  const unknown = locate({ text: 'Example Chat', org: { ...org, utilityBars: [salesBar] }, describes: [], hints: itemHints('example_chat') }).results[0];
+  assert.equal(unknown.key, 'area:utilityItem');
+});
