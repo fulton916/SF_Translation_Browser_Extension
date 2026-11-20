@@ -1,0 +1,215 @@
+// Missing-translations report (#14): which items have no translation. The XML is shaped as Salesforce
+// returns readMetadata (dev org, checked live): an untranslated element holds only a comment with the master text.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  slot,
+  metadataRecords,
+  parseObjectTranslation,
+  parseTranslations,
+  parseValueSetTranslation,
+  labelItems,
+  objectItems,
+  tabItems,
+  valueSetItems,
+  summarize,
+  ITEM_TYPE,
+} from '../src/report.js';
+import { reportObjects, loadMissingTranslations } from '../src/reportApi.js';
+import { buildGotoUrl } from '../src/locator.js';
+
+const envelope = (records) =>
+  '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+  `<soapenv:Body><readMetadataResponse><result>${records.join('')}</result></readMetadataResponse></soapenv:Body></soapenv:Envelope>`;
+const record = (type, body) => `<records xsi:type="${type}">${body}</records>`;
+
+const gadgetMaster = record(
+  'CustomObjectTranslation',
+  '<fullName>Demo_Gadget__c-en_US</fullName>' +
+    '<caseValues><plural>false</plural><value>Gadget</value></caseValues><caseValues><plural>true</plural><value>Gadgets</value></caseValues>' +
+    '<fields><label><!-- Gadget Owner --></label><name>Demo_Owner__c</name><relationshipLabel><!-- Owned Gadgets --></relationshipLabel></fields>' +
+    '<fields><label><!-- Coat Color --></label><name>Demo_Color__c</name></fields>' +
+    '<fields><label><!-- Stage --></label><name>Demo_Stage__c</name><picklistValues><masterLabel>Draft</masterLabel><translation><!-- Draft --></translation></picklistValues><picklistValues><masterLabel>Shipped &amp; Done</masterLabel><translation><!-- Shipped &amp; Done --></translation></picklistValues></fields>' +
+    '<recordTypes><label><!-- Big Gadget --></label><name>Demo_Big</name></recordTypes>'
+);
+const gadgetFr = record(
+  'CustomObjectTranslation',
+  '<fullName>Demo_Gadget__c-fr</fullName>' +
+    '<caseValues><plural>false</plural><value><!-- Gadget --></value></caseValues><caseValues><plural>true</plural><value><!-- Gadget --></value></caseValues>' +
+    '<fields><label><!-- Gadget Owner --></label><name>Demo_Owner__c</name><relationshipLabel>Gadgets possédés</relationshipLabel></fields>' +
+    '<fields><help><!-- Pick one. --></help><label>Couleur</label><name>Demo_Color__c</name></fields>' +
+    '<fields><label>Étape</label><name>Demo_Stage__c</name><picklistValues><masterLabel>Draft</masterLabel><translation>Brouillon</translation></picklistValues><picklistValues><masterLabel>Shipped &amp; Done</masterLabel><translation><!-- Shipped &amp; Done --></translation></picklistValues></fields>' +
+    '<fields><label><!-- Packaged --></label><name>acme__Packaged__c</name></fields>' +
+    '<recordTypes><label><!-- Big Gadget --></label><name>Demo_Big</name></recordTypes>'
+);
+
+test('slot: a comment-only element is untranslated and names the master text; text is a translation; absent is null', () => {
+  assert.deepEqual(slot('<label><!-- Coat Color --></label>', 'label'), { translation: null, master: 'Coat Color' });
+  assert.deepEqual(slot('<label>Couleur &amp; teinte</label>', 'label'), { translation: 'Couleur & teinte', master: null });
+  assert.deepEqual(slot('<label></label>', 'label'), { translation: null, master: null });
+  assert.deepEqual(slot('<label/>', 'label'), { translation: null, master: null });
+  assert.equal(slot('<name>X</name>', 'label'), null);
+});
+
+test('metadataRecords: one entry per record, by its own fullName', () => {
+  const recs = metadataRecords(envelope([gadgetMaster, gadgetFr, record('CustomObjectTranslation', '<fullName>Nope__c-fr</fullName>')]));
+  assert.deepEqual(Object.keys(recs), ['Demo_Gadget__c-en_US', 'Demo_Gadget__c-fr', 'Nope__c-fr']);
+});
+
+test('object items: field labels, related list labels, picklist values, record types and the tab, with master texts', () => {
+  const recs = metadataRecords(envelope([gadgetMaster, gadgetFr]));
+  const items = objectItems({
+    object: 'Demo_Gadget__c',
+    objectLabel: 'Gadget',
+    language: 'fr',
+    translation: parseObjectTranslation(recs['Demo_Gadget__c-fr']),
+    master: parseObjectTranslation(recs['Demo_Gadget__c-en_US']),
+    hasTab: true,
+  });
+  assert.deepEqual(
+    items.map((i) => [i.type, i.name, i.master, i.translated]),
+    [
+      [ITEM_TYPE.FIELD_LABEL, 'Demo_Gadget__c.Demo_Owner__c', 'Gadget Owner', false],
+      [ITEM_TYPE.RELATED_LIST_LABEL, 'Demo_Gadget__c.Demo_Owner__c', 'Owned Gadgets', true],
+      [ITEM_TYPE.FIELD_LABEL, 'Demo_Gadget__c.Demo_Color__c', 'Coat Color', true],
+      [ITEM_TYPE.FIELD_LABEL, 'Demo_Gadget__c.Demo_Stage__c', 'Stage', true],
+      [ITEM_TYPE.PICKLIST_VALUE, 'Demo_Gadget__c.Demo_Stage__c: Draft', 'Draft', true],
+      [ITEM_TYPE.PICKLIST_VALUE, 'Demo_Gadget__c.Demo_Stage__c: Shipped & Done', 'Shipped & Done', false],
+      [ITEM_TYPE.RECORD_TYPE, 'Demo_Gadget__c.Demo_Big', 'Big Gadget', false],
+      [ITEM_TYPE.TAB, 'Demo_Gadget__c', 'Gadgets', false],
+    ]
+  );
+  assert.ok(!items.some((i) => i.name.includes('acme__')), 'package fields are left out');
+  // The field label is translated: its values still name the field by the master label (org default file).
+  const pv = items.find((i) => i.name.endsWith('Shipped & Done'));
+  assert.equal(pv.goto.parent, 'Stage');
+  assert.equal(pv.goto.component, 'PicklistMaster');
+  assert.equal(buildGotoUrl(pv.goto, 'fr').autofill.lang, 'fr');
+  const rt = items.find((i) => i.type === ITEM_TYPE.RECORD_TYPE);
+  assert.deepEqual(rt.goto.rows, ['Big Gadget', 'Demo_Big']);
+  assert.equal(rt.goto.component, 'RecordType');
+  const tab = items.find((i) => i.type === ITEM_TYPE.TAB);
+  assert.equal(buildGotoUrl(tab.goto, 'fr').autofill.tabLabel, 'Gadgets');
+  const rel = items.find((i) => i.type === ITEM_TYPE.RELATED_LIST_LABEL);
+  assert.equal(rel.goto.aspect, 'relationshiplabel');
+});
+
+test('object items: no tab item without a tab; German tab text is the Nominative plural; any translated form counts', () => {
+  const de = parseObjectTranslation(
+    '<fullName>Demo_Gadget__c-de</fullName>' +
+      '<caseValues><caseType>Accusative</caseType><plural>true</plural><value><!-- Gadget --></value></caseValues>' +
+      '<caseValues><caseType>Nominative</caseType><plural>true</plural><value>Geräte</value></caseValues>' +
+      '<fields><label>Farbe</label><name>Demo_Color__c</name><caseValues><plural>false</plural><value><!-- x --></value></caseValues></fields>'
+  );
+  assert.equal(de.caseValues.length, 2, 'caseValues inside fields are not the object name');
+  assert.deepEqual(
+    objectItems({ object: 'Demo_Gadget__c', language: 'de', translation: de, master: null, hasTab: false }).map((i) => i.type),
+    [ITEM_TYPE.FIELD_LABEL]
+  );
+  const tab = objectItems({ object: 'Demo_Gadget__c', language: 'de', translation: de, master: de, hasTab: true }).find((i) => i.type === ITEM_TYPE.TAB);
+  assert.equal(tab.translated, true);
+  assert.equal(tab.master, 'Geräte');
+  assert.deepEqual(objectItems({ object: 'X__c', language: 'de', translation: null }), []);
+});
+
+test('custom labels: untranslated per language; package labels and labels written in that language are left out', () => {
+  const labels = [
+    { Id: '101000000000001AAA', Name: 'Demo_Hello', NamespacePrefix: null, Value: 'Hello', Language: 'en_US' },
+    { Id: '101000000000002AAA', Name: 'Demo_Bye', NamespacePrefix: null, Value: 'Bye', Language: 'en_US' },
+    { Id: '101000000000003AAA', Name: 'Pkg_Label', NamespacePrefix: 'acme', Value: 'Pkg', Language: 'en_US' },
+    { Id: '101000000000004AAA', Name: 'Demo_Bonjour', NamespacePrefix: null, Value: 'Bonjour', Language: 'fr' },
+  ];
+  const locs = [
+    { ExternalStringId: '101000000000001AAA', Language: 'fr' },
+    { ExternalStringId: '101000000000002AAA', Language: 'de' },
+  ];
+  const fr = labelItems(labels, locs, 'fr');
+  assert.deepEqual(fr.map((i) => [i.name, i.translated]), [['Demo_Hello', true], ['Demo_Bye', false]]);
+  const bye = fr[1];
+  assert.equal(bye.master, 'Bye');
+  const url = buildGotoUrl(bye.goto, 'fr');
+  assert.match(url.path, /ExternalStrings\/page\?address=%2F01j%2Fe%3FParent%3D101000000000002AAA/);
+  assert.equal(url.autofill.lang, 'fr');
+});
+
+test('web tabs and global value set values: untranslated ones, with the master text', () => {
+  const tabs = tabItems({
+    language: 'fr',
+    translation: parseTranslations(
+      '<fullName>fr</fullName><customLabels><label><!-- Demo_Hello --></label><name>Demo_Hello</name></customLabels>' +
+        '<customTabs><label><!-- Help Desk --></label><name>Demo_Help</name></customTabs><customTabs><label>Accueil</label><name>Demo_Home</name></customTabs>' +
+        '<customTabs><label><!-- Pkg --></label><name>acme__Tab</name></customTabs>'
+    ),
+    master: parseTranslations('<fullName>en_US</fullName><customTabs><label><!-- Help Desk Home --></label><name>Demo_Help</name></customTabs>'),
+  });
+  assert.deepEqual(tabs.map((t) => [t.name, t.master, t.translated]), [['Demo_Help', 'Help Desk Home', false], ['Demo_Home', 'Demo_Home', true]]);
+  assert.equal(tabs[0].goto.component, 'CustomTabDefinition');
+
+  const values = parseValueSetTranslation(
+    '<fullName>Demo_Regions-de</fullName><valueTranslation><masterLabel>North</masterLabel><translation>Nord</translation></valueTranslation>' +
+      '<valueTranslation><masterLabel>South</masterLabel><translation><!-- South --></translation></valueTranslation>'
+  );
+  const vs = valueSetItems({ language: 'de', valueSet: { name: 'Demo_Regions', label: 'Regions' }, values });
+  assert.deepEqual(vs.map((v) => [v.name, v.translated]), [['Demo_Regions: North', true], ['Demo_Regions: South', false]]);
+  assert.equal(vs[1].goto.component, 'SharedPicklistDefinition');
+  assert.equal(vs[1].goto.parent, 'Regions');
+});
+
+test('summarize: counts per language and type; missing items sorted by language order, type, object, name', () => {
+  const it = (language, type, objectLabel, name, translated) => ({ language, type, objectLabel, name, translated });
+  const out = summarize(
+    [{ code: 'fr', name: 'French' }, { code: 'de', name: 'German' }],
+    [
+      it('de', ITEM_TYPE.TAB, null, 'T', false),
+      it('fr', ITEM_TYPE.FIELD_LABEL, 'Gadget', 'b', false),
+      it('fr', ITEM_TYPE.FIELD_LABEL, 'Account', 'z', false),
+      it('fr', ITEM_TYPE.CUSTOM_LABEL, null, 'L', false),
+      it('fr', ITEM_TYPE.FIELD_LABEL, 'Gadget', 'a', true),
+      it('es', ITEM_TYPE.TAB, null, 'not active', false),
+    ]
+  );
+  assert.deepEqual(out.missing.map((i) => `${i.language}:${i.name}`), ['fr:L', 'fr:z', 'fr:b', 'de:T']);
+  assert.deepEqual(out.languages.map((l) => [l.code, l.checked, l.missing]), [['fr', 4, 3], ['de', 1, 1]]);
+  assert.equal(out.languages[0].byType[ITEM_TYPE.FIELD_LABEL], 2);
+  assert.equal(out.languages[0].byType[ITEM_TYPE.TAB], 0);
+});
+
+test('report objects: own custom objects, and standard objects with own custom fields or record types', () => {
+  const objects = [{ name: 'Account' }, { name: 'Case' }, { name: 'Lead' }, { name: 'Demo_Gadget__c' }, { name: 'acme__Pkg__c' }, { name: 'Demo_Setting__mdt' }];
+  assert.deepEqual(reportObjects(objects, ['Account', 'Account', null, 'Ghost', 'Demo_Setting__mdt'], ['Case']), ['Account', 'Case', 'Demo_Gadget__c']);
+});
+
+test('the whole report only reads (GET queries and readMetadata) and lists the missing items per language', async () => {
+  const calls = [];
+  globalThis.fetch = async (u, init = {}) => {
+    const url = decodeURIComponent(String(u));
+    calls.push({ url, method: init.method || 'GET', body: init.body || '' });
+    if (init.method === 'POST') {
+      const names = [...String(init.body).matchAll(/<s:fullNames>([^<]+)<\/s:fullNames>/g)].map((m) => m[1]);
+      const recs = names.map((n) => (n === 'Demo_Gadget__c-en_US' ? gadgetMaster : n === 'Demo_Gadget__c-fr' ? gadgetFr : record('X', `<fullName>${n}</fullName>`)));
+      return { ok: true, text: async () => envelope(recs) };
+    }
+    if (/\/sobjects$/.test(url)) return { ok: true, json: async () => ({ sobjects: [{ name: 'Demo_Gadget__c', label: 'Gadget', custom: true }] }) };
+    if (/userinfo/.test(url)) return { ok: true, json: async () => ({ language: 'en_US' }) };
+    let rows = [];
+    if (/FROM Organization/.test(url)) rows = [{ LanguageLocaleKey: 'en_US' }];
+    else if (/FROM Translation/.test(url)) rows = [{ Language: 'fr', IsActive: true }, { Language: 'en_US', IsActive: true }];
+    else if (/FROM ExternalString$/.test(url)) rows = [{ Id: '101000000000002AAA', Name: 'Demo_Bye', NamespacePrefix: null, Value: 'Bye', Language: 'en_US' }];
+    else if (/FROM TabDefinition/.test(url)) rows = [{ Name: 'Demo_Gadget__c', Label: 'Gadgets', IsCustom: true, SobjectName: 'Demo_Gadget__c' }];
+    return { ok: true, json: async () => ({ records: rows, done: true }) };
+  };
+  const steps = [];
+  const out = await loadMissingTranslations({ host: 'report.my.salesforce.com', sid: 's' }, { onProgress: (s) => steps.push(s) });
+  assert.deepEqual(out.warnings, []);
+  assert.deepEqual(out.languages.map((l) => [l.code, l.checked, l.missing]), [['fr', 9, 5]]);
+  assert.deepEqual(out.missing.map((i) => i.type), [ITEM_TYPE.CUSTOM_LABEL, ITEM_TYPE.FIELD_LABEL, ITEM_TYPE.PICKLIST_VALUE, ITEM_TYPE.RECORD_TYPE, ITEM_TYPE.TAB]);
+  assert.ok(steps.length >= 3, 'progress lines while it reads');
+  // Read-only: every POST is a readMetadata, everything else a GET.
+  for (const c of calls) {
+    if (c.method === 'POST') assert.match(c.body, /<s:readMetadata>/);
+    else assert.equal(c.method, 'GET');
+  }
+  const meta = calls.filter((c) => c.method === 'POST').map((c) => c.body);
+  assert.ok(meta.some((b) => /CustomObjectTranslation.*Demo_Gadget__c-en_US.*Demo_Gadget__c-fr/.test(b)));
+  assert.ok(meta.some((b) => /<s:type>Translations<\/s:type><s:fullNames>en_US<\/s:fullNames><s:fullNames>fr<\/s:fullNames>/.test(b)));
+});
