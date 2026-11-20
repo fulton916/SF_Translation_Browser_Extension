@@ -96,8 +96,12 @@
     const hints = {
       selectionNames: [], objectApiNames: [], tags: [], auraCustom: [], auraClasses: [], attrs: {}, componentIds: [], flexipage: null, tabRole: null,
       fieldPart: null, helpIcon: false, listHeader: null, recordTitle: false, sfComponents: [], highlightsLabel: null, relatedListApi: null,
-      errorPopover: null,
+      errorPopover: null, calendarId: null, utilityPanelComponent: null,
     };
+    // calendarId: the Id of the Calendar page list entry (input#calendarToggle-<Id>:… in li[calendarListItem], dev
+    // org checked live); My Events is 03A0000000000000001 (19 characters, no record Id) in every language.
+    // utilityPanelComponent: the component inside an open utility panel (div[oneUtilityBarPanel] is outside the
+    // item's own component), e.g. runtime_sales_todo_listUnifiedToDoListAuraWrapper.
     // errorPopover: inside the error popup a failed save shows ("We hit a snag."): 'header' on its heading,
     // 'body' on its list of fields and messages. LWC: section.slds-popover.slds-popover_error with
     // header.slds-popover__header (tag records-record-edit-error); Aura: div.forcePageError with div.genericNotification.
@@ -159,6 +163,12 @@
       // runtime_sales_merge_mergeCandidatesPreviewCard2 (duplicates), forceChatter_recordFeedContainer.
       if (tsn && /^(runtime_|forceChatter_)/.test(tsn) && hints.sfComponents.length < 10) hints.sfComponents.push(tsn.slice(0, 100));
       const aura = el.getAttribute('data-aura-class');
+      if (!hints.calendarId && /\bcalendarListItem\b/.test(aura || '')) {
+        hints.calendarId = /^calendarToggle-([A-Za-z0-9]+)/.exec(el.querySelector('input[id^="calendarToggle-"]')?.id || '')?.[1] || null;
+      }
+      if (!hints.utilityPanelComponent && /\boneUtilityBarPanel\b/.test(aura || '')) {
+        hints.utilityPanelComponent = el.querySelector('[data-aura-class^="runtime_"]')?.getAttribute('data-aura-class')?.split(/\s+/)[0].slice(0, 100) || null;
+      }
       if (aura && /^c[A-Z]/.test(aura)) hints.auraCustom.push(aura);
       if (aura && hints.auraClasses.length < 20) hints.auraClasses.push(aura.split(/\s+/)[0].slice(0, 100));
       for (const a of HINT_ATTRS) {

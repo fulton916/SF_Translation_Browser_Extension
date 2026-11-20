@@ -205,7 +205,7 @@ test('ISS-06: an Aura record layout section header is the Layout Section, not a 
 // ---------- ISS-08: path page-area cards have no subtitle ----------
 
 test('ISS-08: the Closed path step card has no subtitle; step 2 explains the closed values', () => {
-  const chevron = { tags: ['span', 'a', 'li', 'ul', 'div'], auraClasses: ['runtime_sales_pathassistantPathAssistantTabSet', 'runtime_sales_pathassistantPathAssistant'] };
+  const chevron = { tags: ['span', 'a', 'li', 'ul', 'div'], auraClasses: ['runtime_sales_pathassistantPathAssistantTabSet', 'runtime_sales_pathassistantPathAssistant'], componentIds: ['closedPathTab'] };
   const r = locate({ text: 'Closed', org: baseOrg, describes: [], hints: chevron }).results[0];
   assert.equal(r.key, 'sfdctext:pathClosed');
   assert.equal(r.title, 'Salesforce text');
