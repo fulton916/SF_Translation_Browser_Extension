@@ -169,7 +169,8 @@ Workbench row and for Object Manager.
 
 Salesforce's own text is found by page marker (component, `data-aura-class`, `data-target-selection-name`),
 never by its English words, so "Owned by Salesforce" answers work in every language. English words are still
-compared in two places with no marker: a highlight that starts with the "Guidance for Success" heading (in
+compared in three places with no marker: the step buttons, "Closed" step and "Guidance for Success" of a
+`lightning-path` (an LWC path with no path assistant markers), a highlight that starts with the "Guidance for Success" heading (in
 another language it matches the step as similar text), and Salesforce's required-field messages under a field
 (in another language the field's validation rules are listed as context).
 

@@ -257,11 +257,13 @@ export function detectAreas(hints = {}) {
   // - the generic last step: span < a < li[data-target-selection-name=closedPathTab] (content.js keeps it in componentIds);
   // - the headings "Key Fields" and "Guidance for Success": an h2 in …PathAssistantFields / …PathAssistantInfo,
   //   outside the guidance text (div.uiOutputRichText).
+  // A path with no path assistant marker (lightning-path, an LWC) is 'pathNoMarker': English words only there.
   if (areas.has('path')) {
+    if (!aura.some((a) => /^runtime_sales_pathassistant/.test(a))) areas.add('pathNoMarker');
     if (aura.includes('runtime_sales_pathassistantPathAssistantHeader')) areas.add('pathButton');
     if ((hints.componentIds || []).includes('closedPathTab')) areas.add('pathClosed');
     const inCoach = aura.some((a) => /^runtime_sales_pathassistantPathAssistant(Info|Fields)$/.test(a));
-    if (inCoach && tags.slice(0, 3).includes('h2') && !aura.includes('uiOutputRichText')) areas.add('pathHeading');
+    if (inCoach && tags.slice(0, 5).includes('h2') && !aura.includes('uiOutputRichText')) areas.add('pathHeading');
   }
   // Calendar page (DV2 /lightning/o/Event/home, checked live): Salesforce's own Aura calendar. Header buttons
   // (button.new-event-button carries no action name: it is not the NewEvent global action), day headers
@@ -953,7 +955,6 @@ function errorRulesOfField(org, objectName, fieldName, labels = []) {
   });
 }
 
-// Salesforce's own messages under a field (English): never a validation rule's message.
 // Salesforce's own field messages (English). Only a shortcut: no page marker tells them from a validation rule's
 // message (both are div.slds-form-element__help). In another language the field's rules are listed as 'context'.
 const SF_FIELD_ERRORS = ['complete this field.', 'complete this field', 'enter a valid value.', 'this field is required.'];
@@ -1889,7 +1890,11 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '', org = 
   }
   // Renamed metrics are matched by MasterLabel. Viewing another language, the tile shows the translation of a
   // renamed metric, which MasterLabel never holds: then the tile is Salesforce text only as context.
-  const renamedElsewhere = areas.has('pipelineMetric') && (org.pipelineMetrics || []).some((m) => m.MasterLabel) && !isDefaultLanguage(org);
+  // A row whose Language is the one you view holds that text in MasterLabel (matched above): no translation there.
+  const renamed = areas.has('pipelineMetric') && !isDefaultLanguage(org)
+    ? (org.pipelineMetrics || []).filter((m) => m.MasterLabel && m.Language !== org.userLanguage)
+    : [];
+  const renamedElsewhere = renamed.length > 0;
   const r = standardTextResult('pipelineInspection', areas.has('pipelineStatus') || orgName || renamedElsewhere ? 'context' : 'confirmed');
   if (areas.has('pipelineStatus')) {
     r.notes = ['"items" and "Filtered by" are Salesforce text. The filter names after them are field labels and values from your org.'];
@@ -1900,7 +1905,7 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '', org = 
     r.notes = ['A metric name an admin set in Pipeline Settings → Metrics Settings is translated in Translation Workbench → Translate → Setup Component: Pipeline Inspection Metric Configuration (column "Pipeline Inspection Metric Custom Label"). Salesforce\'s own metric names are not listed there.'];
   }
   add(r);
-  for (const m of renamedElsewhere ? org.pipelineMetrics.filter((x) => x.MasterLabel) : []) {
+  for (const m of renamed) {
     const mr = pipelineMetricResult(org, m);
     mr.confidence = 'context';
     mr.notes = [`You view Salesforce in ${languageName(org.userLanguage)}: a tile of a renamed metric shows its ${languageName(org.userLanguage)} translation from this row.`];
@@ -1952,13 +1957,19 @@ function standardTextResult(area, confidence) {
   };
 }
 
+// English path text for a path with no page marker (lightning-path): the step buttons and the generic last step.
+const LWC_PATH_BUTTONS = [/^mark (.+) as complete$/, /^mark as current (.+)$/, /^mark (.+) as current$/, /^select closed (.+)$/];
+const LWC_PATH_CLOSED = ['closed'];
+
 /**
  * The fields a path step button names ("Mark Sub Stage as Complete", French "Marquer Sous-étape comme terminé(e)"):
  * fields whose label is a whole phrase of the button text, in any language. The record's path fields first; else
  * picklists, without a label that is part of a longer one found (Stage inside Sub Stage).
  */
 function fieldsNamedInButton(org, needle, describes, record) {
-  const hits = describes.flatMap((d) =>
+  // The path is the record's: only its object's fields, when the record is known.
+  const own = record?.object ? describes.filter((d) => d.name === record.object) : [];
+  const hits = (own.length ? own : describes).flatMap((d) =>
     (d.fields || [])
       .map((f) => ({ d, f, l: displayLabels(d, f).map(normalize).filter((l) => l.length >= 3 && wordContains(needle, l)) }))
       .filter((x) => x.l.length)
@@ -2023,13 +2034,17 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
     demoteLabelsToPartial(results, 'the heading of the save error popup is Salesforce text.');
     return;
   }
-  // Path parts are found by page marker (detectAreas), so the text can be in any language.
-  if (areas.has('pathClosed') && needle && addClosedStepResult(org, needle, describes, results, add, record)) return;
-  if ((areas.has('pathHeading') || areas.has('pathButton')) && needle) {
+  // Path parts are found by page marker (detectAreas), so the text can be in any language. A path with no
+  // marker (lightning-path) is matched by its English words only: no page marker tells its parts apart.
+  const noMarker = areas.has('pathNoMarker') && needle;
+  const closed = areas.has('pathClosed') || (noMarker && LWC_PATH_CLOSED.includes(needle));
+  if (closed && needle && addClosedStepResult(org, needle, describes, results, add, record)) return;
+  const lwcButton = noMarker && LWC_PATH_BUTTONS.some((re) => re.test(needle));
+  if ((areas.has('pathHeading') || areas.has('pathButton') || lwcButton || (noMarker && needle === 'guidance for success')) && needle) {
     add(standardTextResult('path', 'confirmed'));
     demoteLabelsToPartial(results, 'this is Salesforce path text.');
     // The button names the path field ("Sub Stage"): its label is translated like any field label.
-    for (const { d, f } of areas.has('pathButton') ? fieldsNamedInButton(org, needle, describes, record) : []) {
+    for (const { d, f } of areas.has('pathButton') || lwcButton ? fieldsNamedInButton(org, needle, describes, record) : []) {
       const r = fieldLabelResult(org, d, f, 'context');
       r.notes = [`The button shows this field's label ("${f.label}"). Translating the label changes the button text.`, ...r.notes];
       add(r);

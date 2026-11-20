@@ -155,3 +155,37 @@ test('#13: viewing another language, a Pipeline metric tile lists the renamed me
   assert.equal(locate({ text: 'Lost Deals', org: en, describes: [], hints: tile }).results[0].key, 'pipelineMetric:0Xm000000000001');
   assert.equal(locate({ text: 'Open Pipeline', org: en, describes: [], hints: tile }).results[0].confidence, 'confirmed');
 });
+
+test('#13 review: a lightning-path (no path assistant marker) keeps the English words', () => {
+  const lwc = { tags: ['span', 'button', 'lightning-path', 'div'], auraClasses: [] };
+  assert.ok(detectAreas(lwc).has('pathNoMarker'));
+  const en = org({ userLanguage: 'en_US' });
+  for (const text of ['Mark Stage as Complete', 'Guidance for Success', 'Closed']) {
+    const out = locate({ text, org: en, describes: [opp('Stage', 'Closed')], hints: lwc }).results;
+    assert.ok(out.some((r) => r.key.startsWith('sfdctext:path') && r.confidence === 'confirmed'), text);
+  }
+  // The Aura path assistant has markers: no English fallback there.
+  assert.ok(!detectAreas(stepButton).has('pathNoMarker'));
+});
+
+test('#13 review: the step button names only the record object\'s fields', () => {
+  const quote = { name: 'Quote', label: 'Devis', labelPlural: 'Devis', custom: false, quickActions: [], recordTypeInfos: [],
+    fields: [{ name: 'Status', label: 'Étape', custom: false, type: 'picklist', picklistValues: [] }] };
+  const record = { object: 'Opportunity', recordTypeId: null };
+  const out = locate({ text: 'Marquer Étape comme terminé(e)', org: org(), describes: [opp(), quote], hints: stepButton, record }).results;
+  assert.ok(out.some((r) => r.key === 'field:Opportunity.StageName' && r.confidence === 'context'));
+  assert.ok(!out.some((r) => r.key === 'field:Quote.Status'));
+});
+
+test('#13 review: a heading with deeper inline markup is still a heading', () => {
+  const deep = { ...heading('Fields'), tags: ['span', 'span', 'p', 'h2', 'div', 'section'] };
+  assert.ok(detectAreas(deep).has('pathHeading'));
+});
+
+test('#13 review: a metric row in the language you view is no other-language translation', () => {
+  const tile = { tags: ['span', 'div', 'runtime_pipeline_inspector-kpi-panel', 'div'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorHome'] };
+  const pipelineMetrics = [{ Id: '0Xm000000000002', DeveloperName: 'OpenFr', MasterLabel: 'Pipeline à moi', Language: 'fr', Metric: 'OpenPipeline' }];
+  const out = locate({ text: 'Pipeline ouvert', org: org({ pipelineMetrics }), describes: [], hints: tile }).results;
+  assert.equal(out.find((r) => r.key === 'sfdctext:pipelineInspection').confidence, 'confirmed');
+  assert.ok(!out.some((r) => r.key === 'pipelineMetric:0Xm000000000002'));
+});
