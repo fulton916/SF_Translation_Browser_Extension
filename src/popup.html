@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SF Translation Locator</title>
+  <style>
+    :root { --bg: #fff; --text: #181818; --muted: #5c5c5c; --line: #e5e5e5; --accent: #0176d3; --hover: #f3f3f3; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #1f2227; --text: #e8e8e8; --muted: #a0a4ab; --line: #343840; --accent: #5aa9ff; --hover: #2a2e34; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 280px; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+    h1 { font-size: 14px; margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    button { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 10px 12px; cursor: pointer; }
+    button:hover:not(:disabled) { background: var(--hover); }
+    button:disabled { cursor: default; color: var(--muted); }
+    button strong { display: block; color: var(--accent); font-weight: 600; }
+    button:disabled strong { color: var(--muted); }
+    small { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>SF Translation Locator</h1>
+  <button id="report">
+    <strong>Missing translations report</strong>
+    <small id="report-note">Every active language: what has no translation yet.</small>
+  </button>
+  <button id="log">
+    <strong>Test log</strong>
+    <small>Lookups, Go to translation and auto-fill steps.</small>
+  </button>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
