@@ -251,6 +251,20 @@ export function detectAreas(hints = {}) {
   // Verified on a UAT2 Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
   if (has(/(^lightning-path|pathassistant)/) || aura.some((a) => /pathassistant/i.test(a))) areas.add('path');
   if (aura.some((a) => /pathassistantPathAssistantInfo/i.test(a)) || has(/pathassistant-?info/i)) areas.add('pathGuidance');
+  // Path parts by page marker, so they are found in every language (dev org, checked live Nov 2026):
+  // - the step button (Mark Stage as Complete, Mark as Current Stage, Select Closed Stage):
+  //   span < button.slds-path__mark-complete < div < div[data-aura-class=runtime_sales_pathassistantPathAssistantHeader];
+  // - the generic last step: span < a < li[data-target-selection-name=closedPathTab] (content.js keeps it in componentIds);
+  // - the headings "Key Fields" and "Guidance for Success": an h2 in …PathAssistantFields / …PathAssistantInfo,
+  //   outside the guidance text (div.uiOutputRichText).
+  // A path with no path assistant marker (lightning-path, an LWC) is 'pathNoMarker': English words only there.
+  if (areas.has('path')) {
+    if (!aura.some((a) => /^runtime_sales_pathassistant/.test(a))) areas.add('pathNoMarker');
+    if (aura.includes('runtime_sales_pathassistantPathAssistantHeader')) areas.add('pathButton');
+    if ((hints.componentIds || []).includes('closedPathTab')) areas.add('pathClosed');
+    const inCoach = aura.some((a) => /^runtime_sales_pathassistantPathAssistant(Info|Fields)$/.test(a));
+    if (inCoach && tags.slice(0, 5).includes('h2') && !aura.includes('uiOutputRichText')) areas.add('pathHeading');
+  }
   // Calendar page (DV2 /lightning/o/Event/home, checked live): Salesforce's own Aura calendar. Header buttons
   // (button.new-event-button carries no action name: it is not the NewEvent global action), day headers
   // (forceCalendarDayHeader) and the sidebar (calendarListPanel > calendarListItem). Event boxes
@@ -265,6 +279,9 @@ export function detectAreas(hints = {}) {
   if (aura.some((a) => /^(forceCalendar|calendarHome)/.test(a)) && !has(/^runtime_calendar-/)) {
     areas.add('calendar');
     if (aura.includes('calendarListItem')) areas.add('calendarList');
+    // My Events is Salesforce's own calendar: its checkbox is input#calendarToggle-03A0000000000000001 in every
+    // org and language (dev org, checked live). content.js sends that Id as hints.calendarId.
+    if (areas.has('calendarList') && hints.calendarId === MY_EVENTS_CALENDAR_ID) areas.add('calendarOwn');
   }
   // Pipeline Inspection (UAT2 /lightning/o/Opportunity/pipelineInspection, checked live Nov 2026): Salesforce's own
   // page in div[data-aura-class=runtime_pipeline_inspectorPipelineInspectorHome]. Metric tiles
@@ -284,9 +301,12 @@ export function detectAreas(hints = {}) {
   // div[flexipageComponent][tsn=runtime_sales_todo_list_unifiedToDoListAuraWrapper] < ul.slds-utility-bar; an open
   // item's panel title is h2.panelTitle < div[oneUtilityBarPanel]. Item labels are set in App Manager → Utility Items.
   // Only the label: the item's button, or the open panel's own title (not the records listed in the panel).
+  // The open panel is outside the item's component (dev org, checked live: h2.panelTitle < … < div[oneUtilityBarPanel]
+  // < div[oneUtilityBarContainer]); content.js sends the component inside the panel as hints.utilityPanelComponent
+  // (To Do List: div[data-aura-class=runtime_sales_todo_listUnifiedToDoListAuraWrapper]).
   if (utilityLabel) {
     areas.add('utilityBar');
-    if (comp(/^runtime_sales_todo_list/)) areas.add('utilityToDo');
+    if (comp(/^runtime_sales_todo_list/) || /^runtime_sales_todo_list/.test(hints.utilityPanelComponent || '')) areas.add('utilityToDo');
   }
   // File upload area of the Files related list (UAT2, checked live): "Upload Files" / "Or drop files" are a span <
   // label < lightning-primitive-file-droppable-zone < lightning-input < div[forceContentFileDroppableZone].
@@ -935,7 +955,8 @@ function errorRulesOfField(org, objectName, fieldName, labels = []) {
   });
 }
 
-// Salesforce's own messages under a field (English): never a validation rule's message.
+// Salesforce's own field messages (English). Only a shortcut: no page marker tells them from a validation rule's
+// message (both are div.slds-form-element__help). In another language the field's rules are listed as 'context'.
 const SF_FIELD_ERRORS = ['complete this field.', 'complete this field', 'enter a valid value.', 'this field is required.'];
 
 function tabResult(org, tab, confidence) {
@@ -1025,7 +1046,10 @@ const MIN_PATH_NEEDLE = 12;
  * 'exact' when the text is the whole guidance or one whole line of it (the element you point at is
  * usually one list item), 'partial' when a phrase of it, or the guidance plus more, else null.
  */
-// The heading above the guidance (Salesforce text). Highlights often start with it.
+// The heading above the guidance (Salesforce text). Highlights often start with it. English only: a highlight
+// has no page marker for the part of it that is the heading (pointing at the heading itself is found by its
+// marker in detectAreas, in any language). In another language a highlight with the heading still matches
+// the step as 'partial' (the selection runs past the guidance).
 const GUIDANCE_HEADINGS = ['guidance for success'];
 function stripGuidanceHeading(n) {
   for (const h of GUIDANCE_HEADINGS) {
@@ -1703,9 +1727,6 @@ const STANDARD_AREAS = {
   utilityBar: { what: 'the To Do List utility' },
 };
 
-// Utility items whose label Salesforce sets (English; the Label field is locked in App Manager, UAT2 checked live).
-const SF_UTILITY_NAMES = ['to do list'];
-
 function utilityLabelResult() {
   return {
     key: 'area:utilityItem',
@@ -1867,7 +1888,14 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '', org = 
     if (!orgName && needle && !/^[\d\s.,%+-]*$/.test(needle)) add(pipelineRecordDataResult());
     return;
   }
-  const r = standardTextResult('pipelineInspection', areas.has('pipelineStatus') || orgName ? 'context' : 'confirmed');
+  // Renamed metrics are matched by MasterLabel. Viewing another language, the tile shows the translation of a
+  // renamed metric, which MasterLabel never holds: then the tile is Salesforce text only as context.
+  // A row whose Language is the one you view holds that text in MasterLabel (matched above): no translation there.
+  const renamed = areas.has('pipelineMetric') && !isDefaultLanguage(org)
+    ? (org.pipelineMetrics || []).filter((m) => m.MasterLabel && m.Language !== org.userLanguage)
+    : [];
+  const renamedElsewhere = renamed.length > 0;
+  const r = standardTextResult('pipelineInspection', areas.has('pipelineStatus') || orgName || renamedElsewhere ? 'context' : 'confirmed');
   if (areas.has('pipelineStatus')) {
     r.notes = ['"items" and "Filtered by" are Salesforce text. The filter names after them are field labels and values from your org.'];
   }
@@ -1877,11 +1905,18 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '', org = 
     r.notes = ['A metric name an admin set in Pipeline Settings → Metrics Settings is translated in Translation Workbench → Translate → Setup Component: Pipeline Inspection Metric Configuration (column "Pipeline Inspection Metric Custom Label"). Salesforce\'s own metric names are not listed there.'];
   }
   add(r);
+  for (const m of renamed) {
+    const mr = pipelineMetricResult(org, m);
+    mr.confidence = 'context';
+    mr.notes = [`You view Salesforce in ${languageName(org.userLanguage)}: a tile of a renamed metric shows its ${languageName(org.userLanguage)} translation from this row.`];
+    add(mr);
+  }
 }
 
-// Calendar list entries Salesforce names itself (English; add other languages when seen). Any other
-// entry is a calendar a user created (from a list view, or a user's or resource's calendar).
-const SF_CALENDAR_NAMES = ['my events', 'my calendars', 'other calendars'];
+// The calendar list entry Salesforce names itself (My Events), by its fixed Id. Any other entry is a calendar
+// a user created (from a list view, or a user's or resource's calendar). The My Calendars / Other Calendars
+// headings are outside the list items (h2 in div.calendarPanelHeader): plain calendar text.
+const MY_EVENTS_CALENDAR_ID = '03A0000000000000001';
 
 function userCalendarResult() {
   return {
@@ -1907,7 +1942,7 @@ function addCalendarResults(needle, areas, results, add) {
     r.confidence = 'partial';
     r.notes = ['Same words only: the Calendar page buttons are Salesforce text. The "New Event" button is not the NewEvent global action.', ...(r.notes || [])];
   }
-  if (areas.has('calendarList') && needle && !SF_CALENDAR_NAMES.includes(needle)) {
+  if (areas.has('calendarList') && needle && !areas.has('calendarOwn')) {
     add(userCalendarResult());
     return;
   }
@@ -1922,12 +1957,28 @@ function standardTextResult(area, confidence) {
   };
 }
 
-// Path text Salesforce writes (English): the guidance heading and the step buttons
-// (UAT2: "Mark Sub Stage as Complete", "Mark as Current Sub Stage").
-const PATH_BUTTONS = [/^mark (.+) as complete$/, /^mark as current (.+)$/, /^mark (.+) as current$/, /^select closed (.+)$/];
+// English path text for a path with no page marker (lightning-path): the step buttons and the generic last step.
+const LWC_PATH_BUTTONS = [/^mark (.+) as complete$/, /^mark as current (.+)$/, /^mark (.+) as current$/, /^select closed (.+)$/];
+const LWC_PATH_CLOSED = ['closed'];
 
-// Salesforce's generic last path step (English; add other languages when seen).
-const CLOSED_STEPS = ['closed'];
+/**
+ * The fields a path step button names ("Mark Sub Stage as Complete", French "Marquer Sous-étape comme terminé(e)"):
+ * fields whose label is a whole phrase of the button text, in any language. The record's path fields first; else
+ * picklists, without a label that is part of a longer one found (Stage inside Sub Stage).
+ */
+function fieldsNamedInButton(org, needle, describes, record) {
+  // The path is the record's: only its object's fields, when the record is known.
+  const own = record?.object ? describes.filter((d) => d.name === record.object) : [];
+  const hits = (own.length ? own : describes).flatMap((d) =>
+    (d.fields || [])
+      .map((f) => ({ d, f, l: displayLabels(d, f).map(normalize).filter((l) => l.length >= 3 && wordContains(needle, l)) }))
+      .filter((x) => x.l.length)
+  );
+  const onPath = hits.filter(({ d, f }) => pathsForRecord(org.paths, d.name, record).some((p) => p.SobjectProcessField === f.name));
+  if (onPath.length) return onPath;
+  const lists = hits.filter(({ f }) => f.type === 'picklist');
+  return lists.filter((x) => !lists.some((y) => y !== x && y.l.some((ly) => x.l.every((lx) => lx !== ly && ly.includes(lx)))));
+}
 
 /** The path's final "Closed" chevron, when no path field on the page has a value with that label. */
 function addClosedStepResult(org, needle, describes, results, add, record) {
@@ -1983,23 +2034,22 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
     demoteLabelsToPartial(results, 'the heading of the save error popup is Salesforce text.');
     return;
   }
-  if (areas.has('path') && !areas.has('pathGuidance') && CLOSED_STEPS.includes(needle) && addClosedStepResult(org, needle, describes, results, add, record)) return;
-  if (areas.has('path') && needle) {
-    const button = PATH_BUTTONS.map((re) => re.exec(needle)).find(Boolean);
-    if (needle === 'guidance for success' || button) {
-      add(standardTextResult('path', 'confirmed'));
-      demoteLabelsToPartial(results, 'this is Salesforce path text.');
-      // The button names the path field ("Sub Stage"): its label is translated like any field label.
-      for (const d of button ? describes : []) {
-        for (const f of d.fields || []) {
-          if (!displayLabels(d, f).some((l) => normalize(l) === button[1])) continue;
-          const r = fieldLabelResult(org, d, f, 'context');
-          r.notes = [`The button shows this field's label ("${f.label}"). Translating the label changes the button text.`, ...r.notes];
-          add(r);
-        }
-      }
-      return;
+  // Path parts are found by page marker (detectAreas), so the text can be in any language. A path with no
+  // marker (lightning-path) is matched by its English words only: no page marker tells its parts apart.
+  const noMarker = areas.has('pathNoMarker') && needle;
+  const closed = areas.has('pathClosed') || (noMarker && LWC_PATH_CLOSED.includes(needle));
+  if (closed && needle && addClosedStepResult(org, needle, describes, results, add, record)) return;
+  const lwcButton = noMarker && LWC_PATH_BUTTONS.some((re) => re.test(needle));
+  if ((areas.has('pathHeading') || areas.has('pathButton') || lwcButton || (noMarker && needle === 'guidance for success')) && needle) {
+    add(standardTextResult('path', 'confirmed'));
+    demoteLabelsToPartial(results, 'this is Salesforce path text.');
+    // The button names the path field ("Sub Stage"): its label is translated like any field label.
+    for (const { d, f } of areas.has('pathButton') || lwcButton ? fieldsNamedInButton(org, needle, describes, record) : []) {
+      const r = fieldLabelResult(org, d, f, 'context');
+      r.notes = [`The button shows this field's label ("${f.label}"). Translating the label changes the button text.`, ...r.notes];
+      add(r);
     }
+    return;
   }
   if (areas.has('calendarEvent')) {
     add(calendarEventResult());
@@ -2031,7 +2081,8 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
       }));
       return;
     }
-    if (areas.has('utilityToDo') || SF_UTILITY_NAMES.includes(needle)) {
+    // To Do List: its Label field is locked in App Manager (UAT2 checked live). Found by its component, in any language.
+    if (areas.has('utilityToDo')) {
       demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.utilityBar.what}.`);
       add(salesforceTextResult('sfdctext:utilityBar', 'confirmed', {
         subtitle: 'Label of the To Do List utility',
