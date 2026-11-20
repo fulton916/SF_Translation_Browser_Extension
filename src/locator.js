@@ -391,7 +391,7 @@ export function namespaceOf(apiName) {
 }
 
 /** Translate page steps, or Override steps when the item comes from a package. */
-function workbench(org, { component, object, objectLabel, aspect, row, rows, pkg, parent }) {
+export function workbench(org, { component, object, objectLabel, aspect, row, rows, pkg, parent }) {
   const override = pkg && OVERRIDE_COMPONENTS.has(component);
   const steps = override
     ? ['Setup → Translation Workbench → Override', `Package: the one with namespace "${pkg}"`, languageStep(org), `Setup Component: ${component}`]

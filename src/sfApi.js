@@ -563,7 +563,7 @@ function xmlValue(xml, tag) {
 }
 
 /** One SOAP call (partner API, or the Metadata API with kind 'metadata'). Returns the response XML. */
-async function soapCall(session, kind, header, body) {
+export async function soapCall(session, kind, header, body) {
   const v = API_VERSION.slice(1);
   const [path, ns] = kind === 'metadata' ? [`/services/Soap/m/${v}`, 'http://soap.sforce.com/2006/04/metadata'] : [`/services/Soap/u/${v}`, 'urn:partner.soap.sforce.com'];
   const envelope =
