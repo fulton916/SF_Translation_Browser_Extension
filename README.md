@@ -187,18 +187,22 @@ auto-fill runs, it keeps going, and retries a failed step when you come back.
 ## Test log
 
 Click the extension's icon in the toolbar (or **Test log** at the bottom of the panel) to open the log.
-It records each lookup and its top results, each Go to translation, every auto-fill step and message,
+It records each lookup, its top results and the page element behind it (tags, component names, dialog title), each Go to translation, every auto-fill step and message,
 and all errors with details. It updates live while you test. **Copy all** gives plain text to send
 to the person who sent you the extension. **Download** saves JSON. Stored only in this browser (last 500 entries);
 session IDs and URL query strings are removed before saving.
 
 ## Roadmap
 
+Planned features are tracked one per GitHub issue, label `enhancement`
+([open feature list](https://github.com/fulton916/SF_Translation_Browser_Extension/issues?q=is%3Aopen+label%3Aenhancement)).
+Each one gets its own branch and PR.
+
 1. **Phase 1 (done):** identify the source and give the click path + Setup link.
 2. **Phase 2 (done):** "Go to translation" opens the exact screen and auto-fills it.
 3. **Phase 3:** edit the translation inside the panel. Write it through the Tooling API
    (`ExternalStringLocalization`) or Metadata API (`CustomObjectTranslation`, `Translations`).
-4. **Phase 4:** coverage report. List every label with a missing translation per active language.
+4. **Phase 4:** coverage report. List every label with a missing translation per active language (#14).
 5. Search layout sections, flows, and buttons org-wide (Metadata API retrieve, cached).
 
 ## Other translation places (not in the extension yet)
