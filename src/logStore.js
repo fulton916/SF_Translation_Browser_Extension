@@ -25,9 +25,24 @@ export function makeEntry(raw = {}, now = Date.now()) {
     message: sanitize(raw.message || '', 1000),
   };
   if (raw.page) entry.page = sanitize(raw.page, 300);
-  if (raw.details !== undefined) entry.details = sanitize(raw.details, 4000);
+  if (raw.details !== undefined) entry.details = sanitize(raw.details, 6000);
   if (raw.stack) entry.stack = sanitize(raw.stack, 2000);
   return entry;
+}
+
+/**
+ * The element path behind a lookup, kept short: tags and aura classes from the clicked element outward,
+ * plus the page markers locator.js reads. With it, one log entry is enough to rebuild the case as a test.
+ */
+export function pathDetails(hints = {}) {
+  const out = {};
+  if (hints.tags?.length) out.tags = hints.tags.join(' < ');
+  if (hints.auraClasses?.length) out.aura = hints.auraClasses.join(' < ');
+  for (const k of ['componentIds', 'sfComponents', 'objectApiNames']) if (hints[k]?.length) out[k] = hints[k];
+  for (const k of ['dialogTitle', 'flexipage', 'fieldPart', 'listHeader', 'tabRole', 'relatedListApi', 'errorPopover', 'highlightsLabel', 'helpIcon', 'recordTitle']) {
+    if (hints[k] !== undefined && hints[k] !== null && hints[k] !== false) out[k] = hints[k];
+  }
+  return out;
 }
 
 let chain = Promise.resolve();

@@ -1,6 +1,6 @@
 import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation } from './sfApi.js';
 import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
-import { addEntry, getEntries, formatEntries } from './logStore.js';
+import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
 
 // ---------- test log (viewer: click the toolbar icon) ----------
 const pathOf = (url) => {
@@ -217,7 +217,7 @@ function logLookup(text, url, hints, result) {
   const top = (result.results || []).slice(0, 5).map((r) => `${r.confidence} | ${r.source} | ${r.title}`);
   log(result.results?.length ? 'info' : 'warn', 'lookup', `"${text}": ${result.results?.length || 0} result(s)`, {
     page: pathOf(url),
-    details: { objects: result.contextObjects, selectionNames: hints?.selectionNames, top, hidden: result.droppedPartial || 0 },
+    details: { objects: result.contextObjects, selectionNames: hints?.selectionNames, top, hidden: result.droppedPartial || 0, path: pathDetails(hints) },
   });
   for (const w of result.warnings || []) log('warn', 'lookup', w, { page: pathOf(url) });
 }
