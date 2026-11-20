@@ -76,7 +76,7 @@ export function buildGotoUrl(goto, lang, orgDefault) {
     return { path: goto.page === 'override' ? SETUP.override : SETUP.workbench, autofill: { ...goto, page: 'workbench', lang: lang || null } };
   }
   if (goto.page === 'dataTranslation') {
-    return { path: SETUP.record(goto.object, goto.recordId), autofill: { page: 'dataTranslation', lang: lang || null } };
+    return { path: SETUP.record(goto.object, goto.recordId), autofill: { page: 'dataTranslation', lang: lang || null, object: goto.object || null } };
   }
   return null;
 }
@@ -1889,12 +1889,35 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '', org = 
     return;
   }
   // Renamed metrics are matched by MasterLabel. Viewing another language, the tile shows the translation of a
-  // renamed metric, which MasterLabel never holds: then the tile is Salesforce text only as context.
-  // A row whose Language is the one you view holds that text in MasterLabel (matched above): no translation there.
+  // renamed metric, which MasterLabel never holds. A row whose Language is the one you view holds that text in
+  // MasterLabel (matched above): no translation there.
   const renamed = areas.has('pipelineMetric') && !isDefaultLanguage(org)
     ? (org.pipelineMetrics || []).filter((m) => m.MasterLabel && m.Language !== org.userLanguage)
     : [];
-  const renamedElsewhere = renamed.length > 0;
+  // The translations of the renamed metrics in the language you view (background.js, Metadata API
+  // Translations.pipelineInspMetricConfigs by DeveloperName): the tile whose text is one of them is that metric.
+  const translations = Array.isArray(org.pipelineMetricTranslations) ? org.pipelineMetricTranslations : null;
+  if (renamed.length && translations && needle) {
+    const names = new Set(translations.filter((t) => t.label && normalize(t.label) === needle).map((t) => t.name));
+    const hits = renamed.filter((m) => names.has(m.DeveloperName));
+    if (hits.length) {
+      demoteLabelsToPartial(results, 'this metric name was set in Pipeline Settings → Metrics Settings, not as a custom label.');
+      for (const m of hits) {
+        const mr = pipelineMetricResult(org, m);
+        const lang = languageName(org.userLanguage);
+        if (hits.length > 1) mr.confidence = 'exact';
+        mr.notes = [hits.length > 1
+          ? `You view Salesforce in ${lang}: ${hits.length} renamed metrics have this ${lang} translation. Same words only.`
+          : `You view Salesforce in ${lang}: this tile shows the ${lang} translation from this row.`];
+        add(mr);
+      }
+      return;
+    }
+  }
+  // Translations read and none is the text: the tile is Salesforce's own metric name. Not read: every renamed
+  // metric stays possible, so the tile is Salesforce text only as context and the renamed metrics are listed.
+  const unresolved = translations ? [] : renamed;
+  const renamedElsewhere = unresolved.length > 0;
   const r = standardTextResult('pipelineInspection', areas.has('pipelineStatus') || orgName || renamedElsewhere ? 'context' : 'confirmed');
   if (areas.has('pipelineStatus')) {
     r.notes = ['"items" and "Filtered by" are Salesforce text. The filter names after them are field labels and values from your org.'];
@@ -1905,7 +1928,7 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '', org = 
     r.notes = ['A metric name an admin set in Pipeline Settings → Metrics Settings is translated in Translation Workbench → Translate → Setup Component: Pipeline Inspection Metric Configuration (column "Pipeline Inspection Metric Custom Label"). Salesforce\'s own metric names are not listed there.'];
   }
   add(r);
-  for (const m of renamed) {
+  for (const m of unresolved) {
     const mr = pipelineMetricResult(org, m);
     mr.confidence = 'context';
     mr.notes = [`You view Salesforce in ${languageName(org.userLanguage)}: a tile of a renamed metric shows its ${languageName(org.userLanguage)} translation from this row.`];
@@ -2140,26 +2163,35 @@ function fieldByShownLabel(describes, record, label) {
   return hits.length === 1 ? `${d.name}.${hits[0].name}` : null;
 }
 
-function addHelpIconResults(org, describes, confirmedFields, results, add) {
+function addHelpIconResults(org, describes, confirmedFields, results, add, hints = {}, needle = '') {
   const fieldOf = (o, n) => {
     const d = describes.find((x) => x.name === o);
     return { d, f: d?.fields?.find((x) => x.name === n) };
   };
   const fields = confirmedFields.map((cf) => fieldOf(...cf.split('.'))).filter((x) => x.f);
-  // No field in the path: the field whose label is the text (the icon's text is "Help <label>").
-  const byText = results
-    .filter((r) => r.key.startsWith('field:') && r.confidence === 'exact')
-    .map((r) => fieldOf(...r.key.slice(6).split('.')))
-    .filter((x) => x.f?.inlineHelpText);
+  // No field in the path: content.js sends the help text itself as the text (the icon button's
+  // aria-description, in the language you view) and the label shown beside the icon as hints.helpLabel.
+  // Describes hold both in that language. Older content.js sent the label as the text.
+  const withHelp = describes.flatMap((d) => (d.fields || []).filter((f) => f.inlineHelpText).map((f) => ({ d, f })));
+  const label = normalize(hints.helpLabel || '');
+  let byText = needle ? withHelp.filter(({ f }) => normalize(f.inlineHelpText) === needle) : [];
+  if (!byText.length && label) byText = withHelp.filter(({ f }) => normalize(f.label) === label);
+  if (!byText.length) {
+    byText = results
+      .filter((r) => r.key.startsWith('field:') && r.confidence === 'exact')
+      .map((r) => fieldOf(...r.key.slice(6).split('.')))
+      .filter((x) => x.f?.inlineHelpText);
+  }
   const confidence = fields.length ? 'confirmed' : 'exact';
   for (const { d, f } of fields.length ? fields : byText) {
     const r = helpTextResult(org, d, f, confidence);
     if (!f.inlineHelpText) r.subtitle = 'Help text of this field';
     r.notes = ["You pointed at this field's help (i) icon.", ...r.notes];
     add(r);
-    const label = results.find((x) => x.key === `field:${d.name}.${f.name}`);
-    if (label) label.confidence = 'context';
+    const labelCard = results.find((x) => x.key === `field:${d.name}.${f.name}`);
+    if (labelCard) labelCard.confidence = 'context';
   }
+  if (fields.length || byText.length) demoteSameTextLabels(results, "this is a field's help text, not a custom label.");
 }
 
 /** Pointed at a field's value (not its label) and the value is not one of its picklist values. */
@@ -2479,7 +2511,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     if (found) demoteSameTextLabels(results, 'this is a validation rule message, not a custom label.');
   }
   // Help (i) icon of a field: its help text, not the label (bug: "Help Display Name" matched labels only).
-  if (areas.has('helpIcon')) addHelpIconResults(org, describes, confirmedFields, results, add);
+  if (areas.has('helpIcon')) addHelpIconResults(org, describes, confirmedFields, results, add, hints, needle);
   // The record name in the highlights panel is the Name field's value.
   if (areas.has('recordTitle')) {
     const d = describes.find((x) => x.name === record?.object) || describes[0];

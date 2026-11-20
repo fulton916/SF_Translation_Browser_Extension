@@ -3,7 +3,7 @@
 // Polish, so the Polish strings are illustrative: the checks read only page markers, never the words.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { locate, detectAreas, SOURCE } from '../src/locator.js';
+import { locate, detectAreas, buildGotoUrl, SOURCE } from '../src/locator.js';
 
 const org = (extra = {}) => ({
   userLanguage: 'fr', defaultLanguage: 'en_US', customLabels: [], labelTranslations: [], objects: [], tabs: [], apps: [], validationRules: [], paths: [], ...extra,
@@ -188,4 +188,78 @@ test('#13 review: a metric row in the language you view is no other-language tra
   const out = locate({ text: 'Pipeline ouvert', org: org({ pipelineMetrics }), describes: [], hints: tile }).results;
   assert.equal(out.find((r) => r.key === 'sfdctext:pipelineInspection').confidence, 'confirmed');
   assert.ok(!out.some((r) => r.key === 'pipelineMetric:0Xm000000000002'));
+});
+
+// Issue #23: the last English-only checks. French page text was captured live in the dev org (user language
+// French, Nov 2026); the German strings are illustrative.
+const widget = (label, help) => ({
+  name: 'SFTL_Widget__c', label: 'Widget', labelPlural: 'Widgets', custom: true, quickActions: [], recordTypeInfos: [],
+  fields: [
+    { name: 'SFTL_Color__c', label, custom: true, type: 'string', inlineHelpText: help, picklistValues: [] },
+    { name: 'SFTL_Notes__c', label: 'Notes', custom: true, type: 'string', picklistValues: [] },
+  ],
+});
+const fr = widget('Couleur de peinture', 'Choisissez la couleur de peinture du client.');
+const de = widget('Lackfarbe', 'Wählen Sie die Lackfarbe des Kunden.');
+// lightning-primitive-icon < button < lightning-button-icon < div < lightning-helptext < div < div[RecordField]
+const helpTags = ['lightning-primitive-icon', 'button', 'lightning-button-icon', 'div', 'lightning-helptext', 'div', 'div', 'records-record-layout-item'];
+
+test('#23: the help (i) icon in French or German gives the help text card, with or without the field in the path', () => {
+  for (const [d, o, label] of [[fr, org(), 'Couleur de peinture'], [de, org({ userLanguage: 'de' }), 'Lackfarbe']]) {
+    const help = d.fields[0].inlineHelpText;
+    const inField = { tags: helpTags, helpIcon: true, helpLabel: label, selectionNames: ['sfdc:RecordField.SFTL_Widget__c.SFTL_Color__c'] };
+    const a = locate({ text: help, org: o, describes: [d], hints: inField }).results;
+    assert.equal(a[0].key, 'help:SFTL_Widget__c.SFTL_Color__c', label);
+    assert.equal(a[0].confidence, 'confirmed', label);
+    // No field in the path: the help text the icon holds names the field.
+    const b = locate({ text: help, org: o, describes: [d], hints: { tags: helpTags, helpIcon: true, helpLabel: label } }).results;
+    assert.equal(b[0].key, 'help:SFTL_Widget__c.SFTL_Color__c', label);
+    assert.equal(b[0].confidence, 'exact', label);
+    // No help text on the icon (older markup): the label beside the icon names the field.
+    const c = locate({ text: label, org: o, describes: [d], hints: { tags: helpTags, helpIcon: true, helpLabel: label } }).results;
+    assert.ok(c.some((r) => r.key === 'help:SFTL_Widget__c.SFTL_Color__c' && r.confidence === 'exact'), label);
+  }
+});
+
+test('#23: a custom label with the same words as the help text drops to same words only', () => {
+  const lbl = { Id: '101000000000001', Name: 'Pick_Color', MasterLabel: 'Pick_Color', NamespacePrefix: null, Value: fr.fields[0].inlineHelpText, Language: 'en_US' };
+  const hints = { tags: helpTags, helpIcon: true, helpLabel: 'Couleur de peinture', selectionNames: ['sfdc:RecordField.SFTL_Widget__c.SFTL_Color__c'] };
+  const out = locate({ text: lbl.Value, org: org({ customLabels: [lbl] }), describes: [fr], hints }).results;
+  assert.equal(out[0].key, 'help:SFTL_Widget__c.SFTL_Color__c');
+  const l = out.find((r) => r.source === SOURCE.CUSTOM_LABEL);
+  assert.ok(l, 'the label is still listed');
+  assert.notEqual(l.confidence, 'confirmed');
+  assert.match(l.notes[0], /help text/);
+});
+
+const tile = { tags: ['span', 'div', 'runtime_pipeline_inspector-kpi-panel', 'div'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorHome'] };
+const metrics = [
+  { Id: '0Xm000000000011', DeveloperName: 'LostDeals', MasterLabel: 'Lost Deals', Language: 'en_US', Metric: 'ClosedLost' },
+  { Id: '0Xm000000000012', DeveloperName: 'OpenDeals', MasterLabel: 'Open Deals', Language: 'en_US', Metric: 'OpenPipeline' },
+];
+
+test('#23: a renamed Pipeline metric tile in French or German is its one metric, confirmed', () => {
+  for (const [lang, text, other] of [['fr', 'Affaires perdues', 'Affaires ouvertes'], ['de', 'Verlorene Geschäfte', 'Offene Geschäfte']]) {
+    const pipelineMetricTranslations = [{ name: 'LostDeals', label: text }, { name: 'OpenDeals', label: other }];
+    const out = locate({ text, org: org({ userLanguage: lang, pipelineMetrics: metrics, pipelineMetricTranslations }), describes: [], hints: tile }).results;
+    assert.equal(out[0].key, 'pipelineMetric:0Xm000000000011', lang);
+    assert.equal(out[0].confidence, 'confirmed', lang);
+    assert.match(out[0].notes[0], /translation from this row/, lang);
+    assert.equal(out.filter((r) => r.key.startsWith('pipelineMetric:')).length, 1, lang);
+    assert.ok(!out.some((r) => r.key === 'sfdctext:pipelineInspection'), lang);
+  }
+});
+
+test('#23: with the translations read, a tile that is none of them is Salesforce text, confirmed', () => {
+  const pipelineMetricTranslations = [{ name: 'LostDeals', label: 'Affaires perdues' }];
+  const out = locate({ text: 'Pipeline ouvert', org: org({ pipelineMetrics: metrics, pipelineMetricTranslations }), describes: [], hints: tile }).results;
+  assert.equal(out[0].key, 'sfdctext:pipelineInspection');
+  assert.equal(out[0].confidence, 'confirmed');
+  assert.ok(!out.some((r) => r.key.startsWith('pipelineMetric:')));
+});
+
+test('#23: Go to translation for record data passes the record object to the Translations tab auto-fill', () => {
+  const g = buildGotoUrl({ page: 'dataTranslation', object: 'Product2', recordId: '01t000000000001AAA' }, 'fr', 'en_US');
+  assert.equal(g.autofill.page, 'dataTranslation');
+  assert.equal(g.autofill.object, 'Product2');
 });

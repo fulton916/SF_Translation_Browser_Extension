@@ -259,6 +259,30 @@ export async function loadDataTranslation(session, org, objectName, recordId) {
 
 const flexiCache = new Map();
 
+/** The FlexiPage DeveloperNames a generated page tag can stand for (with the object suffix dropped first). */
+function flexiPageNames(flexipageTag, objects = []) {
+  const m = /^forcegenerated-flexipage_(.+?)__(?:view|create|edit|clone)(?:_|$)/.exec(flexipageTag || '');
+  if (!m || !/^[A-Za-z0-9_]+$/.test(m[1])) return [];
+  const names = [m[1]];
+  for (const o of objects) {
+    const sfx = '_' + String(o).toLowerCase();
+    if (m[1].endsWith(sfx)) names.unshift(m[1].slice(0, -sfx.length));
+  }
+  return names;
+}
+
+/** One FlexiPage with its Metadata (Tooling API), cached 5 minutes; null when there is none by that name. */
+async function loadFlexiPage(session, name) {
+  const key = `${session.host}|${name}`;
+  let hit = flexiCache.get(key);
+  if (!hit || Date.now() - hit.at > CACHE_TTL_MS) {
+    hit = { at: Date.now(), promise: queryAll(session, `SELECT DeveloperName, MasterLabel, Metadata FROM FlexiPage WHERE DeveloperName = '${name}' LIMIT 1`, { tooling: true }) };
+    flexiCache.set(key, hit);
+    hit.promise.catch(() => flexiCache.delete(key));
+  }
+  return (await hit.promise)[0] || null;
+}
+
 /**
  * Reads one Lightning App Builder component (e.g. a Dynamic Forms field section) from a record
  * page's metadata. The page's generated tag is "forcegenerated-flexipage_<dev name>_<object>__view_js…", and
@@ -266,22 +290,9 @@ const flexiCache = new Map();
  * SOQL DeveloperName comparisons ignore case. Returns { page, id, component, label } or null.
  */
 export async function loadFlexiPageComponent(session, flexipageTag, componentId, objects = []) {
-  const m = /^forcegenerated-flexipage_(.+?)__(?:view|create|edit|clone)(?:_|$)/.exec(flexipageTag || '');
-  if (!m || !/^[A-Za-z0-9_]+$/.test(m[1]) || !/^[A-Za-z0-9_]+$/.test(componentId || '')) return null;
-  const names = [m[1]];
-  for (const o of objects) {
-    const sfx = '_' + o.toLowerCase();
-    if (m[1].endsWith(sfx)) names.unshift(m[1].slice(0, -sfx.length));
-  }
-  for (const name of names) {
-    const key = `${session.host}|${name}`;
-    let hit = flexiCache.get(key);
-    if (!hit || Date.now() - hit.at > CACHE_TTL_MS) {
-      hit = { at: Date.now(), promise: queryAll(session, `SELECT DeveloperName, MasterLabel, Metadata FROM FlexiPage WHERE DeveloperName = '${name}' LIMIT 1`, { tooling: true }) };
-      flexiCache.set(key, hit);
-      hit.promise.catch(() => flexiCache.delete(key));
-    }
-    const page = (await hit.promise)[0];
+  if (!/^[A-Za-z0-9_]+$/.test(componentId || '')) return null;
+  for (const name of flexiPageNames(flexipageTag, objects)) {
+    const page = await loadFlexiPage(session, name);
     if (!page) continue;
     // A tab's page element is "flexipage_tab2Tab" for the component "flexipage_tab2" (UAT2, Nov 2026).
     const ids = /Tab$/.test(componentId) ? [componentId, componentId.slice(0, -3)] : [componentId];
@@ -393,6 +404,61 @@ export function loadPipelineMetrics(session, { refresh = false } = {}) {
       throw e;
     })
   );
+}
+
+/**
+ * readMetadata Translations response → the renamed Pipeline Inspection metric names in that language:
+ * [{ name (DeveloperName), label }]. Translations.pipelineInspMetricConfigs { name, label, description }
+ * (Metadata API describeValueType, dev org, Nov 2026). A row with no translation has a comment as its
+ * label (<label><!-- Name --></label>) and is left out.
+ */
+export function parsePipelineMetricTranslations(xml) {
+  return xmlBlocks(xml, 'pipelineInspMetricConfigs')
+    .map((b) => ({ name: xmlValue(b, 'name'), label: (xmlValue(b, 'label') || '').trim() }))
+    .filter((t) => t.name && t.label);
+}
+
+const metricTranslationCache = new Map();
+
+/**
+ * The renamed metric names translated into `language` (Translation Workbench → Pipeline Inspection Metric
+ * Configuration), from the Metadata API readMetadata Translations "<language>". Cached; a failed read is not.
+ */
+export function loadPipelineMetricTranslations(session, language, { refresh = false } = {}) {
+  if (!/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve(null);
+  return cached(metricTranslationCache, `${session.host}|${language}`, refresh, () =>
+    soapCall(session, 'metadata', '', `<s:readMetadata><s:type>Translations</s:type><s:fullNames>${language}</s:fullNames></s:readMetadata>`).then(parsePipelineMetricTranslations)
+  );
+}
+
+/**
+ * Identifiers of a record page's tabs that are the Translations tab: the standard title key
+ * Standard.Tab.translations, or a title an admin typed as "Translations" (the same text in every language). Pure.
+ */
+export function translationsTabIds(page) {
+  const ids = [];
+  for (const region of page?.Metadata?.flexiPageRegions || []) {
+    for (const item of region.itemInstances || []) {
+      const ci = item.componentInstance;
+      if (ci?.componentName !== 'flexipage:tab' || !ci.identifier) continue;
+      const title = (ci.componentInstanceProperties || []).find((p) => p.name === 'title')?.value;
+      if (title === 'Standard.Tab.translations' || /^\s*translations?\s*$/i.test(title || '')) ids.push(ci.identifier);
+    }
+  }
+  return ids;
+}
+
+/**
+ * The Translations tab of a record page, by its App Builder identifier (the tab element's data-tab-value).
+ * Lightning shows the tab title Standard.Tab.translations in the user's language (dev org, French:
+ * "Traductions", a[data-tab-value=flexipage_tab2]), so only the page metadata names it in every language.
+ */
+export async function loadTranslationsTabIds(session, flexipageTag, objects = []) {
+  for (const name of flexiPageNames(flexipageTag, objects)) {
+    const page = await loadFlexiPage(session, name);
+    if (page) return translationsTabIds(page);
+  }
+  return [];
 }
 
 const flowCache = new Map();
