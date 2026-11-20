@@ -6,6 +6,8 @@ and Override), and Data Translation. Each result shows the click path. Results t
 screen also show a **Go to translation** button. It opens that screen and fills in the language and
 filters. You type the translation and click Save.
 
+**Roadmap:** [open features](https://github.com/fulton916/SF_Translation_Browser_Extension/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
+
 ## Install (developer mode, about 2 minutes)
 
 1. Get the zip. From GitHub: open
@@ -201,16 +203,16 @@ session IDs and URL query strings are removed before saving.
 
 ## Roadmap
 
-Planned features are tracked one per GitHub issue, label `enhancement`
-([open feature list](https://github.com/fulton916/SF_Translation_Browser_Extension/issues?q=is%3Aopen+label%3Aenhancement)).
+Planned features are tracked one per GitHub issue, label `enhancement` plus a `group: <area>` label
+([open feature list](https://github.com/fulton916/SF_Translation_Browser_Extension/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)).
 Each one gets its own branch and PR.
 
 1. **Phase 1 (done):** identify the source and give the click path + Setup link.
 2. **Phase 2 (done):** "Go to translation" opens the exact screen and auto-fills it.
 3. **Phase 3:** edit the translation inside the panel. Write it through the Tooling API
-   (`ExternalStringLocalization`) or Metadata API (`CustomObjectTranslation`, `Translations`).
-4. **Phase 4:** coverage report. List every label with a missing translation per active language (#14).
-5. Search layout sections, flows, and buttons org-wide (Metadata API retrieve, cached).
+   (`ExternalStringLocalization`) or Metadata API (`CustomObjectTranslation`, `Translations`) (#25).
+4. **Phase 4 (done):** coverage report. List every label with a missing translation per active language (#14).
+5. Search layout sections, flows, and buttons org-wide (Metadata API retrieve, cached) (#24).
 
 ## Other translation places (not in the extension yet)
 
@@ -225,8 +227,10 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
   related list's rows, the child object's field labels are searched too.
 - Per lookup, the full value list (inactive values and value sets) is read for at most 4 picklist fields,
   the one you point at first.
-- Salesforce text is recognised by its English wording. Viewing Salesforce in another language gives
-  fewer "Owned by Salesforce" answers.
+- Salesforce text is recognised by page markers, in any language. A few checks still use English words
+  (#23): the help icon's `Help ` prefix, the auto-fill search for the record's Translations tab, a path
+  guidance highlight that starts with its heading, and Salesforce's required-field messages. Viewing another
+  language, a Pipeline metric tile lists every renamed metric as context instead of naming one.
 - Path guidance is matched on its master text only. Viewing Salesforce in a translated language, the guidance shows the translation, which is not searched.
 - Validation messages are matched on their master text. A translated message is found only when it shows
   under a field (by the rule's error location, confirmed through the rule's translation); a translated message
@@ -237,7 +241,7 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
   Salesforce's text in the page, so the extension sees Chrome's translation, not Salesforce's. When you test
   another language, turn it off for Salesforce: Chrome's translate icon in the address bar → ⋮ → Never
   translate this site.
-- Gov Cloud (`.mil`) and China (`.sfcrmproducts.cn`) domains are not mapped yet.
+- Gov Cloud (`.mil`) and China (`.sfcrmproducts.cn`) domains are not mapped yet (#26).
 - Experience Cloud sites are not supported (different session).
 - Some Setup component names in Translation Workbench vary slightly by org edition. The panel says
   which to pick; if it is missing in your dropdown, check the nearest match.
