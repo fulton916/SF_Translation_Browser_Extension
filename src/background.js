@@ -385,7 +385,8 @@ async function lookup({ text, hints, urls, refresh = false }) {
   // Viewing another language: a renamed metric's tile shows its translation (Translation Workbench), which
   // PipelineInspMetricConfig never holds. Read it only when the org has a renamed metric.
   let pipelineMetricTranslations = null;
-  if (pipelineMetrics?.length && org.userLanguage && org.defaultLanguage && org.userLanguage !== org.defaultLanguage) {
+  const isMasterLabel = (pipelineMetrics || []).some((m) => m.MasterLabel && normalize(m.MasterLabel) === needle);
+  if (pipelineMetrics?.length && !isMasterLabel && org.userLanguage && org.defaultLanguage && org.userLanguage !== org.defaultLanguage) {
     pipelineMetricTranslations = await loadPipelineMetricTranslations(session, org.userLanguage, { refresh }).catch((e) => {
       warnings.push(`Pipeline Inspection metric translations not read: ${e.message || e}`);
       return null;

@@ -209,6 +209,7 @@
     if (at < 0) return {};
     const within = (el) => [el, el?.shadowRoot].filter(Boolean);
     const pick = (el, sel) => within(el).map((r) => r.querySelector?.(sel)).find(Boolean) || null;
+    const pickAll = (el, sel) => within(el).flatMap((r) => [...(r.querySelectorAll?.(sel) || [])]);
     const icon = path[at];
     const button = path.slice(0, at).find((el) => el.tagName === 'BUTTON') || pick(pick(icon, 'lightning-button-icon'), 'button') || pick(icon, 'button');
     let help = (button?.getAttribute('aria-description') || '').trim();
@@ -216,9 +217,12 @@
     const tipId = !help && button?.getAttribute('aria-describedby');
     if (tipId) help = (button.getRootNode?.().getElementById?.(tipId) || document.getElementById(tipId))?.innerText?.trim() || '';
     let label = '';
+    // The nearest ancestor that holds exactly one label. One holding several is a section of fields: stop there.
     for (const el of path.slice(at + 1, at + 8)) {
-      const l = pick(el, '.test-id__field-label') || pick(el, '.slds-form-element__label');
-      if (l) label = visibleText(l).split('\n')[0].replace(/^\*\s*/, '').trim();
+      const own = pickAll(el, '.test-id__field-label');
+      const ls = own.length ? own : pickAll(el, '.slds-form-element__label');
+      if (ls.length > 1) break;
+      if (ls.length) label = visibleText(ls[0]).split('\n')[0].replace(/^\*\s*/, '').trim();
       if (label || el.getAttribute('data-target-selection-name')?.startsWith('sfdc:RecordField.')) break;
     }
     return { help: help.slice(0, 1000), label: label.slice(0, 200) };
@@ -975,7 +979,11 @@
    */
   async function fillDataTranslation(p) {
     const page = await waitFor(() => deepFind((e) => e.tagName.toLowerCase().startsWith('forcegenerated-flexipage_')), 15000).catch(() => null);
-    const found = page ? await ask({ type: 'sftl:translationsTab', flexipage: page.tagName.toLowerCase(), object: p?.object || null }, 20000).catch((e) => ({ error: e.message })) : null;
+    if (!page) {
+      toast('This record page did not finish loading, so its Translations tab was not found. Reload the page, then click its Translations tab.', true);
+      return finish();
+    }
+    const found = await ask({ type: 'sftl:translationsTab', flexipage: page.tagName.toLowerCase(), object: p?.object || null }, 20000).catch((e) => ({ error: e.message }));
     if (found?.error) {
       toast(`Could not read the tabs of this record page: ${found.error}`, true);
       return finish();

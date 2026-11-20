@@ -39,7 +39,7 @@ export function pathDetails(hints = {}) {
   if (hints.tags?.length) out.tags = hints.tags.join(' < ');
   if (hints.auraClasses?.length) out.aura = hints.auraClasses.join(' < ');
   for (const k of ['componentIds', 'sfComponents', 'objectApiNames']) if (hints[k]?.length) out[k] = hints[k];
-  for (const k of ['dialogTitle', 'flexipage', 'fieldPart', 'listHeader', 'tabRole', 'relatedListApi', 'errorPopover', 'highlightsLabel', 'helpIcon', 'recordTitle']) {
+  for (const k of ['dialogTitle', 'flexipage', 'fieldPart', 'listHeader', 'tabRole', 'relatedListApi', 'errorPopover', 'highlightsLabel', 'helpIcon', 'helpLabel', 'recordTitle']) {
     if (hints[k] !== undefined && hints[k] !== null && hints[k] !== false) out[k] = hints[k];
   }
   return out;

@@ -1904,8 +1904,11 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '', org = 
       demoteLabelsToPartial(results, 'this metric name was set in Pipeline Settings → Metrics Settings, not as a custom label.');
       for (const m of hits) {
         const mr = pipelineMetricResult(org, m);
+        const lang = languageName(org.userLanguage);
         if (hits.length > 1) mr.confidence = 'exact';
-        mr.notes = [`You view Salesforce in ${languageName(org.userLanguage)}: this tile shows the ${languageName(org.userLanguage)} translation from this row.`];
+        mr.notes = [hits.length > 1
+          ? `You view Salesforce in ${lang}: ${hits.length} renamed metrics have this ${lang} translation. Same words only.`
+          : `You view Salesforce in ${lang}: this tile shows the ${lang} translation from this row.`];
         add(mr);
       }
       return;
