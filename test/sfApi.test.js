@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { soqlLike, loadLabelTranslations, stripAttributes, loadFlexiPageComponent, loadOrgData } from '../src/sfApi.js';
+import { soqlLike, loadLabelTranslations, stripAttributes, loadFlexiPageComponent, loadOrgData, utilityItems, loadUtilityApps, loadUtilityBar, loadPipelineMetrics } from '../src/sfApi.js';
 
 test('soqlLike escapes quotes, backslash, % and _', () => {
   assert.equal(soqlLike(String.raw`it's 50%_x\y`), String.raw`it\'s 50\%\_x\\y`);
@@ -101,4 +101,67 @@ test('loadOrgData: path guidance queries fail → warnings only, other sources s
   assert.equal(org.userLanguage, 'en_US');
   assert.ok(org.warnings.some((w) => w.startsWith('Path guidance not searched')));
   assert.ok(org.warnings.some((w) => w.startsWith('Paths not searched')));
+});
+
+// Utility bar FlexiPage Metadata (dev org Sales app, Tooling, checked live): the label is a "decorator" property.
+const salesBarPage = {
+  DeveloperName: 'LightningSales_UtilityBar', MasterLabel: 'Sales App Utility Bar',
+  Metadata: {
+    flexiPageRegions: [{
+      name: 'utilityItems', type: 'Region',
+      itemInstances: [
+        { componentInstance: { componentInstanceProperties: [], componentName: 'runtime_sales_todo_list:unifiedToDoListAuraWrapper', identifier: 'runtime_sales_todo_list_unifiedToDoListAuraWrapper' }, fieldInstance: null },
+        { componentInstance: { componentInstanceProperties: [
+          { name: 'icon', type: 'decorator', value: 'info', valueList: null },
+          { name: 'label', type: 'decorator', value: 'Example Tips', valueList: null },
+          { name: 'richTextValue', type: null, value: '<p>Example</p>', valueList: null },
+        ], componentName: 'flexipage:richText', identifier: 'flexipage_richText' }, fieldInstance: null },
+        { componentInstance: { componentInstanceProperties: [{ name: 'label', type: null, value: 'Chart title', valueList: null }], componentName: 'flexipage:reportChart', identifier: 'flexipage_reportChart' }, fieldInstance: null },
+      ],
+    }],
+  },
+};
+
+test('utilityItems: the label decorator is the item label; a component property named label is not', () => {
+  assert.deepEqual(utilityItems(salesBarPage), [
+    { id: 'runtime_sales_todo_list_unifiedToDoListAuraWrapper', component: 'runtime_sales_todo_list:unifiedToDoListAuraWrapper', label: null },
+    { id: 'flexipage_richText', component: 'flexipage:richText', label: 'Example Tips' },
+    { id: 'flexipage_reportChart', component: 'flexipage:reportChart', label: null },
+  ]);
+});
+
+test('loadUtilityApps puts the current app first; loadUtilityBar reads a package bar by namespace', async () => {
+  const urls = [];
+  globalThis.fetch = async (u) => {
+    const url = decodeURIComponent(u);
+    urls.push(url);
+    const body = /userinfo/.test(url)
+      ? { user_id: '005000000000001AAA' }
+      : /FROM AppDefinition/.test(url)
+        ? { done: true, records: [{ DurableId: '06m000000000001', Label: 'Sales', UtilityBar: 'LightningSales_UtilityBar' }, { DurableId: '06m000000000002', Label: 'Example Edition', UtilityBar: 'exns__Example_UtilityBar' }] }
+        : /FROM UserAppInfo/.test(url)
+          ? { done: true, records: [{ AppDefinitionId: '06m000000000002' }] }
+          : { done: true, records: [salesBarPage] };
+    return { ok: true, json: async () => body };
+  };
+  const session = { host: 'utility.example.com', sid: 's' };
+  const apps = await loadUtilityApps(session);
+  assert.deepEqual(apps.map((a) => [a.app, a.current]), [['Example Edition', true], ['Sales', false]]);
+  assert.ok(urls.some((u) => /UserAppInfo WHERE UserId = '005000000000001AAA' AND FormFactor = 'Large'/.test(u)));
+  await loadUtilityBar(session, apps[0]);
+  assert.match(urls.at(-1), /\/tooling\/query\/.*FROM FlexiPage WHERE DeveloperName = 'Example_UtilityBar' AND NamespacePrefix = 'exns' LIMIT 1/);
+  const bar = await loadUtilityBar(session, apps[1]);
+  assert.match(urls.at(-1), /DeveloperName = 'LightningSales_UtilityBar' AND NamespacePrefix = null/);
+  assert.equal(bar.app, 'Sales');
+  assert.equal(bar.items[1].label, 'Example Tips');
+});
+
+test('loadPipelineMetrics: an org without Pipeline Inspection has no metric names, not an error', async () => {
+  globalThis.fetch = async () => ({ ok: false, status: 400, text: async () => JSON.stringify([{ message: "sObject type 'PipelineInspMetricConfig' is not supported.", errorCode: 'INVALID_TYPE' }]) });
+  assert.deepEqual(await loadPipelineMetrics({ host: 'nopipeline.example.com', sid: 's' }), []);
+  const urls = [];
+  globalThis.fetch = async (u) => (urls.push(decodeURIComponent(u)), { ok: true, json: async () => ({ done: true, records: [{ Id: '0ZZ000000000001', MasterLabel: 'Example Open Deals', Metric: 'OpenPipeline' }] }) });
+  const rows = await loadPipelineMetrics({ host: 'pipeline.example.com', sid: 's' });
+  assert.equal(rows[0].MasterLabel, 'Example Open Deals');
+  assert.match(urls[0], /\/services\/data\/v\d+\.0\/query\/\?q=SELECT Id, DeveloperName, MasterLabel, Language, Metric FROM PipelineInspMetricConfig$/);
 });

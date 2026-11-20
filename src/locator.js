@@ -240,10 +240,13 @@ export function detectAreas(hints = {}) {
   if (comp(/^runtime_sales_activities/)) areas.add('activityTimeline');
   if (comp(/^runtime_sales_merge/)) areas.add('duplicates');
   if (comp(/^forceChatter_/)) areas.add('feed');
-  if (comp(/^flexipage_reportChart/)) areas.add('reportChart');
+  // A utility item's label (its button, or the open panel's title) sits inside the item's component
+  // (div[flexipageComponent][tsn=flexipage_richText] in the dev org Sales app): that is no text of the component.
+  const utilityLabel = aura.includes('oneUtilityBarItem') || (aura.includes('oneUtilityBarPanel') && tags.slice(0, 3).includes('h2'));
+  if (comp(/^flexipage_reportChart/) && !utilityLabel) areas.add('reportChart');
   // Lightning App Builder Rich Text component (dev org, checked live: p < div.uiOutputRichText <
   // div[data-aura-class=flexipageRichText] < flexipage-aura-wrapper < flexipage-component2).
-  if (aura.includes('flexipageRichText') || has(/^flexipage-rich-?text/) || comp(/^flexipage_richText/)) areas.add('richText');
+  if (!utilityLabel && (aura.includes('flexipageRichText') || has(/^flexipage-rich-?text/) || comp(/^flexipage_richText/))) areas.add('richText');
   // Path: the guidance is in Aura divs (no custom tag names), so read their data-aura-class too.
   // Verified live on an Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
   if (has(/(^lightning-path|pathassistant)/) || aura.some((a) => /pathassistant/i.test(a))) areas.add('path');
@@ -281,7 +284,7 @@ export function detectAreas(hints = {}) {
   // div[flexipageComponent][tsn=runtime_sales_todo_list_unifiedToDoListAuraWrapper] < ul.slds-utility-bar; an open
   // item's panel title is h2.panelTitle < div[oneUtilityBarPanel]. Item labels are set in App Manager → Utility Items.
   // Only the label: the item's button, or the open panel's own title (not the records listed in the panel).
-  if (aura.includes('oneUtilityBarItem') || (aura.includes('oneUtilityBarPanel') && tags.slice(0, 3).includes('h2'))) {
+  if (utilityLabel) {
     areas.add('utilityBar');
     if (comp(/^runtime_sales_todo_list/)) areas.add('utilityToDo');
   }
@@ -1719,6 +1722,74 @@ function utilityLabelResult() {
   };
 }
 
+/**
+ * The utility item the text belongs to, from the app utility bars (sfApi loadUtilityBar, current app first).
+ * An item whose label is the text wins; else the pointed item (its identifier is among the element's
+ * component ids) when it has no label of its own, so the text is the name Salesforce gives the component.
+ * Returns { bar, item } or null.
+ */
+export function findUtilityItem(bars = [], needle = '', componentIds = []) {
+  const live = (bars || []).filter(Boolean);
+  for (const bar of live) {
+    const pointed = bar.items.find((i) => i.label && componentIds.includes(i.id) && normalize(i.label) === needle);
+    if (pointed) return { bar, item: pointed };
+  }
+  for (const bar of live) {
+    const item = bar.items.find((i) => i.label && normalize(i.label) === needle);
+    if (item) return { bar, item };
+  }
+  for (const bar of live) {
+    const item = bar.items.find((i) => !i.label && componentIds.includes(i.id));
+    if (item) return { bar, item };
+  }
+  return null;
+}
+
+/** A utility item label typed in App Manager: Translation Workbench has no Setup Component for it. */
+function utilityItemLabelResult({ bar, item }) {
+  return {
+    key: `utility:${item.id}`,
+    source: SOURCE.NOT_TRANSLATABLE,
+    confidence: 'confirmed',
+    title: 'Utility item label typed in App Manager',
+    subtitle: `Label of the "${item.label}" utility item in the ${bar.app} app`,
+    steps: [
+      'Translation Workbench and Rename Tabs and Labels have no Setup Component for utility item labels: the typed label shows in every language.',
+      `To change it: Setup → App Manager → ${bar.app} → Edit → Utility Items (Desktop Only) → ${item.label} → Label.`,
+    ],
+    url: SETUP.appManager,
+    copy: item.label,
+    notes: item.component ? [`Component: ${item.component} (utility bar "${bar.page}").`] : [],
+  };
+}
+
+// Pipeline Inspection metric tiles (PipelineInspMetricConfig.Metric picklist, read from its describe).
+const PIPELINE_METRICS = {
+  TotalPipeline: 'Total',
+  ClosedWon: 'Closed Won',
+  Commit: 'Commit',
+  MostLikely: 'Most Likely',
+  BestCase: 'Best Case',
+  OpenPipeline: 'Open Pipeline',
+  ClosedLost: 'Closed Lost',
+};
+
+/** A metric name an admin set in Pipeline Settings → Metrics Settings: its own Translation Workbench row. */
+function pipelineMetricResult(org, m) {
+  const wb = workbench(org, { component: 'Pipeline Inspection Metric Configuration', rows: [m.MasterLabel, m.DeveloperName] });
+  wb.steps.push(`Find the row: ${m.MasterLabel}`, 'Column: Pipeline Inspection Metric Custom Label');
+  const tile = PIPELINE_METRICS[m.Metric] || m.Metric;
+  return {
+    key: `pipelineMetric:${m.Id}`,
+    ...wb,
+    confidence: 'confirmed',
+    title: `Pipeline Inspection metric name: ${m.MasterLabel}`,
+    subtitle: tile ? `The name an admin gave the ${tile} metric (Pipeline Settings → Metrics Settings)` : 'A metric name an admin set in Pipeline Settings → Metrics Settings',
+    copy: m.MasterLabel,
+    notes: [],
+  };
+}
+
 function pipelineViewResult() {
   return {
     key: 'sfdctext:pipelineView',
@@ -1753,8 +1824,15 @@ function pipelineRecordDataResult() {
   };
 }
 
-function addPipelineResults(areas, results, add, hints = {}, needle = '') {
+function addPipelineResults(areas, results, add, hints = {}, needle = '', org = {}) {
   const why = `custom labels are not used in ${STANDARD_AREAS.pipelineInspection.what}.`;
+  // A metric tile an admin renamed (Pipeline Settings → Metrics Settings), read from PipelineInspMetricConfig.
+  const metric = areas.has('pipelineMetric') && needle ? (org.pipelineMetrics || []).find((m) => m.MasterLabel && normalize(m.MasterLabel) === needle) : null;
+  if (metric) {
+    demoteLabelsToPartial(results, 'this metric name was set in Pipeline Settings → Metrics Settings, not as a custom label.');
+    add(pipelineMetricResult(org, metric));
+    return;
+  }
   // The object name above the view name: object/tab results were confirmed by confirmNames.
   if (areas.has('pipelineObjectName') && results.some((r) => /^(object|tab):/.test(r.key) && r.confidence === 'confirmed')) return;
   if (areas.has('pipelineView')) {
@@ -1794,7 +1872,8 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '') {
     r.notes = ['"items" and "Filtered by" are Salesforce text. The filter names after them are field labels and values from your org.'];
   }
   // An admin can rename a metric (Pipeline Settings → Metrics Settings): that name has its own Workbench row.
-  if (areas.has('pipelineMetric')) {
+  // A renamed metric whose name is the text was matched above; the note stays unless the org has none renamed.
+  if (areas.has('pipelineMetric') && !(Array.isArray(org.pipelineMetrics) && !org.pipelineMetrics.length)) {
     r.notes = ['A metric name an admin set in Pipeline Settings → Metrics Settings is translated in Translation Workbench → Translate → Setup Component: Pipeline Inspection Metric Configuration (column "Pipeline Inspection Metric Custom Label"). Salesforce\'s own metric names are not listed there.'];
   }
   add(r);
@@ -1932,10 +2011,26 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
     return;
   }
   if (areas.has('pipelineInspection')) {
-    addPipelineResults(areas, results, add, hints, needle);
+    addPipelineResults(areas, results, add, hints, needle, org);
     return;
   }
   if (areas.has('utilityBar')) {
+    // The app's utility bar (App Manager → Utility Items), read from the org: a label typed there, or an item
+    // that keeps the name Salesforce gives its component.
+    const found = findUtilityItem(org.utilityBars, needle, hints.componentIds || []);
+    if (found?.item.label) {
+      demoteLabelsToPartial(results, 'this is a utility item label typed in App Manager, not a custom label.');
+      add(utilityItemLabelResult(found));
+      return;
+    }
+    if (found && !areas.has('utilityToDo')) {
+      demoteLabelsToPartial(results, 'this utility item has no label of its own in App Manager: it shows the name Salesforce gives it.');
+      add(salesforceTextResult('sfdctext:utilityBar', 'confirmed', {
+        subtitle: `Name Salesforce gives the ${found.item.component || found.item.id} utility item (${found.bar.app} app)`,
+        notes: [`App Manager → ${found.bar.app} → Edit → Utility Items: its Label is empty, so the item shows Salesforce's name. A label typed there replaces it in every language.`],
+      }));
+      return;
+    }
     if (areas.has('utilityToDo') || SF_UTILITY_NAMES.includes(needle)) {
       demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.utilityBar.what}.`);
       add(salesforceTextResult('sfdctext:utilityBar', 'confirmed', {

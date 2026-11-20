@@ -150,3 +150,33 @@ test('Pipeline Inspection list: an account name cell is record data; a count get
   assert.equal(value.results[0].key.startsWith('picklist:Opportunity.Demo_Team__c'), true, value.results[0].key);
   assert.ok(!value.results.some((r) => r.key === 'value:pipelineList'));
 });
+
+// Metric names an admin set (Pipeline Settings → Metrics Settings): PipelineInspMetricConfig rows (its describe:
+// MasterLabel = the tile name, Metric = which tile).
+const metricOrg = (rows) => ({ ...org, pipelineMetrics: rows });
+const renamed = { Id: '0ZZ000000000001', DeveloperName: 'Example_Open', MasterLabel: 'Example Open Deals', Language: 'en_US', Metric: 'OpenPipeline' };
+
+test('Pipeline Inspection: a metric tile an admin renamed is its Translation Workbench row', () => {
+  const out = locate({ text: 'Example Open Deals', org: metricOrg([renamed]), describes: [opp], hints: kpi });
+  const r = out.results[0];
+  assert.equal(r.key, 'pipelineMetric:0ZZ000000000001');
+  assert.equal(r.source, SOURCE.WORKBENCH);
+  assert.equal(r.confidence, 'confirmed');
+  assert.match(r.subtitle, /Open Pipeline metric/);
+  assert.ok(r.steps.includes('Setup Component: Pipeline Inspection Metric Configuration'));
+  assert.ok(r.steps.includes('Find the row: Example Open Deals'));
+  assert.ok(r.steps.includes('Column: Pipeline Inspection Metric Custom Label'));
+  assert.equal(r.goto.componentLabel, 'Pipeline Inspection Metric Configuration');
+  assert.deepEqual(r.goto.rows, ['Example Open Deals', 'Example_Open']);
+  assert.ok(!out.results.some((x) => x.key === 'sfdctext:pipelineInspection'));
+});
+
+test('Pipeline Inspection: a Salesforce metric name stays Salesforce text; the note goes when no metric is renamed', () => {
+  const some = locate({ text: 'Moved In', org: metricOrg([renamed]), describes: [opp], hints: kpi }).results[0];
+  assert.equal(some.key, 'sfdctext:pipelineInspection');
+  assert.equal(some.confidence, 'confirmed');
+  assert.ok(some.notes.some((n) => /Pipeline Inspection Metric Configuration/.test(n)));
+  const none = locate({ text: 'Open Pipeline', org: metricOrg([]), describes: [opp], hints: kpi }).results[0];
+  assert.equal(none.key, 'sfdctext:pipelineInspection');
+  assert.deepEqual(none.notes, []);
+});
