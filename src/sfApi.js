@@ -318,6 +318,83 @@ export async function loadNearestFlexiPageComponent(session, flexipageTag, compo
   return null;
 }
 
+/** A cached promise per key (5 minutes); a failed load is dropped so the next lookup tries again. */
+function cached(cache, key, refresh, load) {
+  const hit = cache.get(key);
+  if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const promise = load();
+  cache.set(key, { at: Date.now(), promise });
+  promise.catch(() => cache.delete(key));
+  return promise;
+}
+
+/** The items of one utility bar FlexiPage: label = the "label" decorator typed in App Manager (null: Salesforce's own name). */
+export function utilityItems(page) {
+  const items = [];
+  for (const region of page?.Metadata?.flexiPageRegions || []) {
+    for (const item of region.itemInstances || []) {
+      const ci = item.componentInstance;
+      if (!ci?.identifier) continue;
+      const decorators = (ci.componentInstanceProperties || []).filter((p) => p.type === 'decorator' && p.name);
+      const label = decorators.find((p) => p.name === 'label')?.value ?? null;
+      items.push({ id: ci.identifier, component: ci.componentName || null, label: label || null });
+    }
+  }
+  return items;
+}
+
+const utilityAppsCache = new Map();
+const utilityBarCache = new Map();
+
+/**
+ * The apps that have a utility bar, the user's current app first (UserAppInfo holds the app the user last
+ * opened; dev org, checked live). AppDefinition.UtilityBar is the FlexiPage name, "ns__Name" for a package
+ * (dev org: devedapp__Developer_Edition_UtilityBar). Returns [{ appId, app, bar, current }].
+ */
+export function loadUtilityApps(session, { refresh = false } = {}) {
+  return cached(utilityAppsCache, session.host, refresh, async () => {
+    const user = await sfFetch(session, '/services/oauth2/userinfo').catch(() => null);
+    const userId = /^[a-zA-Z0-9]{15,18}$/.test(user?.user_id || '') ? user.user_id : null;
+    const [apps, recent] = await Promise.all([
+      queryAll(session, 'SELECT DurableId, Label, UtilityBar FROM AppDefinition WHERE UtilityBar != null'),
+      userId ? queryAll(session, `SELECT AppDefinitionId FROM UserAppInfo WHERE UserId = '${userId}' AND FormFactor = 'Large' LIMIT 1`).catch(() => []) : [],
+    ]);
+    const currentId = recent[0]?.AppDefinitionId || null;
+    return apps
+      .map((a) => ({ appId: a.DurableId, app: a.Label, bar: a.UtilityBar, current: !!currentId && a.DurableId === currentId }))
+      .sort((a, b) => Number(b.current) - Number(a.current));
+  });
+}
+
+/** One app's utility bar: { app, page, current, items: [{ id, component, label }] } or null. One Tooling query, cached. */
+export function loadUtilityBar(session, appEntry, { refresh = false } = {}) {
+  const m = /^(?:([A-Za-z0-9]+)__)?([A-Za-z0-9_]+)$/.exec(appEntry?.bar || '');
+  if (!m) return Promise.resolve(null);
+  const [, ns, name] = m;
+  const where = `DeveloperName = '${name}' AND NamespacePrefix = ${ns ? `'${ns}'` : 'null'}`;
+  return cached(utilityBarCache, `${session.host}|${appEntry.bar}`, refresh, () =>
+    queryAll(session, `SELECT DeveloperName, MasterLabel, Metadata FROM FlexiPage WHERE ${where} LIMIT 1`, { tooling: true })
+  ).then((rows) => (rows[0] ? { app: appEntry.app, page: rows[0].MasterLabel || rows[0].DeveloperName, current: appEntry.current, items: utilityItems(rows[0]) } : null));
+}
+
+const metricCache = new Map();
+
+/**
+ * Pipeline Inspection metric names an admin set (Pipeline Settings → Metrics Settings): one PipelineInspMetricConfig
+ * row per renamed metric, MasterLabel = the name on the tile, Metric = which tile (OpenPipeline, ClosedWon…).
+ * UAT2 and DV2, checked live: REST and Tooling both answer. An org without Pipeline Inspection has no such
+ * object (dev org: "not supported"): that is an empty list, not an error.
+ */
+export function loadPipelineMetrics(session, { refresh = false } = {}) {
+  return cached(metricCache, session.host, refresh, () =>
+    queryAll(session, 'SELECT Id, DeveloperName, MasterLabel, Language, Metric FROM PipelineInspMetricConfig').catch((e) => {
+      if (e?.status === 401) throw e;
+      if (/not supported|INVALID_TYPE/i.test(e?.message || '')) return [];
+      throw e;
+    })
+  );
+}
+
 const flowCache = new Map();
 
 /**

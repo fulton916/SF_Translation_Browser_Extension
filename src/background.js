@@ -1,5 +1,5 @@
-import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation } from './sfApi.js';
-import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas } from './locator.js';
+import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation, loadUtilityApps, loadUtilityBar, loadPipelineMetrics } from './sfApi.js';
+import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas, findUtilityItem } from './locator.js';
 import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
 
 // ---------- test log (viewer: click the toolbar icon) ----------
@@ -349,7 +349,33 @@ async function lookup({ text, hints, urls, refresh = false }) {
     sectionTranslations = sections?.sections || null;
     validationTranslations = sections?.validationRules || null;
   }
-  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
+  // Utility bar item: the app's utility bar (App Manager → Utility Items), current app first; the other apps'
+  // bars only when the current one has no item for this text (UserAppInfo names the app opened last).
+  let utilityBars = null;
+  if (areas.has('utilityBar')) {
+    utilityBars = await loadUtilityApps(session, { refresh })
+      .then(async (apps) => {
+        const bars = [];
+        for (const app of apps.slice(0, 8)) {
+          bars.push(await loadUtilityBar(session, app, { refresh }).catch(() => null));
+          if (findUtilityItem(bars, needle, hints.componentIds || [])) break;
+        }
+        return bars.filter(Boolean);
+      })
+      .catch((e) => {
+        warnings.push(`Utility bar not read: ${e.message || e}`);
+        return null;
+      });
+  }
+  // Pipeline Inspection metric tile: the metric names an admin set (Pipeline Settings → Metrics Settings).
+  let pipelineMetrics = null;
+  if (areas.has('pipelineMetric')) {
+    pipelineMetrics = await loadPipelineMetrics(session, { refresh }).catch((e) => {
+      warnings.push(`Pipeline Inspection metric names not read: ${e.message || e}`);
+      return null;
+    });
+  }
+  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations, utilityBars, pipelineMetrics }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
   return {
     ...located,
     hints,
