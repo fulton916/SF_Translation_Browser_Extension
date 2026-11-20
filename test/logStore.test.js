@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitize, makeEntry, addEntry, getEntries, clearEntries, formatEntries, LOG_KEY, LOG_MAX } from '../src/logStore.js';
+import { sanitize, makeEntry, addEntry, getEntries, clearEntries, formatEntries, pathDetails, LOG_KEY, LOG_MAX } from '../src/logStore.js';
 
 function fakeStorage() {
   const data = {};
@@ -44,4 +44,17 @@ test('formatEntries makes pasteable text', () => {
   assert.match(txt, /^SF Translation Locator log v0\.1\.0 \(1 entries\)/);
   assert.match(txt, /ERROR \[auto-fill\] Stopped: boom/);
   assert.match(txt, /page: h\/p/);
+});
+
+test('pathDetails keeps the element path short and drops empty hints', () => {
+  const d = pathDetails({
+    tags: ['span', 'th', 'lightning-datatable'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorHome'],
+    componentIds: [], sfComponents: ['runtime_sales_todo_list'], dialogTitle: 'Add Opportunity Team Members',
+    flexipage: null, fieldPart: null, helpIcon: false, recordTitle: true, listHeader: null,
+  });
+  assert.deepEqual(d, {
+    tags: 'span < th < lightning-datatable', aura: 'runtime_pipeline_inspectorPipelineInspectorHome',
+    sfComponents: ['runtime_sales_todo_list'], dialogTitle: 'Add Opportunity Team Members', recordTitle: true,
+  });
+  assert.deepEqual(pathDetails(undefined), {});
 });
