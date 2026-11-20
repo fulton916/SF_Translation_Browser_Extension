@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Missing Translations</title>
+  <style>
+    :root { --bg: #f3f3f3; --card: #fff; --text: #181818; --muted: #5c5c5c; --line: #e5e5e5;
+      --error: #ba0517; --error-bg: #fef1f1; --warn: #8c4b02; --warn-bg: #fef1e6; --ok: #2e844a; --ok-bg: #ebf7e6; --accent: #0176d3; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #16181c; --card: #1f2227; --text: #e8e8e8; --muted: #a0a4ab; --line: #343840;
+        --error: #ff8a8a; --error-bg: #3a1d1f; --warn: #ffc27a; --warn-bg: #3a2c1a; --ok: #8ad79a; --ok-bg: #1d3424; --accent: #5aa9ff; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+    main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 40px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 16px; }
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    button, select, input { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:disabled { opacity: .6; cursor: default; }
+    input[type=search] { flex: 1 1 200px; min-width: 0; }
+    .status { color: var(--muted); }
+    .notice { border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; }
+    .notice.error { color: var(--error); background: var(--error-bg); }
+    .notice.warn { color: var(--warn); background: var(--warn-bg); }
+    .langs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin-bottom: 16px; }
+    .lang { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+    .lang h2 { font-size: 15px; margin: 0 0 2px; }
+    .lang .big { font-size: 22px; font-weight: 700; }
+    .lang .big.done { color: var(--ok); }
+    .lang ul { margin: 6px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
+    .table-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { position: sticky; top: 0; background: var(--card); font-weight: 600; white-space: nowrap; }
+    td.api { font-family: ui-monospace, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+    td.master { overflow-wrap: anywhere; }
+    td.go { white-space: nowrap; }
+    td.go button { padding: 3px 8px; font-size: 12px; }
+    .empty { padding: 24px; color: var(--muted); }
+    .more { margin: 10px; }
+    .foot { color: var(--muted); font-size: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Missing translations</h1>
+    <p class="sub" id="org">Reads only: nothing in the org changes.</p>
+    <div class="bar">
+      <button id="run" class="primary">Run again</button>
+      <span class="status" id="status"></span>
+    </div>
+    <div id="notices"></div>
+    <div class="langs" id="langs"></div>
+    <div class="bar" id="filters" hidden>
+      <select id="f-lang" aria-label="Language"></select>
+      <select id="f-type" aria-label="Type"></select>
+      <input type="search" id="f-text" placeholder="Filter by object, API name or master text" aria-label="Filter">
+      <span class="status" id="shown"></span>
+    </div>
+    <div class="table-wrap" id="table-wrap" hidden>
+      <table>
+        <thead><tr><th>Language</th><th>Type</th><th>Object</th><th>API name</th><th>Master text</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="more-wrap"></div>
+    </div>
+    <p class="foot">Checked: custom labels, custom field labels, picklist values (custom fields and global value sets), related list labels, record types, custom object tabs and web tabs.
+      Managed package items are not listed: their translations come with the package, and Translation Workbench → Override changes them.</p>
+  </main>
+  <script type="module" src="reportPage.js"></script>
+</body>
+</html>
