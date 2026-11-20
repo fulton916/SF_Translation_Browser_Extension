@@ -229,7 +229,9 @@ test('M-17: a highlight of the heading plus guidance lines finds the step', () =
 
 test('M-15: path heading and step buttons are Salesforce text; the button names the path field', () => {
   const pathArea = { tags: ['span', 'button', 'div'], auraClasses: ['runtime_sales_pathassistantPathAssistantHeader', 'runtime_sales_pathassistantPathAssistant'] };
-  const h = locate({ text: 'Guidance for Success', org: pathOrg, describes: [oppPath], hints: pathArea });
+  // The heading: p < h2.slds-path__coach-title < div[…PathAssistantInfo] (dev org, checked live).
+  const headingArea = { tags: ['p', 'h2', 'div', 'section'], auraClasses: ['runtime_sales_pathassistantPathAssistantInfo', 'runtime_sales_pathassistantPathAssistantBody', 'runtime_sales_pathassistantPathAssistant'] };
+  const h = locate({ text: 'Guidance for Success', org: pathOrg, describes: [oppPath], hints: headingArea });
   assert.equal(h.results[0].title, 'Salesforce text');
   assert.equal(h.notFoundHelp, null);
   const b = locate({ text: 'Mark Mid Stage as Complete', org: pathOrg, describes: [oppPath], hints: pathArea }).results;

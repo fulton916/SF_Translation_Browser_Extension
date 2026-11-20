@@ -56,6 +56,8 @@ const opp = {
   ],
 };
 const chevron = { tags: ['span', 'a', 'li', 'ul', 'div'], auraClasses: ['runtime_sales_pathassistantPathAssistantTabSet', 'runtime_sales_pathassistantPathAssistant'] };
+// The generic last step: li[data-target-selection-name=closedPathTab] (dev org, checked live).
+const closedChevron = { ...chevron, componentIds: ['closedPathTab'] };
 const guidance = { tags: ['li', 'ol', 'div'], auraClasses: ['uiOutputRichText', 'runtime_sales_pathassistantPathAssistantInfo', 'runtime_sales_pathassistantPathAssistant'] };
 const oppRecord = (recordTypeId) => ({ object: 'Opportunity', id: '006000000000001AAA', recordTypeId });
 const runOpp = (text, hints, record) => locate({ text, org: pathOrg, describes: [opp], hints, record }).results;
@@ -268,14 +270,14 @@ test('SB-05: the Closed chevron is Salesforce path text; same-word labels, field
       { name: 'ForecastCategory', label: 'Forecast Category', custom: false, type: 'picklist', picklistValues: [{ label: 'Closed', value: 'Closed', active: true }] },
     ],
   };
-  const rs = locate({ text: 'Closed', org, describes: [o], hints: chevron, record: oppRecord(RT_RETAIL) }).results;
+  const rs = locate({ text: 'Closed', org, describes: [o], hints: closedChevron, record: oppRecord(RT_RETAIL) }).results;
   assert.equal(rs[0].key, 'sfdctext:pathClosed');
   assert.equal(rs[0].confidence, 'confirmed');
   assert.equal(rs[0].source, SOURCE.SALESFORCE);
   assert.ok(!rs.some((r) => r.source === SOURCE.CUSTOM_LABEL || r.key.startsWith('rt:') || r.key === 'field:Opportunity.IsClosed'), 'coincidences hidden');
   // A path whose field really has a "Closed" value: that value is the step.
   const withValue = { ...o, fields: o.fields.map((f) => (f.name === 'StageName' ? { ...f, picklistValues: [...f.picklistValues, { label: 'Closed', value: 'Closed', active: true }] } : f)) };
-  const rv = locate({ text: 'Closed', org, describes: [withValue], hints: chevron, record: oppRecord(RT_RETAIL) }).results;
+  const rv = locate({ text: 'Closed', org, describes: [withValue], hints: closedChevron, record: oppRecord(RT_RETAIL) }).results;
   assert.equal(rv[0].key, 'picklist:Opportunity.StageName.Closed');
   assert.equal(rv[0].confidence, 'confirmed');
   assert.ok(!rv.some((r) => r.key === 'sfdctext:pathClosed'));
@@ -578,7 +580,7 @@ test('Calendar: Today, Refresh, My Calendars and day headers are Salesforce cale
 
 test('Calendar: sidebar entries — My Events is Salesforce text, other calendars were named by a user', () => {
   const item = { tags: ['label', 'div', 'li', 'ol', 'div'], auraClasses: ['uiLabel', 'calendarListItem', 'calendarListPanel', 'forceCalendar', 'calendarHome'] };
-  const mine = runCal('My Events', item).results[0];
+  const mine = runCal('My Events', { ...item, calendarId: '03A0000000000000001' }).results[0];
   assert.equal(mine.key, 'sfdctext:calendar');
   assert.equal(mine.confidence, 'confirmed');
   const user = runCal('Example Team Visits', item).results;

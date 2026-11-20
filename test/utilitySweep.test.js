@@ -49,8 +49,8 @@ test('To Do List in the utility bar is Salesforce text, not the "List" labels', 
   assert.equal(out.results[0].key, 'sfdctext:utilityBar');
   assert.equal(out.results[0].confidence, 'confirmed');
   assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
-  // The open panel's title: h2.panelTitle < div < div < div[oneUtilityBarPanel].
-  const panel = locate({ text: 'To Do List', org, describes: [], hints: { tags: ['h2', 'div', 'div', 'div', 'section'], auraClasses: ['oneUtilityBarPanel', 'oneUtilityBarContainer', 'flexipagePage'] } });
+  // The open panel's title: h2.panelTitle < div < div < div[oneUtilityBarPanel], which holds the To Do component.
+  const panel = locate({ text: 'To Do List', org, describes: [], hints: { tags: ['h2', 'div', 'div', 'div', 'section'], auraClasses: ['oneUtilityBarPanel', 'oneUtilityBarContainer', 'flexipagePage'], utilityPanelComponent: 'runtime_sales_todo_listUnifiedToDoListAuraWrapper' } });
   assert.equal(panel.results[0].key, 'sfdctext:utilityBar');
 });
 
