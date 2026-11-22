@@ -421,7 +421,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   const input = { text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations, utilityBars, pipelineMetrics, pipelineMetricTranslations }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject };
   let located = locate(input);
   // Nothing confirmed on this page's objects (or a layout section header): search every object's page layout
-  // sections and buttons too (read once per org, kept 24 hours; "Refresh org data" reads them again).
+  // sections, buttons and screen flows too (read once per org, kept 24 hours; "Refresh org data" reads them again).
   let orgIndex = null;
   if (needsOrgWideSearch(located, text)) {
     orgIndex = await loadOrgIndex(session, { refresh }).catch((e) => {
@@ -435,7 +435,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   }
   return {
     ...located,
-    orgIndex: orgIndex ? { at: orgIndex.at, layouts: !!orgIndex.layouts, buttons: !!orgIndex.buttons } : null,
+    orgIndex: orgIndex ? { at: orgIndex.at, layouts: !!orgIndex.layouts, buttons: !!orgIndex.buttons, flows: !!orgIndex.flows } : null,
     hints,
     contextObjects: listObject && !objects.includes(listObject) ? [...objects, listObject] : objects,
     warnings,

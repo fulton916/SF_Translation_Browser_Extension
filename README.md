@@ -148,9 +148,9 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Validation error message | **Translation Workbench** → Validation Error Message | Yes (all objects, master message). Confirmed when you point at the error message under a field (`.slds-form-element__help`) and an active rule of that object has this message. Viewing a language other than the org default, a message under a field that matches no master message gives that object's active rules whose error location is that field (`ErrorDisplayField`, which Salesforce returns as the API name or as the field label): confirmed when the rule's translation in that language (CustomObjectTranslation) is the text, otherwise listed from the page area (the text can also be Salesforce's own required-field message), with the master message in a note |
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
-| Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata only |
-| Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Also detected on Aura classic record layouts: a `forcePageBlockSection` header (an `h1`–`h6` or `legend` in the path), not a `forcePageBlockItem` field; a custom label with the same text then drops to similar text. Auto-fill opens every layout and lists each copy of the section |
-| Flow screen text | **Translation Workbench** → Flow → the flow → Flow Component "Screen Component" → Screen → Screen Component → Aspect "Description" (display text) or "Label" (an input) | From page metadata. On a Lightning page, the Flow component names the flow, and its active version's screens are read (Tooling `Flow.Metadata`): confirmed when the text is a screen component's text |
+| Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata. Org-wide: a button or link label of any object (one `WebLink` query) is an exact match |
+| Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Also detected on Aura classic record layouts: a `forcePageBlockSection` header (an `h1`–`h6` or `legend` in the path), not a `forcePageBlockItem` field; a custom label with the same text then drops to similar text. Auto-fill opens every layout and lists each copy of the section. Org-wide: the section names of every page layout are searched too, so a header that belongs to another object's layout (a Related Record component) gets that object |
+| Flow screen text | **Translation Workbench** → Flow → the flow → Flow Component "Screen Component" → Screen → Screen Component → Aspect "Description" (display text) or "Label" (an input) | From page metadata. On a Lightning page, the Flow component names the flow, and its active version's screens are read (Tooling `Flow.Metadata`): confirmed when the text is a screen component's text. Org-wide: the org's own screen flows are searched too, for a flow that is not on a Lightning page |
 | Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance of the record's own path. A custom object's step names the object by its Id (01I…), cut at 80 characters: the step is matched to its path by record type Id, or by object Id and field |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
 | Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
@@ -225,7 +225,7 @@ Each one gets its own branch and PR.
    - **Part 1 (done):** custom label translations through the Tooling API (`ExternalStringLocalization`) (#25).
    - Part 2: other translation types through the Metadata API (`CustomObjectTranslation`, `Translations`) (#29).
 4. **Phase 4 (done):** coverage report. List every label with a missing translation per active language (#14).
-5. Search layout sections, flows, and buttons org-wide (Metadata API retrieve, cached) (#24).
+5. **(done)** Search layout sections, flows, and buttons org-wide (Metadata API `readMetadata`, cached per org for 24 hours) (#24).
 
 ## Other translation places (not in the extension yet)
 
@@ -240,6 +240,12 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
   A user set up only as a translator for a language (Translation Settings), without Manage Translation, is not tested.
 - Fields, picklists, record types, and actions are searched for the object on the current page only. In a
   related list's rows, the child object's field labels are searched too.
+- Page layout sections, custom buttons and links, and screen flows are searched org-wide when the current
+  object gives no confirmed answer, or for a section header. That data is read once per org (layouts and flows
+  through the Metadata API, which needs Modify Metadata or Modify All Data) and kept 24 hours. The panel says
+  how old it is, and **Refresh org data** reads it again. Not included: managed-package layouts and flows
+  (the Metadata API returns them empty). Org-wide matching uses the master text only, and the whole text
+  (a section name, a button label, a flow component's label or one line of its display text).
 - Per lookup, the full value list (inactive values and value sets) is read for at most 4 picklist fields,
   the one you point at first.
 - Salesforce text is recognised by page markers, in any language. Two checks still use English words: a
