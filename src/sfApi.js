@@ -62,7 +62,11 @@ export async function sfWrite(session, method, path, body = null) {
   if (!res.ok) throw await sfErrorFrom(res);
   if (res.status === 204) return null;
   const text = await res.text().catch(() => '');
-  return text ? JSON.parse(text) : null;
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null; // written; the reply just is not JSON
+  }
 }
 
 /** An SfError from a failed reply: Salesforce sends [{ message, errorCode, fields }]. */

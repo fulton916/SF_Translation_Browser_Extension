@@ -19,6 +19,8 @@ export const MESSAGES = {
   tooLong: `A translation holds at most ${MAX_VALUE} characters.`,
   notOffered: 'This language is not an active translation language for this label.',
   noLabel: 'This custom label is not in the org any more. Click Refresh org data.',
+  noWorkbench: 'Translation Workbench is off in this org, so there are no translation languages. Setup → Translation Language Settings turns it on.',
+  changed: 'Someone changed this translation in Salesforce while the editor was open. Click Reload to see the current values.',
 };
 
 /**
@@ -51,7 +53,7 @@ export function plainError(e, action) {
   if (code === 'INVALID_TYPE' || (action === 'read' && /not supported/i.test(e?.message || ''))) return MESSAGES.noReadPermission;
   if (code === 'STRING_TOO_LONG') return MESSAGES.tooLong;
   if (code === 'REQUIRED_FIELD_MISSING') return MESSAGES.empty;
-  if (code === 'ENTITY_IS_DELETED' || code === 'NOT_FOUND') return 'Someone removed this translation in Salesforce. Click Reload to see the current values.';
+  if (code === 'ENTITY_IS_DELETED' || code === 'NOT_FOUND' || code === 'DUPLICATE_VALUE') return MESSAGES.changed;
   return e?.message || String(e);
 }
 
@@ -72,16 +74,20 @@ export function editorLanguages(labelLanguage, translations, translationRows) {
 export async function loadLabelEditor(session, labelId) {
   if (!ID.test(labelId || '')) throw new Error('Unexpected custom label Id.');
   const tooling = { tooling: true };
-  let label, translations, rows;
-  try {
-    [[label], translations, rows] = await Promise.all([
-      queryAll(session, `SELECT Id, Name, NamespacePrefix, Language, Value FROM ExternalString WHERE Id = '${labelId}'`, tooling),
-      queryAll(session, `SELECT Id, Language, Value FROM ExternalStringLocalization WHERE ExternalStringId = '${labelId}'`, tooling),
-      queryAll(session, 'SELECT Language, IsActive FROM Translation'),
-    ]);
-  } catch (e) {
+  const readError = (e) => {
     if (e?.status === 401) throw e;
     throw new SfError(e?.status || 400, plainError(e, 'read'), e?.code || null);
+  };
+  // The Translation object exists only while Translation Workbench is on: its own message, not View Setup's.
+  const languages = queryAll(session, 'SELECT Language, IsActive FROM Translation').catch((e) => ({ failed: e }));
+  const [[label], translations] = await Promise.all([
+    queryAll(session, `SELECT Id, Name, NamespacePrefix, Language, Value FROM ExternalString WHERE Id = '${labelId}'`, tooling),
+    queryAll(session, `SELECT Id, Language, Value FROM ExternalStringLocalization WHERE ExternalStringId = '${labelId}'`, tooling),
+  ]).catch(readError);
+  const rows = await languages;
+  if (rows.failed) {
+    if (rows.failed.status === 401) throw rows.failed;
+    throw new SfError(rows.failed.status || 400, rows.failed.code === 'INVALID_TYPE' ? MESSAGES.noWorkbench : plainError(rows.failed, 'read'), rows.failed.code || null);
   }
   if (!label) throw new SfError(404, MESSAGES.noLabel);
   return {

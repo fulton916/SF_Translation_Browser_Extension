@@ -435,7 +435,14 @@
   }
 
   function renderLabelEditor(box, r, ed) {
-    box.replaceChildren(el('div', 'muted', `${langName(ed.label.language)} (the label's own language): "${ed.label.value}"`));
+    // The card's "Go to translation" opens Edit or New by these Ids: keep them in step with the org.
+    r.goto.existing = Object.fromEntries(ed.languages.filter((l) => l.id).map((l) => [l.code, l.id]));
+    const head = el('div', 'edit-head');
+    head.append(
+      el('span', 'muted', `${langName(ed.label.language)} (the label's own language): "${ed.label.value}"`),
+      button('Reload', 'link', 'Read the label again from Salesforce', () => loadLabelEditor(box, r))
+    );
+    box.replaceChildren(head);
     if (!ed.languages.length) {
       box.append(el('div', 'muted', "No active translation languages besides the label's own language. Setup → Translation Language Settings adds and activates them."));
       return;
@@ -492,7 +499,11 @@
           if (!msg) return;
           msg.className = 'ok edit-status';
           msg.textContent =
-            op === 'remove' ? `Removed. Salesforce has no ${lang.name} translation for this label now. ${CACHE_NOTE}` : `Saved. Salesforce now has: "${res.saved}". ${CACHE_NOTE}`;
+            op === 'remove'
+              ? `Removed. Salesforce has no ${lang.name} translation for this label now. ${CACHE_NOTE}`
+              : res.saved == null
+                ? 'Saved, but the read-back did not return it yet. Click Reload.'
+                : `Saved. Salesforce now has: "${res.saved}". ${CACHE_NOTE}`;
         })
         .catch((e) => {
           status.className = 'error edit-status';

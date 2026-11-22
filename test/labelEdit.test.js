@@ -46,6 +46,7 @@ test('Salesforce error codes become plain words', () => {
   assert.equal(plainError(err('INVALID_TYPE', "sObject type 'ExternalString' is not supported"), 'read'), 'Reading labels needs View Setup and Configuration.');
   assert.equal(plainError(err('STRING_TOO_LONG'), 'save'), MESSAGES.tooLong);
   assert.equal(plainError(err('REQUIRED_FIELD_MISSING'), 'save'), MESSAGES.empty);
+  assert.equal(plainError(err('DUPLICATE_VALUE'), 'save'), MESSAGES.changed);
   assert.equal(plainError(err('SOMETHING_ELSE', 'Raw text'), 'save'), 'Raw text');
 });
 
@@ -80,7 +81,7 @@ test('sfWrite keeps the errorCode on the error', async () => {
 });
 
 /** A fake org: reads answer from `state`, writes change it. Records every request. */
-function fakeOrg(state, { failWrite = null, failRead = null } = {}) {
+function fakeOrg(state, { failWrite = null, failRead = null, failLanguages = null } = {}) {
   const calls = [];
   globalThis.fetch = async (u, init = {}) => {
     const url = decodeURIComponent(u);
@@ -89,6 +90,7 @@ function fakeOrg(state, { failWrite = null, failRead = null } = {}) {
     const reply = (status, body) => ({ ok: status < 300, status, text: async () => (body == null ? '' : JSON.stringify(body)), json: async () => body });
     if (method === 'GET') {
       if (failRead) return reply(400, [failRead]);
+      if (failLanguages && /FROM Translation/.test(url)) return reply(400, [failLanguages]);
       const records = /FROM ExternalString WHERE/.test(url) ? [state.label] : /FROM ExternalStringLocalization/.test(url) ? state.translations : state.languages;
       return reply(200, { done: true, records });
     }
@@ -151,4 +153,14 @@ test('no Manage Translation: the save error is in plain words', async () => {
 test('no View Setup: the read error is in plain words', async () => {
   fakeOrg(orgState(), { failRead: { message: "sObject type 'ExternalString' is not supported.", errorCode: 'INVALID_TYPE' } });
   await assert.rejects(loadLabelEditor(session, LABEL), { message: 'Reading labels needs View Setup and Configuration.' });
+});
+
+test('Translation Workbench off: its own message, not the View Setup one', async () => {
+  fakeOrg(orgState(), { failLanguages: { message: "sObject type 'Translation' is not supported.", errorCode: 'INVALID_TYPE' } });
+  await assert.rejects(loadLabelEditor(session, LABEL), { message: MESSAGES.noWorkbench });
+});
+
+test('sfWrite treats a 2xx reply that is not JSON as written', async () => {
+  globalThis.fetch = async () => ({ ok: true, status: 201, text: async () => '<html>ok</html>' });
+  assert.equal(await sfWrite(session, 'POST', BASE, { a: 1 }), null);
 });
