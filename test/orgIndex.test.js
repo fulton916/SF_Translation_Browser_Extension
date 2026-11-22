@@ -83,8 +83,9 @@ test('childBlocks keeps nested blocks of the same tag whole', () => {
 });
 
 test('parseFlow reads screen text at any depth, not parameter names', () => {
-  const flow = parseFlow('SFTL_Widget_Intake', FLOW);
+  const flow = parseFlow('SFTL_Widget_Intake', FLOW, 'SFTL Widget Intake');
   assert.equal(flow.label, 'SFTL Widget Intake');
+  assert.equal(parseFlow('SFTL_Widget_Intake', FLOW).label, 'SFTL_Widget_Intake', 'no label: the API name, never an element label');
   assert.equal(flow.screens.length, 1);
   const s = flow.screens[0];
   assert.equal(s.name, 'Intake_Screen');
@@ -118,6 +119,7 @@ const session = { host: 'x.my.salesforce.com', sid: '00D!s' };
 let calls;
 let store;
 let retrieveFails;
+let failOneBatch;
 
 function fakeOrg() {
   calls = [];
@@ -138,13 +140,14 @@ function fakeOrg() {
       const names = [...soap.matchAll(/<s:fullNames>([^<]*)<\/s:fullNames>/g)].map((m) => m[1]);
       calls.push(`read${type}:${names.length}`);
       assert.ok(names.length <= 10);
+      if (type === 'Layout' && failOneBatch && names.length === 3) return { ok: false, status: 500, text: async () => '<faultstring>UNKNOWN_EXCEPTION</faultstring>' };
       if (type === 'Layout' && retrieveFails) return { ok: false, status: 500, text: async () => '<faultstring>INSUFFICIENT_ACCESS: no Modify Metadata</faultstring>' };
       if (type === 'Flow') return { ok: true, text: async () => body(names.map((n) => record('Flow', n, FLOW)).join('')) };
       return { ok: true, text: async () => body(names.map((n) => record('Layout', n, n.startsWith('SFTL') ? LAYOUT : '<Layout></Layout>')).join('')) };
     }
     if (u.includes('FROM FlowDefinitionView')) {
       calls.push('flows');
-      return { ok: true, json: async () => ({ done: true, records: [{ ApiName: 'SFTL_Widget_Intake' }] }) };
+      return { ok: true, json: async () => ({ done: true, records: [{ ApiName: 'SFTL_Widget_Intake', Label: 'SFTL Widget Intake' }] }) };
     }
     if (u.includes('FROM WebLink')) {
       calls.push('buttons');
@@ -157,6 +160,7 @@ function fakeOrg() {
 beforeEach(() => {
   clearOrgIndexMemory();
   retrieveFails = false;
+  failOneBatch = false;
   store = {};
   globalThis.chrome = {
     storage: {
@@ -170,7 +174,7 @@ beforeEach(() => {
 });
 
 test('loadOrgIndex reads layouts, flows and buttons once, then serves the cache', async () => {
-  const first = await loadOrgIndex(session, );
+  const first = await loadOrgIndex(session);
   assert.deepEqual(calls.sort(), ['buttons', 'flows', 'listLayouts', 'readFlow:1', 'readLayout:10', 'readLayout:3']);
   assert.deepEqual(first.layouts.length, 1);
   assert.deepEqual(first.layouts[0].sections, ['Widget Basics', 'Owner & Status']);
@@ -180,45 +184,70 @@ test('loadOrgIndex reads layouts, flows and buttons once, then serves the cache'
   assert.ok(Date.now() - first.at < 5000);
 
   calls = [];
-  const second = await loadOrgIndex(session, );
+  const second = await loadOrgIndex(session);
   assert.deepEqual(calls, [], 'second lookup in the same org does not read again');
   assert.equal(second.at, first.at);
 });
 
 test('loadOrgIndex: a new browser session reads the stored copy, refresh reads again', async () => {
-  const first = await loadOrgIndex(session, );
+  const first = await loadOrgIndex(session);
   clearOrgIndexMemory();
   calls = [];
-  const stored = await loadOrgIndex(session, );
+  const stored = await loadOrgIndex(session);
   assert.deepEqual(calls, []);
   assert.equal(stored.at, first.at);
 
   const refreshed = await loadOrgIndex(session, { refresh: true });
-  assert.ok(calls.includes('listLayouts'));
-  assert.ok(refreshed.at >= first.at);
+  assert.deepEqual(calls.sort(), ['buttons', 'flows', 'listLayouts', 'readFlow:1', 'readLayout:10', 'readLayout:3']);
+  assert.equal(refreshed.layouts.length, 1);
 });
 
 test('loadOrgIndex: a copy older than 24 hours is read again', async () => {
   store['sftl:orgIndex:' + session.host] = { at: Date.now() - 25 * 3600 * 1000, layouts: [], flows: [], buttons: [], warnings: [] };
-  await loadOrgIndex(session, );
+  await loadOrgIndex(session);
   assert.ok(calls.includes('listLayouts'));
 });
 
 test('loadOrgIndex: without metadata access, buttons still load and the read is not stored', async () => {
   retrieveFails = true;
-  const index = await loadOrgIndex(session, );
+  const index = await loadOrgIndex(session);
   assert.equal(index.layouts, null);
   assert.equal(index.flows.length, 1, 'flows are read on their own');
   assert.equal(index.buttons.length, 1);
   assert.match(index.warnings[0], /^Page layout sections not searched org-wide: readMetadata Layout failed/);
   assert.deepEqual(store, {});
   calls = [];
-  await loadOrgIndex(session, );
+  await loadOrgIndex(session);
   assert.deepEqual(calls, [], 'kept in memory for a few minutes');
 });
 
 test('loadOrgIndex shares one read between lookups that start together', async () => {
-  const [a, b] = await Promise.all([loadOrgIndex(session, ), loadOrgIndex(session, )]);
+  const [a, b] = await Promise.all([loadOrgIndex(session), loadOrgIndex(session)]);
   assert.equal(calls.filter((c) => c === 'listLayouts').length, 1);
   assert.equal(a.at, b.at);
+});
+
+test('loadOrgIndex: one failed readMetadata call makes the read partial, not stored', async () => {
+  failOneBatch = true;
+  const index = await loadOrgIndex(session);
+  assert.equal(index.layouts.length, 1);
+  assert.deepEqual(index.warnings, ['Page layout sections partly searched org-wide: 1 of 2 readMetadata Layout calls failed']);
+  assert.deepEqual(store, {});
+});
+
+test('loadOrgIndex: a refresh that fails keeps the copy read earlier', async () => {
+  const first = await loadOrgIndex(session);
+  retrieveFails = true;
+  const refreshed = await loadOrgIndex(session, { refresh: true });
+  assert.deepEqual(refreshed.layouts, first.layouts);
+  assert.match(refreshed.warnings[0], /^Page layout sections not searched org-wide: .*\(searched the copy read earlier\)$/);
+  assert.equal(store['sftl:orgIndex:' + session.host].at, first.at, 'the stored copy stays');
+});
+
+test('loadOrgIndex: a lookup waiting on a read that fails fails too, with no read of its own', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (...a) => (String(a[0]).includes('WebLink') ? { ok: false, status: 401, text: async () => '' } : realFetch(...a));
+  const results = await Promise.allSettled([loadOrgIndex(session), loadOrgIndex(session)]);
+  assert.deepEqual(results.map((r) => r.status), ['rejected', 'rejected']);
+  assert.equal(calls.filter((c) => c === 'listLayouts').length, 1);
 });

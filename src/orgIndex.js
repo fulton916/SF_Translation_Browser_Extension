@@ -81,14 +81,12 @@ function screenFields(xml) {
   });
 }
 
-// Top-level Flow elements other than screens; each has a <name> or <label> of its own.
-const FLOW_PARTS = ['processMetadataValues', 'variables', 'formulas', 'decisions', 'assignments', 'recordLookups', 'recordCreates', 'recordUpdates', 'recordDeletes', 'actionCalls', 'subflows', 'loops', 'choices', 'dynamicChoiceSets', 'textTemplates', 'constants', 'stages', 'waits', 'start', 'collectionProcessors', 'transforms', 'customErrors'];
-
 /**
- * A Flow (readMetadata record) → { name, label, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }], buttonLabels }] },
+ * A Flow (readMetadata record) and its label (FlowDefinitionView: the Flow XML has many <label>s, one per
+ * element) → { name, label, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }], buttonLabels }] },
  * the shape loadFlowScreens returns for the flow on the current page.
  */
-export function parseFlow(name, xml) {
+export function parseFlow(name, xml, label = null) {
   const screens = childBlocks(xml, 'screens').map((b) => {
     const own = dropBlocks(withoutChildren(b, 'fields'), ['rules', 'connector', 'triggers', 'actions', 'processMetadataValues']);
     return {
@@ -98,8 +96,7 @@ export function parseFlow(name, xml) {
       buttonLabels: ['backButtonLabel', 'nextOrFinishButtonLabel', 'pauseButtonLabel'].map((t) => xmlValue(own, t)).filter((l) => l && l.trim()),
     };
   });
-  const top = dropBlocks(withoutChildren(xml, 'screens'), FLOW_PARTS);
-  return { name, label: xmlValue(top, 'label') || name, screens };
+  return { name, label: label || name, screens };
 }
 
 /** A readMetadata response → its records: [{ fullName, xml }]. Names that do not exist are left out by Salesforce. */
@@ -112,20 +109,22 @@ export function readMetadataRecords(xml) {
 /**
  * Metadata API listMetadata: the fullNames of one metadata type. Managed-package items are left out:
  * readMetadata returns them empty (UAT2: 171 of 507 layouts came back as <records xsi:nil="true"/>).
+ * Their states: installed, installedEditable, deprecated, deprecatedEditable, deleted.
  */
 export async function listMetadataNames(session, type) {
   const xml = await soapCall(session, 'metadata', '', `<s:listMetadata><s:queries><s:type>${type}</s:type></s:queries></s:listMetadata>`);
   return xmlBlocks(xml, 'result')
-    .filter((b) => xmlValue(b, 'manageableState') !== 'installed')
+    .filter((b) => !/^(installed|deprecated|deleted)/.test(xmlValue(b, 'manageableState') || ''))
     .map((b) => xmlValue(b, 'fullName'))
     .filter(Boolean);
 }
 
 /**
- * readMetadata for many names: 10 per call, 6 calls at a time. A call that fails (one odd name) leaves its
- * 10 names out; an expired session (401) stops the read. Returns [{ fullName, xml }].
+ * readMetadata for many names: 10 per call, 6 calls at a time. A call that fails leaves its names out and
+ * calls `warn` (the read then counts as partial: not stored, read again soon); an expired session (401)
+ * stops the read. Returns [{ fullName, xml }].
  */
-export async function readMetadataAll(session, type, names) {
+export async function readMetadataAll(session, type, names, warn = () => {}) {
   const batches = [];
   for (let i = 0; i < names.length; i += READ_BATCH) batches.push(names.slice(i, i + READ_BATCH));
   const records = [];
@@ -145,23 +144,24 @@ export async function readMetadataAll(session, type, names) {
   };
   await Promise.all(Array.from({ length: Math.min(PARALLEL, batches.length) }, worker));
   if (batches.length && failed === batches.length) throw new Error(`readMetadata ${type} failed`);
+  if (failed) warn(`${failed} of ${batches.length} readMetadata ${type} calls failed`);
   return records;
 }
 
 /** Every page layout's section names: [{ object, layout, sections }] (layouts without a named section left out). */
-export async function loadLayoutSections(session) {
-  const records = await readMetadataAll(session, 'Layout', await listMetadataNames(session, 'Layout'));
+export async function loadLayoutSections(session, warn) {
+  const records = await readMetadataAll(session, 'Layout', await listMetadataNames(session, 'Layout'), warn);
   return records
     .map((r) => ({ ...layoutName(r.fullName), sections: parseLayoutSections(r.xml) }))
     .filter((l) => l.object && l.sections.length);
 }
 
 /** The org's own screen flows (not managed-package ones), with their screens. */
-export async function loadScreenFlows(session) {
-  const rows = await queryAll(session, "SELECT ApiName FROM FlowDefinitionView WHERE ProcessType = 'Flow' AND NamespacePrefix = null");
-  const names = rows.map((r) => r.ApiName).filter((n) => /^[A-Za-z0-9_]+$/.test(n || ''));
-  const records = await readMetadataAll(session, 'Flow', names);
-  return records.map((r) => parseFlow(r.fullName, r.xml)).filter((f) => f.screens.length);
+export async function loadScreenFlows(session, warn) {
+  const rows = await queryAll(session, "SELECT ApiName, Label FROM FlowDefinitionView WHERE ProcessType = 'Flow' AND NamespacePrefix = null");
+  const labels = new Map(rows.filter((r) => /^[A-Za-z0-9_]+$/.test(r.ApiName || '')).map((r) => [r.ApiName, r.Label]));
+  const records = await readMetadataAll(session, 'Flow', [...labels.keys()], warn);
+  return records.map((r) => parseFlow(r.fullName, r.xml, labels.get(r.fullName))).filter((f) => f.screens.length);
 }
 
 /** Custom buttons and links (Translation Workbench → Button and Link Label), every object. */
@@ -176,16 +176,21 @@ const SOURCES = [
   ['buttons', 'Buttons', loadButtons],
 ];
 
-async function buildOrgIndex(session) {
-  const settled = await Promise.allSettled(SOURCES.map(([, , load]) => load(session)));
+/**
+ * Reads every source. `previous`: the full copy read before (expired, or the one a refresh replaces): a
+ * source that fails now keeps its earlier data, so a failed refresh does not hide what was found before.
+ */
+async function buildOrgIndex(session, previous = null) {
   const index = { at: Date.now(), warnings: [] };
+  const settled = await Promise.allSettled(SOURCES.map(([, what, load]) => load(session, (w) => index.warnings.push(`${what} partly searched org-wide: ${w}`))));
   settled.forEach((r, i) => {
     const [key, what] = SOURCES[i];
     if (r.status === 'fulfilled') index[key] = r.value;
     else {
       if (r.reason?.status === 401) throw r.reason;
-      index[key] = null;
-      index.warnings.push(`${what} not searched org-wide: ${r.reason?.message || r.reason}`);
+      const kept = previous?.[key] ?? null;
+      index[key] = kept;
+      index.warnings.push(`${what} not searched org-wide: ${r.reason?.message || r.reason}${kept ? ' (searched the copy read earlier)' : ''}`);
     }
   });
   return index;
@@ -214,21 +219,19 @@ const fresh = (index) => !!index && Date.now() - index.at < (index.warnings?.len
 /**
  * The org-wide search data, read once per org and kept 24 hours (memory, then chrome.storage.local).
  * `refresh`: read it again now. Returns { at, layouts, flows, buttons, warnings }; `at` is when it was read.
- * A source that could not be read is null, with a warning. A failed read is not kept.
+ * A source that could not be read is null (or its earlier copy), with a warning. A failed read is not kept.
  */
 export function loadOrgIndex(session, { refresh = false } = {}) {
   const host = session.host;
   const hit = memory.get(host);
   const promise = (async () => {
-    if (!refresh && hit) {
-      const index = await hit.promise.catch(() => null);
-      if (fresh(index)) return index;
-    }
-    if (!refresh) {
-      const stored = await readStored(host);
-      if (fresh(stored)) return stored;
-    }
-    const index = await buildOrgIndex(session);
+    // A read still running that fails makes this lookup fail too (no second read of its own).
+    const before = hit ? await hit.promise : null;
+    if (!refresh && fresh(before)) return before;
+    const stored = await readStored(host);
+    if (!refresh && fresh(stored)) return stored;
+    const previous = [before, stored].filter((x) => x && !x.warnings?.length).sort((a, b) => b.at - a.at)[0] || null;
+    const index = await buildOrgIndex(session, previous);
     if (!index.warnings.length) await writeStored(host, index);
     return index;
   })();
