@@ -2409,8 +2409,10 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     if (!existing) add(r);
     else if (CONFIDENCE_RANK[r.confidence] < CONFIDENCE_RANK[existing.confidence]) existing.confidence = r.confidence;
   }
+  // 7b. Org-wide search (#24): page layout sections and buttons of every object, not only this page's.
+  if (needle && org.orgIndex) addOrgWideResults(org, needle, describes, results, add);
   // A page layout section header is translated in TW → Layout Section; layouts cannot use custom labels.
-  if (results.some((r) => r.key === 'area:layoutSection' && r.confidence === 'confirmed')) {
+  if (results.some((r) => (r.key === 'area:layoutSection' || r.key.startsWith('section:')) && r.confidence === 'confirmed')) {
     demoteLabelsToPartial(results, 'page layout section names are not custom labels.');
   }
   if (areas.has('richText')) demoteSameTextLabels(results, 'a Rich Text component shows typed text, not a custom label.');
@@ -2590,7 +2592,88 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     if (!(inObjectManager && results.some(ownMetadata))) add(setupTextResult());
   }
 
-  return finalize(results, areas);
+  return finalize(results, areas, !!org.orgIndex);
+}
+
+// ---------- org-wide search (#24) ----------
+
+const MAX_ORG_WIDE = 5;
+
+/**
+ * Whether a lookup reads the org-wide data (sfApi orgIndex.js: every page layout, screen flow and button):
+ * when nothing is confirmed, or for a page layout section header (its card names this page's object, and the
+ * section can belong to another one: a Related Record component shows another object's layout).
+ */
+export function needsOrgWideSearch(located, text) {
+  if (!normalize(text)) return false;
+  if ((located?.areas || []).includes('layoutSection')) return true;
+  return !(located?.results || []).some((r) => r.confidence === 'confirmed');
+}
+
+function labelOfObject(org, describes, name) {
+  return describes.find((d) => d.name === name)?.label || (org.objects || []).find((o) => o.name === name)?.label || name;
+}
+
+/** "A, B and 3 more" for a card subtitle. */
+function shortList(items, n = 3) {
+  return items.length <= n ? items.join(', ') : `${items.slice(0, n).join(', ')} and ${items.length - n} more`;
+}
+
+/**
+ * Page layout sections and custom buttons of every object whose name is the text (org.orgIndex, master
+ * names). A section card for this page's object stays; one on another object replaces it.
+ */
+function addOrgWideResults(org, needle, describes, results, add) {
+  const idx = org.orgIndex;
+  const objLabel = (o) => labelOfObject(org, describes, o);
+
+  // Layout sections, grouped by object (each layout keeps its own copy of the name).
+  const byObject = new Map();
+  for (const l of idx.layouts || []) {
+    const name = (l.sections || []).find((s) => normalize(s) === needle);
+    if (!name) continue;
+    if (!byObject.has(l.object)) byObject.set(l.object, { name, layouts: [] });
+    byObject.get(l.object).layouts.push(l.layout);
+  }
+  const area = results.find((r) => r.key === 'area:layoutSection');
+  const here = area?.goto?.object || null;
+  if (area && here && byObject.has(here)) {
+    const { layouts } = byObject.get(here);
+    area.notes = [`In the ${objLabel(here)} page layout${layouts.length === 1 ? '' : 's'}: ${shortList(layouts)}.`, ...(area.notes || [])];
+  } else if (byObject.size) {
+    // Pointed at a section header: with one object holding that name, that is its section.
+    const single = byObject.size === 1 && area?.confidence === 'confirmed';
+    if (area) results.splice(results.indexOf(area), 1);
+    for (const [object, { name, layouts }] of [...byObject].slice(0, MAX_ORG_WIDE)) {
+      add({
+        key: `section:${object}.${name}`,
+        confidence: single ? 'confirmed' : 'exact',
+        title: `Page layout section: ${name}`,
+        subtitle: `In the ${objLabel(object)} page layout${layouts.length === 1 ? '' : 's'} ${shortList(layouts)}`,
+        ...workbench(org, { component: 'Layout Section', object, objectLabel: objLabel(object), row: name }),
+        notes: [
+          ...(area && here ? [`This section is not in the ${objLabel(here)} page layouts.`] : []),
+          'Found by the org-wide search of page layouts.',
+          ...(layouts.length > 1 ? ['Each layout has its own copy of the section name. Go to translation opens every layout and lists each copy.'] : []),
+        ],
+      });
+    }
+  }
+
+  // Custom buttons and links (TW → Button and Link Label lists them by object). Same key as the card the
+  // page metadata gives (btn:Object.Name), so a button you pointed at keeps its confirmed card.
+  for (const b of (idx.buttons || []).filter((x) => normalize(x.label) === needle).slice(0, MAX_ORG_WIDE)) {
+    const name = b.namespace ? `${b.namespace}__${b.name}` : b.name;
+    add({
+      key: `btn:${b.object}.${name}`,
+      confidence: 'exact',
+      title: `Custom button/link ${b.object}.${name}`,
+      subtitle: `A button or link on ${objLabel(b.object)}`,
+      ...workbench(org, { component: 'Button and Link Label', object: b.object, objectLabel: objLabel(b.object), row: `${b.label} (${name})`, rows: [name, b.label], pkg: b.namespace }),
+      copy: name,
+      notes: ['Found by the org-wide search of custom buttons and links.'],
+    });
+  }
 }
 
 // Managed-package labels with the same words as a field or object are usually a coincidence
@@ -2602,7 +2685,7 @@ const MAX_MANAGED_WITH_CONFIRMED = 2;
 const isManagedLabel = (r) => r.source === SOURCE.CUSTOM_LABEL && !!r.pkg;
 const sourceRank = (r) => (isManagedLabel(r) && r.confidence === 'exact' ? MANAGED_EXACT_RANK : SOURCE_RANK[r.source]);
 
-function finalize(results, areas) {
+function finalize(results, areas, orgWide = false) {
   // One card per key, the best-ranked one (bug: Account "Phone" kept a 'partial' field card added
   // first and dropped it, losing the 'context' card for the clicked field).
   // 'partial' loses even to 'context' here, because partial cards are hidden when anything better exists.
@@ -2659,8 +2742,12 @@ function finalize(results, areas) {
   const notFoundHelp = unique.length
     ? null
     : [
-        'Not found in custom labels, object/field names, picklists, record types, actions, apps, tabs, validation messages, or path guidance.',
-        'Other places to check in Translation Workbench: Layout Section, Flow, Lookup Filter, Button and Link Label, Report, Dashboard.',
+        orgWide
+          ? 'Not found in custom labels, object/field names, picklists, record types, actions, apps, tabs, validation messages, path guidance, or the page layout sections and custom buttons of any object.'
+          : 'Not found in custom labels, object/field names, picklists, record types, actions, apps, tabs, validation messages, or path guidance.',
+        orgWide
+          ? 'Other places to check in Translation Workbench: Flow, Lookup Filter, Report, Dashboard.'
+          : 'Other places to check in Translation Workbench: Layout Section, Flow, Lookup Filter, Button and Link Label, Report, Dashboard.',
         'Text typed into custom components is not translatable until a developer moves it into a Custom Label.',
       ];
   return { results: unique, more, droppedPartial, hiddenManaged, notFoundHelp, areas: [...areas] };

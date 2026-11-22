@@ -1,5 +1,6 @@
 import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation, loadUtilityApps, loadUtilityBar, loadPipelineMetrics, loadPipelineMetricTranslations, loadTranslationsTabIds } from './sfApi.js';
-import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas, findUtilityItem } from './locator.js';
+import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas, findUtilityItem, needsOrgWideSearch } from './locator.js';
+import { loadOrgIndex } from './orgIndex.js';
 import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
 
 // ---------- test log (viewer: click the toolbar icon) ----------
@@ -392,9 +393,24 @@ async function lookup({ text, hints, urls, refresh = false }) {
       return null;
     });
   }
-  const located = locate({ text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations, utilityBars, pipelineMetrics, pipelineMetricTranslations }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject });
+  const input = { text, hints, org: { ...org, labelTranslations, valueSets, masterDescribes, sectionTranslations, validationTranslations, utilityBars, pipelineMetrics, pipelineMetricTranslations }, describes: liveDescribes, dataTranslations, record, pageUrls: urls, pageComponent, listObject };
+  let located = locate(input);
+  // Nothing confirmed on this page's objects (or a layout section header): search every object's page layout
+  // sections and buttons too (read once per org, kept 24 hours; "Refresh org data" reads them again).
+  let orgIndex = null;
+  if (needsOrgWideSearch(located, text)) {
+    orgIndex = await loadOrgIndex(session, { refresh }).catch((e) => {
+      warnings.push(`Org-wide search not run: ${e.message || e}`);
+      return null;
+    });
+    if (orgIndex) {
+      warnings.push(...orgIndex.warnings);
+      located = locate({ ...input, org: { ...input.org, orgIndex } });
+    }
+  }
   return {
     ...located,
+    orgIndex: orgIndex ? { at: orgIndex.at } : null,
     hints,
     contextObjects: listObject && !objects.includes(listObject) ? [...objects, listObject] : objects,
     warnings,
