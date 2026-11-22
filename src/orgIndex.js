@@ -1,4 +1,4 @@
-import { queryAll, soapCall, xmlBlocks, xmlValue, dropBlocks, escapeXml } from './sfApi.js';
+import { queryAll, soapCall, xmlBlocks, xmlValue, dropBlocks, escapeXml, parseSectionTranslations } from './sfApi.js';
 
 // Org-wide search data (#24): page layout section names, screen flow text and button labels of the whole
 // org, not only the object on the current page. Metadata API listMetadata + readMetadata, 10 names per call,
@@ -9,6 +9,8 @@ import { queryAll, soapCall, xmlBlocks, xmlValue, dropBlocks, escapeXml } from '
 export const ORG_INDEX_TTL_MS = 24 * 60 * 60 * 1000;
 // A read with a missing source (no metadata access, an error) is kept 5 minutes, in memory only.
 const PARTIAL_TTL_MS = 5 * 60 * 1000;
+// The shape of the stored copy: 2 = sections split from standardSections, flow versions and footer buttons.
+const INDEX_VERSION = 2;
 const READ_BATCH = 10; // readMetadata reads at most 10 names per call
 const PARALLEL = 6;
 const STORAGE_PREFIX = 'sftl:orgIndex:';
@@ -24,18 +26,51 @@ const decodeName = (s) => {
   }
 };
 
+/**
+ * Layout fullName prefixes that are not an object name, and the object Translation Workbench → Layout Section
+ * lists their layouts under. Seen in the dev org (Nov 2026): CommunityMemberLayout under User, CaseClose under
+ * Case. The others follow the same naming (the object the layout belongs to). Global (the global publisher
+ * layout) has no sections.
+ */
+const LAYOUT_OBJECTS = {
+  CaseClose: 'Case',
+  CaseInteraction: 'Case',
+  CommunityMemberLayout: 'User',
+  UserAlt: 'User',
+  LiveChatTranscriptActive: 'LiveChatTranscript',
+  LiveChatTranscriptWaiting: 'LiveChatTranscript',
+};
+
 /** "Account-Account %28Sales%29 Layout" (a Layout fullName) → { object: 'Account', layout: 'Account (Sales) Layout' }. */
 export function layoutName(fullName) {
   const full = decodeName(String(fullName || ''));
   const dash = full.indexOf('-');
-  return dash > 0 ? { object: full.slice(0, dash), layout: full.slice(dash + 1) } : null;
+  if (dash <= 0) return null;
+  const prefix = full.slice(0, dash);
+  return { object: LAYOUT_OBJECTS[prefix] || prefix, layout: full.slice(dash + 1) };
 }
 
-/** A page layout's section names, in page order (Translation Workbench → Layout Section lists them). */
+/**
+ * A page layout's section names, in page order: `sections` the names an admin typed (customLabel true), which
+ * Translation Workbench → Layout Section lists; `standardSections` Salesforce's own names (customLabel false,
+ * e.g. "Account Information"), which it does not list (dev org, Nov 2026: Account shows only the one layout
+ * with a custom-named section, and only that section).
+ */
+export function layoutSections(xml) {
+  const custom = [];
+  const standard = [];
+  for (const b of xmlBlocks(xml, 'layoutSections')) {
+    const own = dropBlocks(b, ['layoutColumns']);
+    const label = xmlValue(own, 'label');
+    if (!label || !label.trim()) continue;
+    (xmlValue(own, 'customLabel') === 'false' ? standard : custom).push(label);
+  }
+  return { sections: custom, standardSections: standard };
+}
+
+/** The section names Translation Workbench → Layout Section lists for a page layout, in page order. */
 export function parseLayoutSections(xml) {
-  return xmlBlocks(xml, 'layoutSections')
-    .map((b) => xmlValue(dropBlocks(b, ['layoutColumns']), 'label'))
-    .filter((l) => l && l.trim());
+  return layoutSections(xml).sections;
 }
 
 /** The spans of the top-level <tag>…</tag> blocks of `xml`, nested blocks of the same tag kept whole. */
@@ -83,21 +118,32 @@ function screenFields(xml) {
 
 /**
  * A Flow (readMetadata record) and its label (FlowDefinitionView: the Flow XML has many <label>s, one per
- * element) → { name, label, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }], buttonLabels }] },
- * the shape loadFlowScreens returns for the flow on the current page.
+ * element) → { name, label, version, screens: [{ name, label, fields: [{ name, fieldType, fieldText, helpText }],
+ * buttonLabels, buttons: [{ aspect, label }] }] }, the shape loadFlowScreens returns for the flow on the current
+ * page. `version`: the number of the version read (readMetadata reads the newest one).
  */
-export function parseFlow(name, xml, label = null) {
+export function parseFlow(name, xml, label = null, version = null) {
   const screens = childBlocks(xml, 'screens').map((b) => {
     const own = dropBlocks(withoutChildren(b, 'fields'), ['rules', 'connector', 'triggers', 'actions', 'processMetadataValues']);
+    const buttons = FOOTER_BUTTONS.map(([tag, aspect]) => ({ aspect, label: xmlValue(own, tag) })).filter((x) => x.label && x.label.trim());
     return {
       name: xmlValue(own, 'name'),
       label: xmlValue(own, 'label') || xmlValue(own, 'name'),
       fields: screenFields(b).filter((f) => f.name),
-      buttonLabels: ['backButtonLabel', 'nextOrFinishButtonLabel', 'pauseButtonLabel'].map((t) => xmlValue(own, t)).filter((l) => l && l.trim()),
+      buttonLabels: buttons.map((x) => x.label),
+      buttons,
     };
   });
-  return { name, label: label || name, screens };
+  return { name, label: label || name, version, screens };
 }
+
+// A screen's own footer button labels (Flow Builder → Configure Footer), and their Aspect in Translation
+// Workbench → Flow → Flow Component "Screen Info" (dev org, Nov 2026).
+const FOOTER_BUTTONS = [
+  ['backButtonLabel', 'Back Button Label'],
+  ['nextOrFinishButtonLabel', 'Next or Finish Button Label'],
+  ['pauseButtonLabel', 'Pause Button Label'],
+];
 
 /** A readMetadata response → its records: [{ fullName, xml }]. Names that do not exist are left out by Salesforce. */
 export function readMetadataRecords(xml) {
@@ -129,6 +175,7 @@ export async function readMetadataAll(session, type, names, warn = () => {}) {
   for (let i = 0; i < names.length; i += READ_BATCH) batches.push(names.slice(i, i + READ_BATCH));
   const records = [];
   let failed = 0;
+  let lastError = null;
   let next = 0;
   const worker = async () => {
     while (next < batches.length) {
@@ -139,29 +186,48 @@ export async function readMetadataAll(session, type, names, warn = () => {}) {
       } catch (e) {
         if (e?.status === 401) throw e;
         failed++;
+        lastError = e;
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(PARALLEL, batches.length) }, worker));
-  if (batches.length && failed === batches.length) throw new Error(`readMetadata ${type} failed`);
+  // Every call failed: the error keeps Salesforce's code, so an access error is told apart.
+  if (batches.length && failed === batches.length) throw Object.assign(new Error(`readMetadata ${type} failed`), { code: lastError?.code ?? null });
   if (failed) warn(`${failed} of ${batches.length} readMetadata ${type} calls failed`);
   return records;
 }
 
-/** Every page layout's section names: [{ object, layout, sections }] (layouts without a named section left out). */
+/**
+ * Every page layout's section names: [{ object, layout, sections, standardSections }] (layouts without a named
+ * section left out). A layout with standard names only stays: it shows which objects' layouts were read.
+ */
 export async function loadLayoutSections(session, warn) {
   const records = await readMetadataAll(session, 'Layout', await listMetadataNames(session, 'Layout'), warn);
   return records
-    .map((r) => ({ ...layoutName(r.fullName), sections: parseLayoutSections(r.xml) }))
-    .filter((l) => l.object && l.sections.length);
+    .map((r) => ({ ...layoutName(r.fullName), ...layoutSections(r.xml) }))
+    .filter((l) => l.object && (l.sections.length || l.standardSections.length));
+}
+
+/**
+ * The newest version number of each of the org's own screen flows (readMetadata reads that version). Translation
+ * Workbench → Flow → Screen Info asks for the Flow Version and starts at version 1. {} when it cannot be read.
+ */
+async function flowVersions(session) {
+  const rows = await queryAll(session, "SELECT FlowDefinitionView.ApiName, VersionNumber FROM FlowVersionView WHERE FlowDefinitionView.ProcessType = 'Flow' AND FlowDefinitionView.NamespacePrefix = null").catch(() => []);
+  const out = {};
+  for (const r of rows) {
+    const name = r.FlowDefinitionView?.ApiName;
+    if (name && Number.isInteger(r.VersionNumber) && !(out[name] >= r.VersionNumber)) out[name] = r.VersionNumber;
+  }
+  return out;
 }
 
 /** The org's own screen flows (not managed-package ones), with their screens. */
 export async function loadScreenFlows(session, warn) {
-  const rows = await queryAll(session, "SELECT ApiName, Label FROM FlowDefinitionView WHERE ProcessType = 'Flow' AND NamespacePrefix = null");
+  const [rows, versions] = await Promise.all([queryAll(session, "SELECT ApiName, Label FROM FlowDefinitionView WHERE ProcessType = 'Flow' AND NamespacePrefix = null"), flowVersions(session)]);
   const labels = new Map(rows.filter((r) => /^[A-Za-z0-9_]+$/.test(r.ApiName || '')).map((r) => [r.ApiName, r.Label]));
   const records = await readMetadataAll(session, 'Flow', [...labels.keys()], warn);
-  return records.map((r) => parseFlow(r.fullName, r.xml, labels.get(r.fullName))).filter((f) => f.screens.length);
+  return records.map((r) => parseFlow(r.fullName, r.xml, labels.get(r.fullName), versions[r.fullName] ?? null)).filter((f) => f.screens.length);
 }
 
 /** Custom buttons and links (Translation Workbench → Button and Link Label), every object. */
@@ -176,13 +242,22 @@ const SOURCES = [
   ['buttons', 'Buttons', loadButtons],
 ];
 
+// Errors that mean this user may not read the source (no Modify Metadata, no View Setup): reading it again
+// gives the same answer until an admin changes the user's permissions.
+const ACCESS_CODES = new Set(['INSUFFICIENT_ACCESS', 'INSUFFICIENT_ACCESS_OR_READONLY', 'API_DISABLED_FOR_ORG', 'API_CURRENTLY_DISABLED', 'INVALID_TYPE']);
+export const isAccessError = (e) => e?.status === 403 || ACCESS_CODES.has(e?.code) || /^INSUFFICIENT_ACCESS\b/.test(e?.message || '');
+
 /**
  * Reads every source. `previous`: the full copy read before (expired, or the one a refresh replaces): a
  * source that fails now keeps its earlier data, so a failed refresh does not hide what was found before.
+ * `denied`: sources an earlier read was refused with an access error ({ key: message }). They are not read
+ * again (and not warned about again) until "Refresh org data", which passes none.
  */
-async function buildOrgIndex(session, previous = null) {
-  const index = { at: Date.now(), warnings: [] };
-  const settled = await Promise.allSettled(SOURCES.map(([, what, load]) => load(session, (w) => index.warnings.push(`${what} partly searched org-wide: ${w}`))));
+async function buildOrgIndex(session, previous = null, denied = {}) {
+  const index = { v: INDEX_VERSION, at: Date.now(), warnings: [], denied: {} };
+  const settled = await Promise.allSettled(
+    SOURCES.map(([key, what, load]) => (denied[key] ? Promise.reject(Object.assign(new Error(denied[key]), { carried: true })) : load(session, (w) => index.warnings.push(`${what} partly searched org-wide: ${w}`))))
+  );
   settled.forEach((r, i) => {
     const [key, what] = SOURCES[i];
     if (r.status === 'fulfilled') index[key] = r.value;
@@ -190,7 +265,12 @@ async function buildOrgIndex(session, previous = null) {
       if (r.reason?.status === 401) throw r.reason;
       const kept = previous?.[key] ?? null;
       index[key] = kept;
-      index.warnings.push(`${what} not searched org-wide: ${r.reason?.message || r.reason}${kept ? ' (searched the copy read earlier)' : ''}`);
+      const message = `${what} not searched org-wide: ${r.reason?.message || r.reason}${kept ? ' (searched the copy read earlier)' : ''}`;
+      if (r.reason?.carried || isAccessError(r.reason)) index.denied[key] = r.reason?.message || String(r.reason);
+      // An access error is shown once, by the read that met it; the copy kept for 24 hours does not repeat it.
+      if (r.reason?.carried) return;
+      if (isAccessError(r.reason)) index.notices = [...(index.notices || []), message];
+      else index.warnings.push(message);
     }
   });
   return index;
@@ -214,12 +294,18 @@ async function writeStored(host, index) {
   }
 }
 
-const fresh = (index) => !!index && Date.now() - index.at < (index.warnings?.length ? PARTIAL_TTL_MS : ORG_INDEX_TTL_MS);
+// A copy of an older shape (before INDEX_VERSION) is read again: v1 kept Salesforce's standard section names.
+const current = (index) => !!index && index.v === INDEX_VERSION;
+const fresh = (index) => current(index) && Date.now() - index.at < (index.warnings?.length ? PARTIAL_TTL_MS : ORG_INDEX_TTL_MS);
+// A copy served again: its access notices were shown by the lookup that read it.
+const served = (index) => (index.notices?.length ? { ...index, notices: [] } : index);
 
 /**
  * The org-wide search data, read once per org and kept 24 hours (memory, then chrome.storage.local).
- * `refresh`: read it again now. Returns { at, layouts, flows, buttons, warnings }; `at` is when it was read.
- * A source that could not be read is null (or its earlier copy), with a warning. A failed read is not kept.
+ * `refresh`: read it again now. Returns { at, layouts, flows, buttons, warnings, notices, denied }; `at` is when
+ * it was read. A source that could not be read is null (or its earlier copy), with a warning. A failed read is
+ * not kept. A source refused with an access error is a notice, shown by this lookup only, and that source is
+ * not read again until a refresh (`denied`); the rest of the copy is kept 24 hours as usual.
  */
 export function loadOrgIndex(session, { refresh = false } = {}) {
   const host = session.host;
@@ -227,12 +313,13 @@ export function loadOrgIndex(session, { refresh = false } = {}) {
   const promise = (async () => {
     // A read still running that fails makes this lookup fail too (no second read of its own).
     const before = hit ? await hit.promise : null;
-    if (!refresh && fresh(before)) return before;
+    if (!refresh && fresh(before)) return served(before);
     const stored = await readStored(host);
-    if (!refresh && fresh(stored)) return stored;
-    const previous = [before, stored].filter((x) => x && !x.warnings?.length).sort((a, b) => b.at - a.at)[0] || null;
-    const index = await buildOrgIndex(session, previous);
-    if (!index.warnings.length) await writeStored(host, index);
+    if (!refresh && fresh(stored)) return served(stored);
+    const copies = [before, stored].filter(current).sort((a, b) => b.at - a.at);
+    const previous = copies.find((x) => !x.warnings?.length) || null;
+    const index = await buildOrgIndex(session, previous, refresh ? {} : copies[0]?.denied || {});
+    if (!index.warnings.length) await writeStored(host, served(index));
     return index;
   })();
   // A read still running is shared: a second lookup waits for it (above) and stores nothing.
@@ -247,7 +334,56 @@ export function loadOrgIndex(session, { refresh = false } = {}) {
   return promise;
 }
 
+const translationMemory = new Map();
+
+/**
+ * Viewing another language, a section header shows its translation, not the master name the org-wide data
+ * holds. The section translations of every object whose layouts have custom-named sections, in `language`:
+ * readMetadata CustomObjectTranslation "<Object>-<language>", 10 per call (as the layouts). Kept in memory per
+ * org, language and read of the org-wide data (a refresh reads them again): 24 hours, or 5 minutes when part of
+ * the read failed. A read refused with an access error is kept 24 hours too, as no translations.
+ * Returns { list: [{ object, layout, section (master name), label (translation) }], warning }: `warning` is set
+ * for the first lookup that gets a failed or partial read only, so it shows once.
+ */
+export function loadOrgSectionTranslations(session, index, language) {
+  if (!/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve({ list: [], warning: null });
+  const objects = [...new Set((index?.layouts || []).filter((l) => l.sections?.length && /^[A-Za-z0-9_]+$/.test(l.object)).map((l) => l.object))].sort();
+  const key = `${session.host}|${language}|${index?.at}`;
+  let entry = translationMemory.get(key);
+  if (!entry || Date.now() - entry.at >= entry.ttl) {
+    const partial = [];
+    entry = { at: Date.now(), ttl: ORG_INDEX_TTL_MS, warned: false };
+    const e2 = entry;
+    entry.promise = readMetadataAll(session, 'CustomObjectTranslation', objects.map((o) => `${o}-${language}`), (w) => partial.push(w)).then(
+      (records) => {
+        if (partial.length) e2.ttl = PARTIAL_TTL_MS;
+        const list = records.flatMap((r) => {
+          const object = (r.fullName || '').slice(0, (r.fullName || '').lastIndexOf('-'));
+          return object ? parseSectionTranslations(r.xml).map((t) => ({ object, ...t })) : [];
+        });
+        return { list, warning: partial.length ? `Page layout section translations partly searched org-wide: ${partial.join('; ')}` : null };
+      },
+      (e) => {
+        if (e?.status === 401) {
+          translationMemory.delete(key);
+          throw e;
+        }
+        if (!isAccessError(e)) e2.ttl = PARTIAL_TTL_MS;
+        return { list: [], warning: `Page layout section translations not searched org-wide: ${e?.message || e}` };
+      }
+    );
+    translationMemory.set(key, entry);
+  }
+  const e3 = entry;
+  return entry.promise.then((r) => {
+    const warning = e3.warned ? null : r.warning;
+    e3.warned = true;
+    return { list: r.list, warning };
+  });
+}
+
 /** Forget the copies in memory (tests). */
 export function clearOrgIndexMemory() {
   memory.clear();
+  translationMemory.clear();
 }
