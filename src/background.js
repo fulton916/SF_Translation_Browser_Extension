@@ -1,6 +1,7 @@
 import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation, loadUtilityApps, loadUtilityBar, loadPipelineMetrics, loadPipelineMetricTranslations, loadTranslationsTabIds } from './sfApi.js';
 import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas, findUtilityItem } from './locator.js';
 import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
+import { loadLabelEditor, saveLabelTranslation } from './labelEdit.js';
 
 // ---------- test log (viewer: click the toolbar icon) ----------
 const pathOf = (url) => {
@@ -184,6 +185,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(pendingKey(tabId)));
+
+// Panel label editor (issue #25): op 'load' reads the label and its languages; 'save' and 'remove' write one
+// language through the Tooling API, then read the label back. Errors come back in plain words.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'sftl:labelEdit' || !sender.tab) return;
+  const page = pathOf(sender.tab.url);
+  const { op, labelId, language, value } = msg;
+  getSession(sender.tab.url)
+    .then((session) => {
+      if (op === 'load') return loadLabelEditor(session, labelId);
+      if (op === 'save' || op === 'remove') return saveLabelTranslation(session, { labelId, language, value, remove: op === 'remove' });
+      throw new Error(`Unknown label edit: ${op}`);
+    })
+    .then((res) => {
+      if (op !== 'load') log('info', 'label-edit', `${op === 'remove' ? 'Removed' : 'Saved'} ${language} translation of label ${res.editor.label.name}`, { page, details: { labelId, language, length: value?.length ?? null } });
+      sendResponse(res);
+    })
+    .catch((e) => {
+      log('error', 'label-edit', `${op} failed: ${e.message || e}`, { page, details: { labelId, language, code: e.code || null }, stack: e.stack });
+      sendResponse({ error: e.message || String(e) });
+    });
+  return true;
+});
+
 
 async function openTranslation({ goto, lang, orgDefault }, fromTab) {
   const built = buildGotoUrl(goto, lang, orgDefault);

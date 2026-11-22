@@ -395,8 +395,121 @@
         })
       );
     }
+    if (r.goto?.page === 'label' && r.goto.labelId) {
+      actions.append(
+        button('Edit translations', 'btn secondary', "Type and save this label's translations here", (ev) => toggleLabelEditor(c, r, ev.currentTarget))
+      );
+    }
     c.append(actions);
     return c;
+  }
+
+  // ---------- custom label editor (issue #25): save a translation through the Tooling API ----------
+
+  const MAX_LABEL_VALUE = 1000;
+  const CACHE_NOTE = 'Salesforce pages show the new text after Lightning refreshes its label cache, which takes a few minutes.';
+
+  function toggleLabelEditor(c, r, b) {
+    const open = c.querySelector('.editor');
+    if (open) {
+      open.remove();
+      b.textContent = 'Edit translations';
+      return;
+    }
+    b.textContent = 'Close editor';
+    const box = el('div', 'editor');
+    c.append(box);
+    loadLabelEditor(box, r);
+  }
+
+  function loadLabelEditor(box, r) {
+    box.replaceChildren(el('div', 'muted', 'Reading the label…'));
+    ask({ type: 'sftl:labelEdit', op: 'load', labelId: r.goto.labelId }, 20000)
+      .then((res) => {
+        if (res?.error) throw new Error(res.error);
+        renderLabelEditor(box, r, res);
+      })
+      .catch((e) => {
+        box.replaceChildren(el('div', 'error', e.message), button('Reload', 'link', 'Read the label again', () => loadLabelEditor(box, r)));
+      });
+  }
+
+  function renderLabelEditor(box, r, ed) {
+    box.replaceChildren(el('div', 'muted', `${langName(ed.label.language)} (the label's own language): "${ed.label.value}"`));
+    if (!ed.languages.length) {
+      box.append(el('div', 'muted', "No active translation languages besides the label's own language. Setup → Translation Language Settings adds and activates them."));
+      return;
+    }
+    for (const lang of ed.languages) box.append(languageRow(box, r, lang));
+  }
+
+  function languageRow(box, r, lang) {
+    const row = el('div', 'edit-row');
+    const head = el('div', 'edit-head');
+    head.append(el('span', 'edit-lang', `${lang.name} (${lang.code})`), el('span', 'muted', lang.id ? 'Translated' : 'No translation yet'));
+    const ta = el('textarea', 'edit-text');
+    ta.rows = 2;
+    ta.maxLength = MAX_LABEL_VALUE;
+    ta.value = lang.value ?? '';
+    const count = el('span', 'muted edit-count');
+    const status = el('div', 'muted edit-status');
+    const save = button('Save', 'btn', `Save the ${lang.name} translation in Salesforce`, () => send('save'));
+    const acts = el('div', 'actions');
+    acts.append(save);
+    let remove = null;
+    if (lang.id) {
+      remove = button('Remove', 'btn secondary', `Delete the ${lang.name} translation in Salesforce`, () => {
+        // Two clicks: a removed translation can only be typed again.
+        if (remove.dataset.armed !== '1') {
+          remove.dataset.armed = '1';
+          remove.textContent = 'Click again to remove';
+          return;
+        }
+        send('remove');
+      });
+      acts.append(remove);
+    }
+    acts.append(count);
+    const update = () => {
+      count.textContent = `${ta.value.length} / ${MAX_LABEL_VALUE}`;
+      save.disabled = !ta.value.trim() || ta.value === (lang.value ?? '');
+    };
+    ta.addEventListener('input', update);
+    update();
+
+    function send(op) {
+      save.disabled = true;
+      if (remove) remove.disabled = true;
+      status.className = 'muted edit-status';
+      status.textContent = op === 'remove' ? 'Removing…' : 'Saving…';
+      ask({ type: 'sftl:labelEdit', op, labelId: r.goto.labelId, language: lang.code, value: op === 'remove' ? null : ta.value }, 30000)
+        .then((res) => {
+          if (res?.error) throw new Error(res.error);
+          // Show the org's values, read back after the write.
+          renderLabelEditor(box, r, res.editor);
+          const fresh = [...box.querySelectorAll('.edit-row')].find((x) => x.dataset.lang === lang.code);
+          const msg = fresh?.querySelector('.edit-status');
+          if (!msg) return;
+          msg.className = 'ok edit-status';
+          msg.textContent =
+            op === 'remove' ? `Removed. Salesforce has no ${lang.name} translation for this label now. ${CACHE_NOTE}` : `Saved. Salesforce now has: "${res.saved}". ${CACHE_NOTE}`;
+        })
+        .catch((e) => {
+          status.className = 'error edit-status';
+          status.textContent = e.message;
+          update();
+          if (remove) {
+            remove.disabled = false;
+            remove.dataset.armed = '';
+            remove.textContent = 'Remove';
+          }
+          logEvent('error', 'panel', `Label ${op} failed: ${e.message}`, { title: r.title, lang: lang.code });
+        });
+    }
+
+    row.dataset.lang = lang.code;
+    row.append(head, ta, acts, status);
+    return row;
   }
 
   // ---------- target language ----------
@@ -600,6 +713,13 @@
       .lang-select { font: inherit; font-size: 12px; padding: 2px; max-width: 240px; }
       .foot { margin-top: 8px; text-align: right; }
       .link { background: none; border: 0; color: #0176d3; cursor: pointer; font: inherit; font-size: 12px; padding: 0; }
+      .editor { margin-top: 8px; border-top: 1px solid #e5e5e5; padding-top: 6px; display: flex; flex-direction: column; gap: 8px; }
+      .edit-head { display: flex; justify-content: space-between; gap: 6px; }
+      .edit-lang { font-weight: 600; }
+      .edit-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; padding: 4px; border: 1px solid #c9c9c9; border-radius: 4px; resize: vertical; margin-top: 2px; }
+      .edit-count { margin-left: auto; align-self: center; }
+      .btn:disabled { background: #c9c9c9; cursor: default; }
+      .ok { color: #2e844a; font-size: 12px; margin: 2px 0; word-break: break-word; }
     `;
     return s;
   }
