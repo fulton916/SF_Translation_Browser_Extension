@@ -10,9 +10,11 @@ const orgCache = new Map();
 const describeCache = new Map();
 
 export class SfError extends Error {
-  constructor(status, message) {
+  /** `code`: Salesforce's errorCode (e.g. INVALID_TYPE), when the reply has one. */
+  constructor(status, message, code = null) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -44,16 +46,41 @@ export async function sfFetch(session, path) {
   const res = await fetch(`https://${session.host}${path}`, {
     headers: { Authorization: `Bearer ${session.sid}`, Accept: 'application/json' },
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    let msg = body;
-    try {
-      msg = JSON.parse(body)[0]?.message || body;
-    } catch {}
-    if (res.status === 401) msg = 'Session expired or API access is off for your user (needs "API Enabled"). Reload Salesforce and retry.';
-    throw new SfError(res.status, msg.slice(0, 300));
-  }
+  if (!res.ok) throw await sfErrorFrom(res);
   return res.json();
+}
+
+/**
+ * POST / PATCH / DELETE with the same session as sfFetch. `body` is sent as JSON.
+ * Returns the reply JSON (POST: { id, success, errors }), or null for 204 No Content (PATCH, DELETE).
+ */
+export async function sfWrite(session, method, path, body = null) {
+  if (!['POST', 'PATCH', 'DELETE'].includes(method)) throw new Error(`sfWrite: ${method} is not a write method.`);
+  const headers = { Authorization: `Bearer ${session.sid}`, Accept: 'application/json' };
+  if (body != null) headers['Content-Type'] = 'application/json';
+  const res = await fetch(`https://${session.host}${path}`, { method, headers, ...(body != null ? { body: JSON.stringify(body) } : {}) });
+  if (!res.ok) throw await sfErrorFrom(res);
+  if (res.status === 204) return null;
+  const text = await res.text().catch(() => '');
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null; // written; the reply just is not JSON
+  }
+}
+
+/** An SfError from a failed reply: Salesforce sends [{ message, errorCode, fields }]. */
+async function sfErrorFrom(res) {
+  const body = await res.text().catch(() => '');
+  let msg = body;
+  let code = null;
+  try {
+    const first = JSON.parse(body)[0];
+    msg = first?.message || body;
+    code = first?.errorCode || null;
+  } catch {}
+  if (res.status === 401) msg = 'Session expired or API access is off for your user (needs "API Enabled"). Reload Salesforce and retry.';
+  return new SfError(res.status, String(msg).slice(0, 300), code);
 }
 
 export async function queryAll(session, soql, { tooling = false } = {}) {
