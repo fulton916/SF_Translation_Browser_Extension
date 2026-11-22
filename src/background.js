@@ -410,7 +410,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   }
   return {
     ...located,
-    orgIndex: orgIndex ? { at: orgIndex.at } : null,
+    orgIndex: orgIndex ? { at: orgIndex.at, layouts: !!orgIndex.layouts, buttons: !!orgIndex.buttons } : null,
     hints,
     contextObjects: listObject && !objects.includes(listObject) ? [...objects, listObject] : objects,
     warnings,

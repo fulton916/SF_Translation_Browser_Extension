@@ -115,3 +115,15 @@ test('needsOrgWideSearch: nothing confirmed, or a layout section header', () => 
   assert.equal(needsOrgWideSearch({ results: [{ confidence: 'confirmed' }], areas: ['layoutSection'] }, 'Widget Basics'), true);
   assert.equal(needsOrgWideSearch({ results: [], areas: [] }, '  '), false);
 });
+
+test("this object's layouts not read: its card stays, other objects are listed next to it", () => {
+  const noAccount = { ...org, orgIndex: { ...orgIndex, layouts: orgIndex.layouts.filter((l) => l.object !== 'Account') } };
+  const out = run('Widget Basics', headerHints, noAccount);
+  assert.equal(out.results.find((x) => x.key === 'area:layoutSection').confidence, 'confirmed');
+  assert.equal(out.results.find((x) => x.key === 'section:SFTL_Widget__c.Widget Basics').confidence, 'exact');
+});
+
+test('layouts not read: the help does not say they were searched', () => {
+  const out = run('zzqx nothing here', {}, { ...org, orgIndex: { ...orgIndex, layouts: null } });
+  assert.match(out.notFoundHelp[1], /Layout Section/);
+});

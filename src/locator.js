@@ -2592,7 +2592,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     if (!(inObjectManager && results.some(ownMetadata))) add(setupTextResult());
   }
 
-  return finalize(results, areas, !!org.orgIndex);
+  return finalize(results, areas, !!(org.orgIndex?.layouts && org.orgIndex?.buttons));
 }
 
 // ---------- org-wide search (#24) ----------
@@ -2641,9 +2641,12 @@ function addOrgWideResults(org, needle, describes, results, add) {
     const { layouts } = byObject.get(here);
     area.notes = [`In the ${objLabel(here)} page layout${layouts.length === 1 ? '' : 's'}: ${shortList(layouts)}.`, ...(area.notes || [])];
   } else if (byObject.size) {
+    // This page's object's layouts were read and lack the name: the section belongs to another object.
+    // Not read (managed-package layouts, a failed call): keep this object's card next to the others.
+    const replace = !area || !here || (idx.layouts || []).some((l) => l.object === here);
     // Pointed at a section header: with one object holding that name, that is its section.
-    const single = byObject.size === 1 && area?.confidence === 'confirmed';
-    if (area) results.splice(results.indexOf(area), 1);
+    const single = replace && byObject.size === 1 && area?.confidence === 'confirmed';
+    if (area && replace) results.splice(results.indexOf(area), 1);
     for (const [object, { name, layouts }] of [...byObject].slice(0, MAX_ORG_WIDE)) {
       add({
         key: `section:${object}.${name}`,
@@ -2652,7 +2655,7 @@ function addOrgWideResults(org, needle, describes, results, add) {
         subtitle: `In the ${objLabel(object)} page layout${layouts.length === 1 ? '' : 's'} ${shortList(layouts)}`,
         ...workbench(org, { component: 'Layout Section', object, objectLabel: objLabel(object), row: name }),
         notes: [
-          ...(area && here ? [`This section is not in the ${objLabel(here)} page layouts.`] : []),
+          ...(area && here && replace ? [`This section is not in the ${objLabel(here)} page layouts.`] : []),
           'Found by the org-wide search of page layouts.',
           ...(layouts.length > 1 ? ['Each layout has its own copy of the section name. Go to translation opens every layout and lists each copy.'] : []),
         ],

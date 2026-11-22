@@ -334,7 +334,8 @@
       panel.append(nf);
     }
     // How old the org-wide data is (every object's page layouts and buttons, read once per org).
-    if (p.orgIndex?.at) panel.append(el('div', 'muted', `Page layouts and buttons of every object searched (org data read ${ageText(p.orgIndex.at)}).`));
+    const searched = [p.orgIndex?.layouts && 'Page layouts', p.orgIndex?.buttons && 'buttons'].filter(Boolean).join(' and ');
+    if (p.orgIndex?.at && searched) panel.append(el('div', 'muted', `${searched[0].toUpperCase()}${searched.slice(1)} of every object searched (org data read ${ageText(p.orgIndex.at)}).`));
     for (const w of p.warnings || []) panel.append(el('div', 'warn', w));
 
     const foot = el('div', 'foot');
