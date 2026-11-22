@@ -613,17 +613,17 @@ export function loadRecordTypeId(session, objectName, recordId, { refresh = fals
 // ---------- master-language labels (the Translation Workbench lists rows by them) ----------
 
 const XML_ENT = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
-const decodeXml = (s) =>
+export const decodeXml = (s) =>
   String(s).replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
     if (e[0] !== '#') return XML_ENT[e.toLowerCase()] ?? m;
     const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : Number(e.slice(1));
     return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m;
   });
-const escapeXml = (s) => String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
+export const escapeXml = (s) => String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
 const tagRe = (tag, flags) => new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`, flags);
-const xmlBlocks = (xml, tag) => [...String(xml || '').matchAll(tagRe(tag, 'g'))].map((m) => m[1]);
-const dropBlocks = (xml, tags) => tags.reduce((x, t) => x.replace(tagRe(t, 'g'), ''), String(xml || ''));
-function xmlValue(xml, tag) {
+export const xmlBlocks = (xml, tag) => [...String(xml || '').matchAll(tagRe(tag, 'g'))].map((m) => m[1]);
+export const dropBlocks = (xml, tags) => tags.reduce((x, t) => x.replace(tagRe(t, 'g'), ''), String(xml || ''));
+export function xmlValue(xml, tag) {
   const m = new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([^<]*)</(?:[\\w-]+:)?${tag}>`).exec(String(xml || ''));
   return m ? decodeXml(m[1]) : null;
 }
