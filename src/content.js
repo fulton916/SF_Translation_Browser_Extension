@@ -1081,6 +1081,8 @@
       flow.component && { what: `Flow Component "${flow.component}"`, texts: [flow.component] },
       // Screen Info (a screen's footer button labels) has a Flow Version list that starts at version 1.
       flow.version != null && { what: `Flow Version "${flow.version}"`, texts: [String(flow.version)] },
+      // Version not read: the list stays at version 1, so it and the steps after it are left for the user.
+      flow.component === 'Screen Info' && flow.version == null && { what: 'Flow Version (the newest one)', texts: [], left: true },
       flow.screen && { what: `Screen "${flow.screen}"`, texts: [flow.screen, flow.screenName] },
       flow.screenComponent && { what: `Screen Component "${flow.screenComponent}"`, texts: [flow.screenComponent] },
       flow.aspect && { what: `Aspect "${flow.aspect}"`, texts: [flow.aspect], only: () => q('aspectSelect') },
@@ -1100,6 +1102,7 @@
     const set = [];
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
+      if (s.left) return { set, left: steps.slice(i).map((x) => x.what) };
       const want = s.texts.filter(Boolean).map(norm);
       const find = () => {
         const sels = s.only?.() ? [s.only()] : [...document.querySelectorAll('select')].filter((sel) => !isUsed(sel));

@@ -435,10 +435,9 @@ async function lookup({ text, hints, urls, refresh = false }) {
       let sectionTranslations = null;
       const isMasterSection = (orgIndex.layouts || []).some((l) => [...l.sections, ...(l.standardSections || [])].some((s) => normalize(s) === needle));
       if (orgIndex.layouts && !isMasterSection && org.userLanguage && org.defaultLanguage && org.userLanguage !== org.defaultLanguage) {
-        sectionTranslations = await loadOrgSectionTranslations(session, orgIndex, org.userLanguage).catch((e) => {
-          warnings.push(`Page layout section translations not searched org-wide: ${e.message || e}`);
-          return null;
-        });
+        const tr = await loadOrgSectionTranslations(session, orgIndex, org.userLanguage).catch((e) => ({ list: null, warning: `Page layout section translations not searched org-wide: ${e.message || e}` }));
+        sectionTranslations = tr.list;
+        if (tr.warning) warnings.push(tr.warning);
       }
       located = locate({ ...input, org: { ...input.org, orgIndex: { ...orgIndex, sectionTranslations } } });
     }

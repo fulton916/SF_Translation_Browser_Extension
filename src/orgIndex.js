@@ -339,24 +339,47 @@ const translationMemory = new Map();
 /**
  * Viewing another language, a section header shows its translation, not the master name the org-wide data
  * holds. The section translations of every object whose layouts have custom-named sections, in `language`:
- * readMetadata CustomObjectTranslation "<Object>-<language>", 10 per call (as the layouts). Kept 24 hours in
- * memory per org, language and read of the org-wide data (a refresh reads them again). Returns [{ object, layout, section (master name), label (translation) }].
+ * readMetadata CustomObjectTranslation "<Object>-<language>", 10 per call (as the layouts). Kept in memory per
+ * org, language and read of the org-wide data (a refresh reads them again): 24 hours, or 5 minutes when part of
+ * the read failed. A read refused with an access error is kept 24 hours too, as no translations.
+ * Returns { list: [{ object, layout, section (master name), label (translation) }], warning }: `warning` is set
+ * for the first lookup that gets a failed or partial read only, so it shows once.
  */
 export function loadOrgSectionTranslations(session, index, language) {
-  if (!/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve([]);
+  if (!/^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/.test(language || '')) return Promise.resolve({ list: [], warning: null });
   const objects = [...new Set((index?.layouts || []).filter((l) => l.sections?.length && /^[A-Za-z0-9_]+$/.test(l.object)).map((l) => l.object))].sort();
   const key = `${session.host}|${language}|${index?.at}`;
-  const hit = translationMemory.get(key);
-  if (hit && Date.now() - hit.at < ORG_INDEX_TTL_MS) return hit.promise;
-  const promise = readMetadataAll(session, 'CustomObjectTranslation', objects.map((o) => `${o}-${language}`)).then((records) =>
-    records.flatMap((r) => {
-      const object = (r.fullName || '').slice(0, (r.fullName || '').lastIndexOf('-'));
-      return object ? parseSectionTranslations(r.xml).map((t) => ({ object, ...t })) : [];
-    })
-  );
-  translationMemory.set(key, { at: Date.now(), promise });
-  promise.catch(() => translationMemory.get(key)?.promise === promise && translationMemory.delete(key));
-  return promise;
+  let entry = translationMemory.get(key);
+  if (!entry || Date.now() - entry.at >= entry.ttl) {
+    const partial = [];
+    entry = { at: Date.now(), ttl: ORG_INDEX_TTL_MS, warned: false };
+    const e2 = entry;
+    entry.promise = readMetadataAll(session, 'CustomObjectTranslation', objects.map((o) => `${o}-${language}`), (w) => partial.push(w)).then(
+      (records) => {
+        if (partial.length) e2.ttl = PARTIAL_TTL_MS;
+        const list = records.flatMap((r) => {
+          const object = (r.fullName || '').slice(0, (r.fullName || '').lastIndexOf('-'));
+          return object ? parseSectionTranslations(r.xml).map((t) => ({ object, ...t })) : [];
+        });
+        return { list, warning: partial.length ? `Page layout section translations partly searched org-wide: ${partial.join('; ')}` : null };
+      },
+      (e) => {
+        if (e?.status === 401) {
+          translationMemory.delete(key);
+          throw e;
+        }
+        if (!isAccessError(e)) e2.ttl = PARTIAL_TTL_MS;
+        return { list: [], warning: `Page layout section translations not searched org-wide: ${e?.message || e}` };
+      }
+    );
+    translationMemory.set(key, entry);
+  }
+  const e3 = entry;
+  return entry.promise.then((r) => {
+    const warning = e3.warned ? null : r.warning;
+    e3.warned = true;
+    return { list: r.list, warning };
+  });
 }
 
 /** Forget the copies in memory (tests). */

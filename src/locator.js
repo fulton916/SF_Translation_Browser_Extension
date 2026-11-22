@@ -2412,7 +2412,8 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   // 7b. Org-wide search (#24): page layout sections, buttons and screen flows of the whole org, not only this page's.
   if (needle && org.orgIndex) addOrgWideResults(org, needle, String(text || ''), describes, results, add, pageComponent?.props?.flowName || null);
   // A page layout section header is translated in TW → Layout Section; layouts cannot use custom labels.
-  if (results.some((r) => (r.key === 'area:layoutSection' || r.key.startsWith('section:')) && r.confidence === 'confirmed')) {
+  // Also a standard section name (sfsection:, Salesforce text): it is no custom label either.
+  if (results.some((r) => (r.key === 'area:layoutSection' || r.key.startsWith('section:') || r.key.startsWith('sfsection:')) && r.confidence === 'confirmed')) {
     demoteLabelsToPartial(results, 'page layout section names are not custom labels.');
   }
   if (areas.has('richText')) demoteSameTextLabels(results, 'a Rich Text component shows typed text, not a custom label.');

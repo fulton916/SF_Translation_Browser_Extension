@@ -251,7 +251,8 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
   read again until **Refresh org data**.
 - Viewing another language, a translated section header is matched org-wide through each object's section
   translations (Metadata API, read once per org and language). Buttons and flow text are matched on their
-  master text only.
+  master text only. A Salesforce standard section name ("Account Information") has no translation
+  there: its translated header is not recognised as Salesforce text, and the panel names Layout Section.
 - Org-wide flow text is read from each flow's newest version. When a newer draft exists, its text is searched,
   not the active version's.
 - Layouts of CaseInteraction, UserAlt and LiveChatTranscriptActive/Waiting are listed under Case, User and

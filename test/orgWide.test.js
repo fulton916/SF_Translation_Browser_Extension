@@ -253,3 +253,11 @@ test('pointed at a custom footer button in the running flow: its card is confirm
   assert.equal(out.results[0].key, 'flowbtn:SFTL_Widget_Intake.Intake_Screen.Back Button Label');
   assert.equal(out.results[0].confidence, 'confirmed');
 });
+
+test('a standard section name you pointed at makes same-text custom labels partial', () => {
+  const withLabel = { ...org, customLabels: [{ Id: '101000000000002AAA', Name: 'Account_Information', MasterLabel: 'Account Information', NamespacePrefix: null, Value: 'Account Information', Language: 'en_US' }] };
+  const out = run('Account Information', headerHints, withLabel);
+  assert.equal(out.results[0].key, 'sfsection:Account.account information');
+  const label = [...out.results, ...out.more].find((x) => x.source === SOURCE.CUSTOM_LABEL);
+  assert.equal(label.confidence, 'partial');
+});

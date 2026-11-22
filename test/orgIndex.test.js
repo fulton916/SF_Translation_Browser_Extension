@@ -332,9 +332,26 @@ test('loadOrgSectionTranslations reads the objects with custom-named sections, o
   const index = { at: 1, layouts: [{ object: 'SFTL_Widget__c', layout: 'Widget Layout', sections: ['Widget Basics'], standardSections: [] }, { object: 'Account', layout: 'Account Layout', sections: [], standardSections: ['Account Information'] }] };
   const tr = await loadOrgSectionTranslations(session, index, 'fr');
   assert.deepEqual(calls, ['readCustomObjectTranslation:1'], 'Account has standard names only');
-  assert.deepEqual(tr, [{ object: 'SFTL_Widget__c', layout: 'Widget Layout', section: 'Widget Basics', label: 'Bases du widget' }]);
+  assert.deepEqual(tr, { list: [{ object: 'SFTL_Widget__c', layout: 'Widget Layout', section: 'Widget Basics', label: 'Bases du widget' }], warning: null });
   calls = [];
   await loadOrgSectionTranslations(session, index, 'fr');
   assert.deepEqual(calls, []);
-  assert.deepEqual(await loadOrgSectionTranslations(session, index, 'not a language'), []);
+  assert.deepEqual(await loadOrgSectionTranslations(session, index, 'not a language'), { list: [], warning: null });
+});
+
+test('loadOrgSectionTranslations: an access error is warned once and not read again', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => (String(opts.body || '').includes('CustomObjectTranslation') ? { ok: false, status: 500, text: async () => ACCESS_FAULT } : realFetch(url, opts));
+  const index = { at: 2, layouts: [{ object: 'SFTL_Widget__c', layout: 'Widget Layout', sections: ['Widget Basics'], standardSections: [] }] };
+  const first = await loadOrgSectionTranslations(session, index, 'fr');
+  assert.deepEqual(first.list, []);
+  assert.match(first.warning, /^Page layout section translations not searched org-wide: readMetadata CustomObjectTranslation failed/);
+  let reads = 0;
+  globalThis.fetch = async () => {
+    reads++;
+    throw new Error('read again');
+  };
+  const second = await loadOrgSectionTranslations(session, index, 'fr');
+  assert.deepEqual([second.list, second.warning, reads], [[], null, 0]);
+  globalThis.fetch = realFetch;
 });
