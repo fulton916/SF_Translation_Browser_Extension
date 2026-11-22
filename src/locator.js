@@ -2409,8 +2409,8 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     if (!existing) add(r);
     else if (CONFIDENCE_RANK[r.confidence] < CONFIDENCE_RANK[existing.confidence]) existing.confidence = r.confidence;
   }
-  // 7b. Org-wide search (#24): page layout sections and buttons of every object, not only this page's.
-  if (needle && org.orgIndex) addOrgWideResults(org, needle, describes, results, add);
+  // 7b. Org-wide search (#24): page layout sections, buttons and screen flows of the whole org, not only this page's.
+  if (needle && org.orgIndex) addOrgWideResults(org, needle, String(text || ''), describes, results, add);
   // A page layout section header is translated in TW → Layout Section; layouts cannot use custom labels.
   if (results.some((r) => (r.key === 'area:layoutSection' || r.key.startsWith('section:')) && r.confidence === 'confirmed')) {
     demoteLabelsToPartial(results, 'page layout section names are not custom labels.');
@@ -2592,7 +2592,8 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     if (!(inObjectManager && results.some(ownMetadata))) add(setupTextResult());
   }
 
-  return finalize(results, areas, !!(org.orgIndex?.layouts && org.orgIndex?.buttons));
+  const idx = org.orgIndex;
+  return finalize(results, areas, { layouts: !!idx?.layouts, buttons: !!idx?.buttons, flows: !!idx?.flows });
 }
 
 // ---------- org-wide search (#24) ----------
@@ -2620,10 +2621,10 @@ function shortList(items, n = 3) {
 }
 
 /**
- * Page layout sections and custom buttons of every object whose name is the text (org.orgIndex, master
- * names). A section card for this page's object stays; one on another object replaces it.
+ * Page layout sections, custom buttons and screen flow text of the whole org that is the text (org.orgIndex,
+ * master text). A section card for this page's object stays; one on another object replaces it.
  */
-function addOrgWideResults(org, needle, describes, results, add) {
+function addOrgWideResults(org, needle, text, describes, results, add) {
   const idx = org.orgIndex;
   const objLabel = (o) => labelOfObject(org, describes, o);
 
@@ -2663,6 +2664,23 @@ function addOrgWideResults(org, needle, describes, results, add) {
     }
   }
 
+  // Screen flows (TW → Flow): a screen component whose label or display text is the text. Not when the
+  // flow on this page already explained it.
+  if (!results.some((r) => r.key.startsWith('flow:') && ['confirmed', 'exact'].includes(r.confidence))) {
+    const hits = (idx.flows || [])
+      .map((flow) => flowResult(org, { flow, props: { flowName: flow.name } }, text))
+      .filter((r) => r.key.startsWith('flow:') && r.confidence === 'confirmed');
+    const flowArea = results.find((r) => r.key === 'area:flow');
+    for (const r of hits.slice(0, MAX_ORG_WIDE)) {
+      const f = r.goto.flow;
+      // Pointed at a running flow whose page component was not read: with one flow holding the text, it is that one.
+      r.confidence = flowArea && hits.length === 1 ? 'confirmed' : 'exact';
+      r.notes = [`This text is the ${f.aspect === 'Description' ? 'display text' : 'label'} of the screen component ${f.screenComponent} in the flow ${f.label}.`, 'Found by the org-wide search of screen flows.'];
+      add(r);
+    }
+    if (flowArea && hits.length) results.splice(results.indexOf(flowArea), 1);
+  }
+
   // Custom buttons and links (TW → Button and Link Label lists them by object). Same key as the card the
   // page metadata gives (btn:Object.Name), so a button you pointed at keeps its confirmed card.
   for (const b of (idx.buttons || []).filter((x) => normalize(x.label) === needle).slice(0, MAX_ORG_WIDE)) {
@@ -2688,7 +2706,7 @@ const MAX_MANAGED_WITH_CONFIRMED = 2;
 const isManagedLabel = (r) => r.source === SOURCE.CUSTOM_LABEL && !!r.pkg;
 const sourceRank = (r) => (isManagedLabel(r) && r.confidence === 'exact' ? MANAGED_EXACT_RANK : SOURCE_RANK[r.source]);
 
-function finalize(results, areas, orgWide = false) {
+function finalize(results, areas, orgWide = {}) {
   // One card per key, the best-ranked one (bug: Account "Phone" kept a 'partial' field card added
   // first and dropped it, losing the 'context' card for the clicked field).
   // 'partial' loses even to 'context' here, because partial cards are hidden when anything better exists.
@@ -2742,15 +2760,16 @@ function finalize(results, areas, orgWide = false) {
     more.push(r);
     return false;
   });
+  // Org-wide sources searched (#24) are named as searched, and no longer as places to check.
+  const wide = [orgWide.layouts && 'page layout sections', orgWide.buttons && 'custom buttons', orgWide.flows && 'screen flows'].filter(Boolean);
+  const places = [['Layout Section', 'layouts'], ['Flow', 'flows'], ['Lookup Filter'], ['Button and Link Label', 'buttons'], ['Report'], ['Dashboard']].filter(([, k]) => !orgWide[k]).map(([p]) => p);
   const notFoundHelp = unique.length
     ? null
     : [
-        orgWide
-          ? 'Not found in custom labels, object/field names, picklists, record types, actions, apps, tabs, validation messages, path guidance, or the page layout sections and custom buttons of any object.'
+        wide.length
+          ? `Not found in custom labels, object/field names, picklists, record types, actions, apps, tabs, validation messages, path guidance, or the ${wide.length > 1 ? `${wide.slice(0, -1).join(', ')} and ${wide[wide.length - 1]}` : wide[0]} of the whole org.`
           : 'Not found in custom labels, object/field names, picklists, record types, actions, apps, tabs, validation messages, or path guidance.',
-        orgWide
-          ? 'Other places to check in Translation Workbench: Flow, Lookup Filter, Report, Dashboard.'
-          : 'Other places to check in Translation Workbench: Layout Section, Flow, Lookup Filter, Button and Link Label, Report, Dashboard.',
+        `Other places to check in Translation Workbench: ${places.join(', ')}.`,
         'Text typed into custom components is not translatable until a developer moves it into a Custom Label.',
       ];
   return { results: unique, more, droppedPartial, hiddenManaged, notFoundHelp, areas: [...areas] };

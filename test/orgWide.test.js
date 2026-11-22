@@ -13,7 +13,24 @@ const orgIndex = {
     { object: 'Account', layout: 'Account (Sales) Layout', sections: ['Account Information', 'System Information'] },
     { object: 'SFTL_Widget__c', layout: 'Widget Layout', sections: ['Widget Basics', 'System Information'] },
   ],
-  flows: [],
+  // Shape of loadOrgIndex's flows (dev org SFTL_Widget_Intake, read with readMetadata).
+  flows: [
+    {
+      name: 'SFTL_Widget_Intake',
+      label: 'SFTL Widget Intake',
+      screens: [
+        {
+          name: 'Intake_Screen',
+          label: 'Widget Intake',
+          fields: [
+            { name: 'Intro_Text', fieldType: 'DisplayText', fieldText: '<p>Tell us about the widget.</p>', helpText: null },
+            { name: 'Widget_Nickname', fieldType: 'InputField', fieldText: 'Widget Nickname', helpText: null },
+          ],
+          buttonLabels: [],
+        },
+      ],
+    },
+  ],
   buttons: [
     { name: 'Ship_It', label: 'Ship It', object: 'SFTL_Widget__c', namespace: null },
     { name: 'Map_It', label: 'Map It', object: 'Account', namespace: 'maps' },
@@ -105,8 +122,8 @@ test('no org-wide data: no org-wide cards, and the help names Layout Section and
 test('org-wide data searched and nothing found: the help says so', () => {
   const out = run('zzqx nothing here');
   assert.equal(out.results.length, 0);
-  assert.match(out.notFoundHelp[0], /page layout sections and custom buttons of any object\.$/);
-  assert.equal(out.notFoundHelp[1], 'Other places to check in Translation Workbench: Flow, Lookup Filter, Report, Dashboard.');
+  assert.match(out.notFoundHelp[0], /path guidance, or the page layout sections, custom buttons and screen flows of the whole org\.$/);
+  assert.equal(out.notFoundHelp[1], 'Other places to check in Translation Workbench: Lookup Filter, Report, Dashboard.');
 });
 
 test('needsOrgWideSearch: nothing confirmed, or a layout section header', () => {
@@ -126,4 +143,38 @@ test("this object's layouts not read: its card stays, other objects are listed n
 test('layouts not read: the help does not say they were searched', () => {
   const out = run('zzqx nothing here', {}, { ...org, orgIndex: { ...orgIndex, layouts: null } });
   assert.match(out.notFoundHelp[1], /Layout Section/);
+});
+
+const flowHints = { tags: ['p', 'lightning-formatted-rich-text', 'flowruntime-display-text-lwc', 'flowruntime-screen-field', 'flowruntime-flow'] };
+
+test('flow screen text from a flow that is not on a Lightning page gets its Flow location', () => {
+  const out = run('Tell us about the widget.', flowHints);
+  assert.equal(out.results.some((r) => r.key === 'area:flow'), false, 'the generic flow card is replaced');
+  const r = out.results[0];
+  assert.equal(r.key, 'flow:SFTL_Widget_Intake.Intake_Screen.Intro_Text');
+  assert.equal(r.confidence, 'confirmed');
+  assert.ok(r.steps.includes('Setup Component: Flow'));
+  assert.ok(r.steps.includes('Flow: SFTL Widget Intake'));
+  assert.ok(r.steps.includes('Screen Component: Intro_Text'));
+  assert.ok(r.steps.includes('Aspect: Description'));
+  assert.deepEqual([r.goto.component, r.goto.flow.name, r.goto.flow.screen], ['FlowDefinition', 'SFTL_Widget_Intake', 'Widget Intake']);
+  assert.equal(r.notes[0], 'This text is the display text of the screen component Intro_Text in the flow SFTL Widget Intake.');
+});
+
+test('a flow input label found anywhere in the org is an exact match', () => {
+  const r = run('Widget Nickname').results.find((x) => x.key === 'flow:SFTL_Widget_Intake.Intake_Screen.Widget_Nickname');
+  assert.equal(r.confidence, 'exact');
+  assert.ok(r.steps.includes('Aspect: Label'));
+});
+
+test('a few words of a flow text are not matched org-wide', () => {
+  assert.equal(run('about the widget').results.some((x) => x.key.startsWith('flow:')), false);
+});
+
+test('the flow on this page already explained the text: no org-wide flow cards', () => {
+  const pageFlow = { page: 'P', id: 'c1', component: 'flowruntime:interview', props: { flowName: 'SFTL_Widget_Intake' }, flow: orgIndex.flows[0] };
+  const out = locate({ text: 'Widget Nickname', hints: flowHints, org, describes: [account], pageComponent: pageFlow });
+  const cards = out.results.filter((x) => x.key.startsWith('flow:'));
+  assert.equal(cards.length, 1);
+  assert.match(cards[0].notes[0], /^The flow on this page is SFTL Widget Intake/);
 });
