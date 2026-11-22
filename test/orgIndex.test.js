@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { layoutName, parseLayoutSections, parseFlow, readMetadataRecords, childBlocks, loadOrgIndex, clearOrgIndexMemory } from '../src/orgIndex.js';
+import { layoutName, layoutSections, parseLayoutSections, parseFlow, readMetadataRecords, childBlocks, loadOrgIndex, loadOrgSectionTranslations, clearOrgIndexMemory } from '../src/orgIndex.js';
 
 // Shapes as read from the dev org (Nov 2026): SFTL_Widget__c-Widget Layout, SFTL_Widget_Intake.
 const LAYOUT = `<?xml version="1.0" encoding="UTF-8"?>
@@ -120,6 +120,9 @@ let calls;
 let store;
 let retrieveFails;
 let failOneBatch;
+let listDenied;
+// The Metadata API's answer to a user without Modify Metadata or Modify All Data.
+const ACCESS_FAULT = '<soapenv:Fault><faultcode>sf:INSUFFICIENT_ACCESS</faultcode><faultstring>INSUFFICIENT_ACCESS: use of the Metadata API requires a user with the ModifyAllData or ModifyMetadata permissions</faultstring></soapenv:Fault>';
 
 function fakeOrg() {
   calls = [];
@@ -130,6 +133,7 @@ function fakeOrg() {
       const soap = String(opts.body);
       if (soap.includes('<s:listMetadata>')) {
         calls.push('listLayouts');
+        if (listDenied) return { ok: false, status: 500, text: async () => ACCESS_FAULT };
         assert.match(soap, /<s:type>Layout<\/s:type>/);
         const names = ['SFTL_Widget__c-Widget Layout', ...layoutNames];
         // A managed-package layout is not read (readMetadata returns it empty).
@@ -142,6 +146,10 @@ function fakeOrg() {
       assert.ok(names.length <= 10);
       if (type === 'Layout' && failOneBatch && names.length === 3) return { ok: false, status: 500, text: async () => '<faultstring>UNKNOWN_EXCEPTION</faultstring>' };
       if (type === 'Layout' && retrieveFails) return { ok: false, status: 500, text: async () => '<faultstring>INSUFFICIENT_ACCESS: no Modify Metadata</faultstring>' };
+      if (type === 'CustomObjectTranslation') {
+        const tr = '<?xml version="1.0" encoding="UTF-8"?><CustomObjectTranslation><layouts><layout>Widget Layout</layout><sections><label>Bases du widget</label><section>Widget Basics</section></sections></layouts></CustomObjectTranslation>';
+        return { ok: true, text: async () => body(names.map((n) => record('CustomObjectTranslation', n, n === 'SFTL_Widget__c-fr' ? tr : '')).join('')) };
+      }
       if (type === 'Flow') return { ok: true, text: async () => body(names.map((n) => record('Flow', n, FLOW)).join('')) };
       return { ok: true, text: async () => body(names.map((n) => record('Layout', n, n.startsWith('SFTL') ? LAYOUT : '<Layout></Layout>')).join('')) };
     }
@@ -161,6 +169,7 @@ beforeEach(() => {
   clearOrgIndexMemory();
   retrieveFails = false;
   failOneBatch = false;
+  listDenied = false;
   store = {};
   globalThis.chrome = {
     storage: {
@@ -250,4 +259,99 @@ test('loadOrgIndex: a lookup waiting on a read that fails fails too, with no rea
   const results = await Promise.allSettled([loadOrgIndex(session), loadOrgIndex(session)]);
   assert.deepEqual(results.map((r) => r.status), ['rejected', 'rejected']);
   assert.equal(calls.filter((c) => c === 'listLayouts').length, 1);
+});
+
+// ---------- #34: pseudo-object layouts, standard section names, footer buttons, access errors ----------
+
+test('layoutName: a pseudo-object layout is named by the object Translation Workbench lists it under', () => {
+  // Dev org, Nov 2026: Close Case Layout under Case, Community Member Layout under User.
+  assert.deepEqual(layoutName('CaseClose-Close Case Layout'), { object: 'Case', layout: 'Close Case Layout' });
+  assert.deepEqual(layoutName('CommunityMemberLayout-Community Member Layout'), { object: 'User', layout: 'Community Member Layout' });
+  assert.equal(layoutName('LiveChatTranscriptActive-Chat Transcript %28In Progress%29 Layout').object, 'LiveChatTranscript');
+});
+
+test('layoutSections: Salesforce standard names (customLabel false) apart from the names an admin typed', () => {
+  const xml = '<layoutSections><customLabel>false</customLabel><label>Account Information</label><layoutColumns><label>x</label></layoutColumns></layoutSections><layoutSections><customLabel>true</customLabel><label>SFTL Partner Info</label></layoutSections>';
+  assert.deepEqual(layoutSections(xml), { sections: ['SFTL Partner Info'], standardSections: ['Account Information'] });
+  assert.deepEqual(parseLayoutSections(xml), ['SFTL Partner Info']);
+});
+
+test('parseFlow: footer button labels with their Translation Workbench aspect, and the version read', () => {
+  const flow = parseFlow('SFTL_Widget_Intake', FLOW, 'SFTL Widget Intake', 2);
+  assert.equal(flow.version, 2);
+  assert.deepEqual(flow.screens[0].buttons, [{ aspect: 'Next or Finish Button Label', label: 'Send it' }]);
+});
+
+test('loadOrgIndex: an access error is shown once and that source is not read again until a refresh', async () => {
+  listDenied = true;
+  const first = await loadOrgIndex(session);
+  assert.equal(first.layouts, null);
+  assert.equal(first.buttons.length, 1);
+  assert.deepEqual(first.warnings, []);
+  assert.equal(first.notices.length, 1);
+  assert.match(first.notices[0], /^Page layout sections not searched org-wide: INSUFFICIENT_ACCESS/);
+  assert.ok(store['sftl:orgIndex:' + session.host], 'the rest is kept 24 hours');
+  assert.deepEqual(store['sftl:orgIndex:' + session.host].notices || [], []);
+
+  calls = [];
+  const second = await loadOrgIndex(session);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(second.notices, [], 'the next lookup does not repeat it');
+
+  // A day later the other sources are read again; layouts are not, and nothing is shown.
+  clearOrgIndexMemory();
+  store['sftl:orgIndex:' + session.host].at -= 25 * 3600 * 1000;
+  calls = [];
+  const later = await loadOrgIndex(session);
+  assert.ok(calls.includes('buttons'));
+  assert.ok(!calls.includes('listLayouts'));
+  assert.equal(later.layouts, null);
+  assert.deepEqual([later.warnings, later.notices || []], [[], []]);
+
+  calls = [];
+  const refreshed = await loadOrgIndex(session, { refresh: true });
+  assert.ok(calls.includes('listLayouts'), 'Refresh org data asks again');
+  assert.equal(refreshed.notices.length, 1);
+  listDenied = false;
+  const allowed = await loadOrgIndex(session, { refresh: true });
+  assert.equal(allowed.layouts.length, 1);
+  assert.deepEqual(allowed.denied, {});
+});
+
+test('loadOrgIndex: a copy stored in the older shape is read again', async () => {
+  const first = await loadOrgIndex(session);
+  clearOrgIndexMemory();
+  delete store['sftl:orgIndex:' + session.host].v;
+  calls = [];
+  await loadOrgIndex(session);
+  assert.ok(calls.includes('listLayouts'));
+  assert.ok(first.at);
+});
+
+test('loadOrgSectionTranslations reads the objects with custom-named sections, once per language', async () => {
+  const index = { at: 1, layouts: [{ object: 'SFTL_Widget__c', layout: 'Widget Layout', sections: ['Widget Basics'], standardSections: [] }, { object: 'Account', layout: 'Account Layout', sections: [], standardSections: ['Account Information'] }] };
+  const tr = await loadOrgSectionTranslations(session, index, 'fr');
+  assert.deepEqual(calls, ['readCustomObjectTranslation:1'], 'Account has standard names only');
+  assert.deepEqual(tr, { list: [{ object: 'SFTL_Widget__c', layout: 'Widget Layout', section: 'Widget Basics', label: 'Bases du widget' }], warning: null });
+  calls = [];
+  await loadOrgSectionTranslations(session, index, 'fr');
+  assert.deepEqual(calls, []);
+  assert.deepEqual(await loadOrgSectionTranslations(session, index, 'not a language'), { list: [], warning: null });
+});
+
+test('loadOrgSectionTranslations: an access error is warned once and not read again', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => (String(opts.body || '').includes('CustomObjectTranslation') ? { ok: false, status: 500, text: async () => ACCESS_FAULT } : realFetch(url, opts));
+  const index = { at: 2, layouts: [{ object: 'SFTL_Widget__c', layout: 'Widget Layout', sections: ['Widget Basics'], standardSections: [] }] };
+  const first = await loadOrgSectionTranslations(session, index, 'fr');
+  assert.deepEqual(first.list, []);
+  assert.match(first.warning, /^Page layout section translations not searched org-wide: readMetadata CustomObjectTranslation failed/);
+  let reads = 0;
+  globalThis.fetch = async () => {
+    reads++;
+    throw new Error('read again');
+  };
+  const second = await loadOrgSectionTranslations(session, index, 'fr');
+  assert.deepEqual([second.list, second.warning, reads], [[], null, 0]);
+  globalThis.fetch = realFetch;
 });

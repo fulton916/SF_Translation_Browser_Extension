@@ -9,9 +9,10 @@ const orgIndex = {
   at: Date.now() - 3 * 3600 * 1000,
   warnings: [],
   layouts: [
-    { object: 'Account', layout: 'Account Layout', sections: ['Account Information', 'System Information'] },
-    { object: 'Account', layout: 'Account (Sales) Layout', sections: ['Account Information', 'System Information'] },
-    { object: 'SFTL_Widget__c', layout: 'Widget Layout', sections: ['Widget Basics', 'System Information'] },
+    // sections: names an admin typed (customLabel true); standardSections: Salesforce's own (customLabel false).
+    { object: 'Account', layout: 'Account Layout', sections: ['SFTL Partner Info', 'Shared Notes'], standardSections: ['Account Information', 'System Information'] },
+    { object: 'Account', layout: 'Account (Sales) Layout', sections: ['Shared Notes'], standardSections: ['Account Information', 'System Information'] },
+    { object: 'SFTL_Widget__c', layout: 'Widget Layout', sections: ['Widget Basics', 'Shared Notes'], standardSections: ['System Information'] },
   ],
   // Shape of loadOrgIndex's flows (dev org SFTL_Widget_Intake, read with readMetadata).
   flows: [
@@ -26,9 +27,14 @@ const orgIndex = {
             { name: 'Intro_Text', fieldType: 'DisplayText', fieldText: '<p>Tell us about the widget.</p>', helpText: null },
             { name: 'Widget_Nickname', fieldType: 'InputField', fieldText: 'Widget Nickname', helpText: null },
           ],
-          buttonLabels: [],
+          buttonLabels: ['Go Back Now', 'Send Widget'],
+          buttons: [
+            { aspect: 'Back Button Label', label: 'Go Back Now' },
+            { aspect: 'Next or Finish Button Label', label: 'Send Widget' },
+          ],
         },
       ],
+      version: 2,
     },
   ],
   buttons: [
@@ -65,7 +71,7 @@ test('a section header from another object gets that object\'s Layout Section lo
 });
 
 test('a section header of this page\'s object keeps its card and names its layouts', () => {
-  const out = run('Account Information', headerHints);
+  const out = run('Shared Notes', headerHints);
   const r = out.results.find((x) => x.key === 'area:layoutSection');
   assert.equal(r.confidence, 'confirmed');
   assert.equal(r.goto.object, 'Account');
@@ -74,7 +80,7 @@ test('a section header of this page\'s object keeps its card and names its layou
 });
 
 test('a section name in several objects\' layouts: one card per object, none confirmed', () => {
-  const out = run('System Information', { tags: ['span', 'c-some-component'] });
+  const out = run('Shared Notes', { tags: ['span', 'c-some-component'] });
   const cards = out.results.filter((x) => x.key.startsWith('section:'));
   assert.deepEqual(cards.map((c) => [c.goto.object, c.confidence]), [['Account', 'exact'], ['SFTL_Widget__c', 'exact']]);
   assert.match(cards[0].notes.join(' '), /Each layout has its own copy/);
@@ -201,4 +207,57 @@ test('the same text in two flows: the flow the page names is confirmed', () => {
   assert.deepEqual(cards.map((c) => [c.goto.flow.name, c.confidence]), [['SFTL_Other', 'confirmed'], ['SFTL_Widget_Intake', 'exact']]);
   const none = run('Widget Nickname', flowHints, two).results.filter((r) => r.key.startsWith('flow:'));
   assert.deepEqual(none.map((c) => c.confidence), ['exact', 'exact']);
+});
+
+test("a standard section name of this page's object is Salesforce text, not a Layout Section row", () => {
+  const out = run('Account Information', headerHints);
+  assert.equal(out.results.some((x) => x.key === 'area:layoutSection' || x.key.startsWith('section:')), false);
+  const r = out.results[0];
+  assert.equal(r.key, 'sfsection:Account.account information');
+  assert.equal(r.source, SOURCE.SALESFORCE);
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.subtitle, 'A standard section name in the Account page layouts');
+  assert.match(r.steps[1], /rename the section\. A renamed section is listed in Translation Workbench → Layout Section\.$/);
+});
+
+test('standard section names are not matched on other objects', () => {
+  assert.equal(run('System Information', { tags: ['span', 'c-some-component'] }).results.some((x) => x.key.startsWith('section:')), false);
+});
+
+test('another language: a translated section header finds its master name and layouts', () => {
+  const fr = { ...org, userLanguage: 'fr', orgIndex: { ...orgIndex, sectionTranslations: [{ object: 'SFTL_Widget__c', layout: 'Widget Layout', section: 'Widget Basics', label: 'Bases du widget' }] } };
+  const out = run('Bases du widget', headerHints, fr);
+  const r = out.results[0];
+  assert.equal(r.key, 'section:SFTL_Widget__c.Widget Basics');
+  assert.equal(r.confidence, 'confirmed');
+  assert.equal(r.title, 'Page layout section: Widget Basics');
+  assert.deepEqual(r.goto.rows, ['Widget Basics', 'Bases du widget']);
+  assert.equal(r.notes[0], `"Bases du widget" is the French translation of this section's master name "Widget Basics".`);
+});
+
+test('a custom flow footer button label gets its Flow → Screen Info location', () => {
+  const r = run('Send Widget').results.find((x) => x.key.startsWith('flowbtn:'));
+  assert.equal(r.key, 'flowbtn:SFTL_Widget_Intake.Intake_Screen.Next or Finish Button Label');
+  assert.equal(r.confidence, 'exact');
+  assert.equal(r.title, 'Flow button label: SFTL Widget Intake');
+  assert.deepEqual(r.steps.slice(-4), ['Flow: SFTL Widget Intake', 'Flow Component: Screen Info', 'Flow Version: 2', 'Aspect: Next or Finish Button Label']);
+  assert.deepEqual(r.goto.flow, { label: 'SFTL Widget Intake', name: 'SFTL_Widget_Intake', component: 'Screen Info', version: 2, aspect: 'Next or Finish Button Label' });
+  assert.deepEqual(r.goto.rows, ['Send Widget']);
+});
+
+test('pointed at a custom footer button in the running flow: its card is confirmed', () => {
+  const navHints = { tags: ['button', 'flowruntime-navigation-bar', 'flowruntime-flow'] };
+  const pageFlow = { page: 'P', id: 'c1', component: 'flowruntime:interview', props: { flowName: 'SFTL_Widget_Intake' }, flow: orgIndex.flows[0] };
+  const out = locate({ text: 'Go Back Now', hints: navHints, org, describes: [account], pageComponent: pageFlow });
+  assert.equal(out.results.some((r) => r.key === 'area:flow' || r.key === 'sfdctext:flowNavigation'), false);
+  assert.equal(out.results[0].key, 'flowbtn:SFTL_Widget_Intake.Intake_Screen.Back Button Label');
+  assert.equal(out.results[0].confidence, 'confirmed');
+});
+
+test('a standard section name you pointed at makes same-text custom labels partial', () => {
+  const withLabel = { ...org, customLabels: [{ Id: '101000000000002AAA', Name: 'Account_Information', MasterLabel: 'Account Information', NamespacePrefix: null, Value: 'Account Information', Language: 'en_US' }] };
+  const out = run('Account Information', headerHints, withLabel);
+  assert.equal(out.results[0].key, 'sfsection:Account.account information');
+  const label = [...out.results, ...out.more].find((x) => x.source === SOURCE.CUSTOM_LABEL);
+  assert.equal(label.confidence, 'partial');
 });

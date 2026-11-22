@@ -666,7 +666,8 @@ export async function soapCall(session, kind, header, body) {
     `<env:Body>${body}</env:Body></env:Envelope>`;
   const res = await fetch(`https://${session.host}${path}`, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=UTF-8', SOAPAction: '""' }, body: envelope });
   const text = await res.text();
-  if (!res.ok) throw new SfError(res.status, (xmlValue(text, 'faultstring') || text).slice(0, 300));
+  // faultcode "sf:INSUFFICIENT_ACCESS" → code INSUFFICIENT_ACCESS, as REST replies name it.
+  if (!res.ok) throw new SfError(res.status, (xmlValue(text, 'faultstring') || text).slice(0, 300), (xmlValue(text, 'faultcode') || '').replace(/^\w+:/, '') || null);
   return text;
 }
 
