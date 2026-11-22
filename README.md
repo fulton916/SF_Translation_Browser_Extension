@@ -44,6 +44,9 @@ Log in to Salesforce. Your user needs:
   other than the org default, to name a page layout section by its master name and to confirm a translated
   validation message. Without it, the section card names the text you pointed at, and a translated message
   under a field lists that field's rules from the page area instead of confirming one.
+- **Manage Translation**: to save or remove a custom label translation in the panel (**Edit translations**).
+  Without it, the panel shows "Saving needs the Manage Translation permission." and nothing is written.
+  Salesforce requires View Setup and Configuration for Manage Translation, so a user who can save can also read.
 - For **Go to translation**, the permissions of the screen it opens:
   - Translation Workbench: enabled in the org, plus **Manage Translation** (or you are set up as a
     translator for the target language).
@@ -78,8 +81,17 @@ The **tag** (top right) says how the card was found, strongest first:
 Lower matches are behind the link **Show N similar texts in your org**. Click it to add those cards.
 
 Buttons: **Go to translation** (only on cards with a translation screen), **Open page** (the Setup or record page for that card),
-**Copy ...** (the API name or label reference). At the bottom: **Refresh org data** (reload the org's
+**Copy ...** (the API name or label reference), and **Edit translations** (custom label cards only). At the bottom: **Refresh org data** (reload the org's
 metadata after a change), **Test log**, and **Report a problem**.
+
+### Edit a custom label translation in the panel
+
+1. On a custom label card, click **Edit translations**. The editor reads the label from the org and shows one
+   box per active translation language. The label's own language and inactive languages are not offered.
+2. Type the translation (at most 1000 characters) and click **Save**. Save is off while the box is empty or unchanged.
+3. The panel reads the value back from the org and shows it under the box. Salesforce pages show the new text
+   after Lightning refreshes its label cache, which takes a few minutes.
+4. To delete a translation, click **Remove**, then **Click again to remove**.
 
 ## Report a problem
 
@@ -209,8 +221,9 @@ Each one gets its own branch and PR.
 
 1. **Phase 1 (done):** identify the source and give the click path + Setup link.
 2. **Phase 2 (done):** "Go to translation" opens the exact screen and auto-fills it.
-3. **Phase 3:** edit the translation inside the panel. Write it through the Tooling API
-   (`ExternalStringLocalization`) or Metadata API (`CustomObjectTranslation`, `Translations`) (#25).
+3. **Phase 3:** edit the translation inside the panel.
+   - **Part 1 (done):** custom label translations through the Tooling API (`ExternalStringLocalization`) (#25).
+   - Part 2: other translation types through the Metadata API (`CustomObjectTranslation`, `Translations`) (#29).
 4. **Phase 4 (done):** coverage report. List every label with a missing translation per active language (#14).
 5. Search layout sections, flows, and buttons org-wide (Metadata API retrieve, cached) (#24).
 
@@ -223,6 +236,8 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
 
 ## Known limits
 
+- **Edit translations** saves custom label translations only. Other translation types use **Go to translation** (#29).
+  A user set up only as a translator for a language (Translation Settings), without Manage Translation, is not tested.
 - Fields, picklists, record types, and actions are searched for the object on the current page only. In a
   related list's rows, the child object's field labels are searched too.
 - Per lookup, the full value list (inactive values and value sets) is read for at most 4 picklist fields,
@@ -303,5 +318,6 @@ Auto-fill (`src/content.js`) runs against live Salesforce pages and is tested by
 | `src/waitUntil.js` | Auto-fill retry: searches again until the Translate page's tree has loaded (unit tested) |
 | `src/content.js` | Reads the clicked element, shows the panel, auto-fills Setup pages |
 | `src/locator.js` | Decides where each text is translated (no browser code; unit tested) |
-| `src/sfApi.js` | REST and Tooling API queries |
+| `src/sfApi.js` | REST and Tooling API queries, and the write helper (`sfWrite`) |
+| `src/labelEdit.js` | Custom label translation editor: requests, plain-word errors, save and read back (unit tested) |
 | `src/logStore.js`, `src/log.html`, `src/log.js` | Test log storage and viewer |
