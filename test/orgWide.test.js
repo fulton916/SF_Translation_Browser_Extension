@@ -178,3 +178,27 @@ test('the flow on this page already explained the text: no org-wide flow cards',
   assert.equal(cards.length, 1);
   assert.match(cards[0].notes[0], /^The flow on this page is SFTL Widget Intake/);
 });
+
+const otherFlow = {
+  name: 'SFTL_Other',
+  label: 'SFTL Other',
+  screens: [{ name: 'S1', label: 'Other Screen', fields: [{ name: 'Nick', fieldType: 'InputField', fieldText: 'Widget Nickname', helpText: null }], buttonLabels: [] }],
+};
+
+test('text from a subflow: the page flow was read and lacks it, so the other flow is confirmed', () => {
+  const emptyFlow = { name: 'SFTL_Parent', label: 'SFTL Parent', screens: [] };
+  const pageFlow = { page: 'P', id: 'c1', component: 'flowruntime:interview', props: { flowName: 'SFTL_Parent' }, flow: emptyFlow };
+  const out = locate({ text: 'Tell us about the widget.', hints: flowHints, org, describes: [account], pageComponent: pageFlow });
+  assert.equal(out.results.some((r) => r.key === 'area:flow'), false);
+  assert.equal(out.results[0].key, 'flow:SFTL_Widget_Intake.Intake_Screen.Intro_Text');
+  assert.equal(out.results[0].confidence, 'confirmed');
+});
+
+test('the same text in two flows: the flow the page names is confirmed', () => {
+  const two = { ...org, orgIndex: { ...orgIndex, flows: [...orgIndex.flows, otherFlow] } };
+  const pageFlow = { page: 'P', id: 'c1', component: 'flowruntime:interview', props: { flowName: 'SFTL_Other' }, flow: null };
+  const cards = locate({ text: 'Widget Nickname', hints: flowHints, org: two, describes: [account], pageComponent: pageFlow }).results.filter((r) => r.key.startsWith('flow:'));
+  assert.deepEqual(cards.map((c) => [c.goto.flow.name, c.confidence]), [['SFTL_Other', 'confirmed'], ['SFTL_Widget_Intake', 'exact']]);
+  const none = run('Widget Nickname', flowHints, two).results.filter((r) => r.key.startsWith('flow:'));
+  assert.deepEqual(none.map((c) => c.confidence), ['exact', 'exact']);
+});

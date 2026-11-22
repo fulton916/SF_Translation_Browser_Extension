@@ -2410,7 +2410,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     else if (CONFIDENCE_RANK[r.confidence] < CONFIDENCE_RANK[existing.confidence]) existing.confidence = r.confidence;
   }
   // 7b. Org-wide search (#24): page layout sections, buttons and screen flows of the whole org, not only this page's.
-  if (needle && org.orgIndex) addOrgWideResults(org, needle, String(text || ''), describes, results, add);
+  if (needle && org.orgIndex) addOrgWideResults(org, needle, String(text || ''), describes, results, add, pageComponent?.props?.flowName || null);
   // A page layout section header is translated in TW → Layout Section; layouts cannot use custom labels.
   if (results.some((r) => (r.key === 'area:layoutSection' || r.key.startsWith('section:')) && r.confidence === 'confirmed')) {
     demoteLabelsToPartial(results, 'page layout section names are not custom labels.');
@@ -2624,7 +2624,7 @@ function shortList(items, n = 3) {
  * Page layout sections, custom buttons and screen flow text of the whole org that is the text (org.orgIndex,
  * master text). A section card for this page's object stays; one on another object replaces it.
  */
-function addOrgWideResults(org, needle, text, describes, results, add) {
+function addOrgWideResults(org, needle, text, describes, results, add, pageFlowName = null) {
   const idx = org.orgIndex;
   const objLabel = (o) => labelOfObject(org, describes, o);
 
@@ -2673,8 +2673,10 @@ function addOrgWideResults(org, needle, text, describes, results, add) {
     const flowArea = results.find((r) => r.key === 'area:flow');
     for (const r of hits.slice(0, MAX_ORG_WIDE)) {
       const f = r.goto.flow;
-      // Pointed at a running flow whose page component was not read: with one flow holding the text, it is that one.
-      r.confidence = flowArea && hits.length === 1 ? 'confirmed' : 'exact';
+      // Pointed at a running flow: with one flow holding the text, it is that one; with several, the one the
+      // page names (its screens could not be read).
+      const own = hits.length > 1 && f.name === pageFlowName && hits.filter((h) => h.goto.flow.name === pageFlowName).length === 1;
+      r.confidence = flowArea && (hits.length === 1 || own) ? 'confirmed' : 'exact';
       r.notes = [`This text is the ${f.aspect === 'Description' ? 'display text' : 'label'} of the screen component ${f.screenComponent} in the flow ${f.label}.`, 'Found by the org-wide search of screen flows.'];
       add(r);
     }
