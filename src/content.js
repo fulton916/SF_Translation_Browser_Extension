@@ -470,6 +470,7 @@
         if (remove.dataset.armed !== '1') {
           remove.dataset.armed = '1';
           remove.textContent = 'Click again to remove';
+          status.textContent = '';
           return;
         }
         send('remove');
