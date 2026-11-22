@@ -149,8 +149,9 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | App name | **Translation Workbench** → App | Yes |
 | Web / Visualforce / Lightning tab | **Translation Workbench** → Web Tab | Yes |
 | Custom button / link | **Translation Workbench** → Button and Link Label | From page metadata. Org-wide: a button or link label of any object (one `WebLink` query) is an exact match |
-| Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Also detected on Aura classic record layouts: a `forcePageBlockSection` header (an `h1`–`h6` or `legend` in the path), not a `forcePageBlockItem` field; a custom label with the same text then drops to similar text. Auto-fill opens every layout and lists each copy of the section. Org-wide: the section names of every page layout are searched too, so a header that belongs to another object's layout (a Related Record component) gets that object |
+| Page layout section header | **Translation Workbench** → Layout Section | From page metadata. Also detected on Aura classic record layouts: a `forcePageBlockSection` header (an `h1`–`h6` or `legend` in the path), not a `forcePageBlockItem` field; a custom label with the same text then drops to similar text. Auto-fill opens every layout and lists each copy of the section. Org-wide: the section names of every page layout are searched too, so a header that belongs to another object's layout (a Related Record component) gets that object. Only the names an admin typed are listed there; Salesforce's standard section names ("Account Information", `customLabel` false in the layout) are Salesforce text. Layouts named after a pseudo-object are listed under their object (Close Case Layout under Case, Community Member Layout under User). Viewing another language, a translated header is matched to its master name |
 | Flow screen text | **Translation Workbench** → Flow → the flow → Flow Component "Screen Component" → Screen → Screen Component → Aspect "Description" (display text) or "Label" (an input) | From page metadata. On a Lightning page, the Flow component names the flow, and its active version's screens are read (Tooling `Flow.Metadata`): confirmed when the text is a screen component's text. Org-wide: the org's own screen flows are searched too, for a flow that is not on a Lightning page |
+| Flow footer button label (a screen's own Next/Finish, Back or Pause label) | **Translation Workbench** → Flow → the flow → Flow Component "Screen Info" → Flow Version → Aspect "Next or Finish Button Label", "Back Button Label" or "Pause Button Label" | Org-wide: the footer labels set in Flow Builder → Configure Footer. Flow Version is the newest version (the one read). Without a custom label, the buttons are Salesforce text |
 | Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance of the record's own path. A custom object's step names the object by its Id (01I…), cut at 80 characters: the step is matched to its path by record type Id, or by object Id and field |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
 | Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
@@ -244,8 +245,18 @@ Most of these show on Experience Cloud sites or in builders, where this extensio
   object gives no confirmed answer, or for a section header. That data is read once per org (layouts and flows
   through the Metadata API, which needs Modify Metadata or Modify All Data) and kept 24 hours. The panel says
   how old it is, and **Refresh org data** reads it again. Not included: managed-package layouts and flows
-  (the Metadata API returns them empty). Org-wide matching uses the master text only, and the whole text
-  (a section name, a button label, a flow component's label or one line of its display text).
+  (the Metadata API returns them empty). Org-wide matching uses the whole text (a section name, a button
+  label, a flow component's label or one line of its display text, a footer button label).
+- Without access to a source (no Modify Metadata, no View Setup), the panel says so once. That source is not
+  read again until **Refresh org data**.
+- Viewing another language, a translated section header is matched org-wide through each object's section
+  translations (Metadata API, read once per org and language). Buttons and flow text are matched on their
+  master text only.
+- Org-wide flow text is read from each flow's newest version. When a newer draft exists, its text is searched,
+  not the active version's.
+- Layouts of CaseInteraction, UserAlt and LiveChatTranscriptActive/Waiting are listed under Case, User and
+  LiveChatTranscript. Only Close Case Layout (Case) and Community Member Layout (User) were checked in
+  Translation Workbench.
 - Per lookup, the full value list (inactive values and value sets) is read for at most 4 picklist fields,
   the one you point at first.
 - Salesforce text is recognised by page markers, in any language. Two checks still use English words: a

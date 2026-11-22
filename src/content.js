@@ -1068,7 +1068,8 @@
 
   /**
    * TW → Flow (dev org B-13, set by hand): Flow, then Flow Component "Screen Component", Screen (its label),
-   * Screen Component (its API name), Aspect ("Description" for display text, "Label" for an input). Each
+   * Screen Component (its API name), Aspect ("Description" for display text, "Label" for an input). A footer
+   * button label: Flow Component "Screen Info", Flow Version, Aspect ("Next or Finish Button Label"…). Each
    * list reloads after the one before it. Their select ids were not seen, so each is found by an option
    * text that only that list has; a list set by an earlier step (or Language, Setup Component) is never
    * searched again, since a screen label can equal the flow label. Stops at the first list it cannot set.
@@ -1078,6 +1079,8 @@
     const steps = [
       { what: `Flow "${flow.label}"`, texts: [flow.label, flow.name] },
       flow.component && { what: `Flow Component "${flow.component}"`, texts: [flow.component] },
+      // Screen Info (a screen's footer button labels) has a Flow Version list that starts at version 1.
+      flow.version != null && { what: `Flow Version "${flow.version}"`, texts: [String(flow.version)] },
       flow.screen && { what: `Screen "${flow.screen}"`, texts: [flow.screen, flow.screenName] },
       flow.screenComponent && { what: `Screen Component "${flow.screenComponent}"`, texts: [flow.screenComponent] },
       flow.aspect && { what: `Aspect "${flow.aspect}"`, texts: [flow.aspect], only: () => q('aspectSelect') },

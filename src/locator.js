@@ -2628,7 +2628,8 @@ function addOrgWideResults(org, needle, text, describes, results, add, pageFlowN
   const idx = org.orgIndex;
   const objLabel = (o) => labelOfObject(org, describes, o);
 
-  // Layout sections, grouped by object (each layout keeps its own copy of the name).
+  // Layout sections, grouped by object (each layout keeps its own copy of the name). Only the names an admin
+  // typed: Translation Workbench → Layout Section does not list Salesforce's standard section names.
   const byObject = new Map();
   for (const l of idx.layouts || []) {
     const name = (l.sections || []).find((s) => normalize(s) === needle);
@@ -2636,9 +2637,27 @@ function addOrgWideResults(org, needle, text, describes, results, add, pageFlowN
     if (!byObject.has(l.object)) byObject.set(l.object, { name, layouts: [] });
     byObject.get(l.object).layouts.push(l.layout);
   }
+  // Viewing another language: a section's translation (background.js reads them when the text is no master name).
+  for (const t of idx.sectionTranslations || []) {
+    if (normalize(t.label) !== needle || (byObject.has(t.object) && !byObject.get(t.object).translated)) continue;
+    if (!byObject.has(t.object)) byObject.set(t.object, { name: t.section, layouts: [], translated: t.label });
+    const o = byObject.get(t.object);
+    if (o.name === t.section && t.layout && !o.layouts.includes(t.layout)) o.layouts.push(t.layout);
+  }
   const area = results.find((r) => r.key === 'area:layoutSection');
   const here = area?.goto?.object || null;
-  if (area && here && byObject.has(here)) {
+  // A Salesforce standard section name in this page's object's layouts (customLabel false): Salesforce text.
+  const standardHere = !!area && !!here && !byObject.has(here) && (idx.layouts || []).some((l) => l.object === here && (l.standardSections || []).some((s) => normalize(s) === needle));
+  if (standardHere) {
+    results.splice(results.indexOf(area), 1);
+    add(
+      salesforceTextResult(`sfsection:${here}.${needle}`, area.confidence === 'confirmed' ? 'confirmed' : 'exact', {
+        subtitle: `A standard section name in the ${objLabel(here)} page layouts`,
+        steps: ['To show different text: in the page layout editor, rename the section. A renamed section is listed in Translation Workbench → Layout Section.'],
+        notes: ['Translation Workbench → Layout Section lists only section names an admin typed.', 'Found by the org-wide search of page layouts.'],
+      })
+    );
+  } else if (area && here && byObject.has(here)) {
     const { layouts } = byObject.get(here);
     area.notes = [`In the ${objLabel(here)} page layout${layouts.length === 1 ? '' : 's'}: ${shortList(layouts)}.`, ...(area.notes || [])];
   } else if (byObject.size) {
@@ -2648,14 +2667,15 @@ function addOrgWideResults(org, needle, text, describes, results, add, pageFlowN
     // Pointed at a section header: with one object holding that name, that is its section.
     const single = replace && byObject.size === 1 && area?.confidence === 'confirmed';
     if (area && replace) results.splice(results.indexOf(area), 1);
-    for (const [object, { name, layouts }] of [...byObject].slice(0, MAX_ORG_WIDE)) {
+    for (const [object, { name, layouts, translated }] of [...byObject].slice(0, MAX_ORG_WIDE)) {
       add({
         key: `section:${object}.${name}`,
         confidence: single ? 'confirmed' : 'exact',
         title: `Page layout section: ${name}`,
-        subtitle: `In the ${objLabel(object)} page layout${layouts.length === 1 ? '' : 's'} ${shortList(layouts)}`,
-        ...workbench(org, { component: 'Layout Section', object, objectLabel: objLabel(object), row: name }),
+        subtitle: layouts.length ? `In the ${objLabel(object)} page layout${layouts.length === 1 ? '' : 's'} ${shortList(layouts)}` : `In the ${objLabel(object)} page layouts`,
+        ...workbench(org, { component: 'Layout Section', object, objectLabel: objLabel(object), row: name, ...(translated ? { rows: [name, translated] } : {}) }),
         notes: [
+          ...(translated ? [`"${translated}" is the ${languageName(org.userLanguage)} translation of this section's master name "${name}".`] : []),
           ...(area && here && replace ? [`This section is not in the ${objLabel(here)} page layouts.`] : []),
           'Found by the org-wide search of page layouts.',
           ...(layouts.length > 1 ? ['Each layout has its own copy of the section name. Go to translation opens every layout and lists each copy.'] : []),
@@ -2682,6 +2702,30 @@ function addOrgWideResults(org, needle, text, describes, results, add, pageFlowN
     }
     if (flowArea && hits.length) results.splice(results.indexOf(flowArea), 1);
   }
+
+  // A screen's own footer button label (Flow Builder → Configure Footer). TW → Flow → Flow Component "Screen
+  // Info" lists them by Flow Version (it starts at version 1) and Aspect (dev org, Nov 2026).
+  const buttonHits = (idx.flows || []).flatMap((flow) =>
+    (flow.screens || []).flatMap((sc) => (sc.buttons || []).filter((b) => normalize(b.label) === needle).map((b) => ({ flow, sc, b })))
+  );
+  const navArea = results.find((r) => r.key === 'area:flow');
+  for (const { flow, sc, b } of buttonHits.slice(0, MAX_ORG_WIDE)) {
+    const base = workbench(org, { component: 'Flow' });
+    const own = buttonHits.length === 1 || (flow.name === pageFlowName && buttonHits.filter((h) => h.flow.name === pageFlowName).length === 1);
+    add({
+      key: `flowbtn:${flow.name}.${sc.name}.${b.aspect}`,
+      confidence: navArea && own ? 'confirmed' : 'exact',
+      title: `Flow button label: ${flow.label}`,
+      subtitle: `Screen "${sc.label}", ${b.aspect}`,
+      ...base,
+      steps: [...base.steps, `Flow: ${flow.label}`, 'Flow Component: Screen Info', `Flow Version: ${flow.version ?? 'the newest version'}`, `Aspect: ${b.aspect}`],
+      goto: { ...base.goto, flow: { label: flow.label, name: flow.name, component: 'Screen Info', version: flow.version ?? null, aspect: b.aspect }, rows: [b.label], rowLabel: truncate(b.label, 80) },
+      url: SETUP.workbench,
+      copy: b.label,
+      notes: [`This text is the ${b.aspect.toLowerCase()} the screen ${sc.label} sets in its footer (Flow Builder → Configure Footer) in the flow ${flow.label}.`, 'Found by the org-wide search of screen flows.'],
+    });
+  }
+  if (navArea && buttonHits.length && results.includes(navArea)) results.splice(results.indexOf(navArea), 1);
 
   // Custom buttons and links (TW → Button and Link Label lists them by object). Same key as the card the
   // page metadata gives (btn:Object.Name), so a button you pointed at keeps its confirmed card.

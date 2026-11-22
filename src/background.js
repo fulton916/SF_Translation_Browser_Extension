@@ -1,6 +1,6 @@
 import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation, loadUtilityApps, loadUtilityBar, loadPipelineMetrics, loadPipelineMetricTranslations, loadTranslationsTabIds } from './sfApi.js';
 import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas, findUtilityItem, needsOrgWideSearch } from './locator.js';
-import { loadOrgIndex } from './orgIndex.js';
+import { loadOrgIndex, loadOrgSectionTranslations } from './orgIndex.js';
 import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
 import { loadLabelEditor, saveLabelTranslation } from './labelEdit.js';
 
@@ -429,8 +429,18 @@ async function lookup({ text, hints, urls, refresh = false }) {
       return null;
     });
     if (orgIndex) {
-      warnings.push(...orgIndex.warnings);
-      located = locate({ ...input, org: { ...input.org, orgIndex } });
+      warnings.push(...orgIndex.warnings, ...(orgIndex.notices || []));
+      // Viewing another language, a section header shows its translation: match the section translations
+      // too, when the text is no master section name (read once per org and language).
+      let sectionTranslations = null;
+      const isMasterSection = (orgIndex.layouts || []).some((l) => [...l.sections, ...(l.standardSections || [])].some((s) => normalize(s) === needle));
+      if (orgIndex.layouts && !isMasterSection && org.userLanguage && org.defaultLanguage && org.userLanguage !== org.defaultLanguage) {
+        sectionTranslations = await loadOrgSectionTranslations(session, orgIndex, org.userLanguage).catch((e) => {
+          warnings.push(`Page layout section translations not searched org-wide: ${e.message || e}`);
+          return null;
+        });
+      }
+      located = locate({ ...input, org: { ...input.org, orgIndex: { ...orgIndex, sectionTranslations } } });
     }
   }
   return {
