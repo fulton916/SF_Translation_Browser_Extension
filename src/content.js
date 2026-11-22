@@ -262,6 +262,17 @@
   let host = null;
   let root = null;
 
+  /** "just now", "5 min ago", "3 h ago", "2 days ago". */
+  function ageText(at) {
+    const min = Math.floor((Date.now() - at) / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min} min ago`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h} h ago`;
+    const d = Math.floor(h / 24);
+    return `${d} day${d === 1 ? '' : 's'} ago`;
+  }
+
   function renderPanel(p) {
     if (!host) {
       // Remove a panel left by a disconnected (pre-reload) copy: its buttons no longer work.
@@ -322,6 +333,9 @@
       nf.append(ul);
       panel.append(nf);
     }
+    // How old the org-wide data is (every object's page layouts and buttons, read once per org).
+    const searched = [p.orgIndex?.layouts && 'Page layouts', p.orgIndex?.buttons && 'buttons'].filter(Boolean).join(' and ');
+    if (p.orgIndex?.at && searched) panel.append(el('div', 'muted', `${searched[0].toUpperCase()}${searched.slice(1)} of every object searched (org data read ${ageText(p.orgIndex.at)}).`));
     for (const w of p.warnings || []) panel.append(el('div', 'warn', w));
 
     const foot = el('div', 'foot');
@@ -509,7 +523,7 @@
       `Looked up: "${p.text || ''}"`,
       `Page: ${location.host}${location.pathname}`,
       `Translate into: ${targetLang || '(choose on the page)'} · viewing ${p.language?.user || '?'} · org default ${p.language?.orgDefault || '?'}`,
-      `Objects searched: ${(p.contextObjects || []).join(', ') || 'none'}`,
+      `Objects searched: ${(p.contextObjects || []).join(', ') || 'none'}${p.orgIndex?.at ? ` · org-wide data read ${new Date(p.orgIndex.at).toISOString()}` : ''}`,
       `Clicked element: ${(h.tags || []).filter((t) => t.includes('-')).slice(0, 6).join(' > ') || '(none)'}`,
       h.selectionNames?.length ? `Page metadata: ${h.selectionNames.join(', ')}` : null,
       h.componentIds?.length ? `Lightning components: ${h.componentIds.slice(0, 3).join(', ')}` : null,
