@@ -3,9 +3,9 @@
 // and content.js auto-fills them from the same pending entry background.js writes.
 
 import { getSession } from './sfApi.js';
-import { buildGotoUrl } from './locator.js';
+import { buildGotoUrl, languageName } from './locator.js';
 import { loadMissingTranslations } from './reportApi.js';
-import { ITEM_TYPES, toCsv } from './report.js';
+import { ITEM_TYPES, masterItems, toCsv } from './report.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE_SIZE = 500;
@@ -21,6 +21,7 @@ const origin = (() => {
 })();
 
 let report = null;
+let masters = []; // the org default language's rows (masterItems)
 let shownCount = PAGE_SIZE;
 
 const log = (level, message, details) => chrome.runtime.sendMessage({ type: 'sftl:log', level, where: 'report', message, details }).catch(() => {});
@@ -82,10 +83,17 @@ function render() {
       return card;
     })
   );
-  if (!report.missing.length) return;
+  if (!report.items.length) return;
+  masters = masterItems(report.items, report.orgDefault);
   const langSel = $('f-lang');
-  langSel.replaceChildren(new Option('All languages', ''), ...report.languages.filter((l) => l.missing).map((l) => new Option(l.name, l.code)));
-  const types = ITEM_TYPES.filter((t) => report.missing.some((i) => i.type === t));
+  const keep = langSel.value;
+  langSel.replaceChildren(
+    new Option('All languages', ''),
+    new Option(`${languageName(report.orgDefault) || report.orgDefault} (org default)`, report.orgDefault),
+    ...report.languages.map((l) => new Option(l.name, l.code))
+  );
+  if ([...langSel.options].some((o) => o.value === keep)) langSel.value = keep;
+  const types = ITEM_TYPES.filter((t) => report.items.some((i) => i.type === t));
   $('f-type').replaceChildren(new Option('All types', ''), ...types.map((t) => new Option(t, t)));
   $('filters').hidden = false;
   $('table-wrap').hidden = false;
@@ -93,23 +101,33 @@ function render() {
   renderRows();
 }
 
+/** The org default language is chosen: its rows are the master texts, so the Show filter does not apply. */
+const masterChosen = () => !!report && $('f-lang').value === report.orgDefault;
+
 function filtered() {
   const lang = $('f-lang').value;
   const type = $('f-type').value;
+  const show = masterChosen() ? 'all' : $('f-show').value;
   const q = $('f-text').value.trim().toLowerCase();
-  return report.missing.filter(
+  return (masterChosen() ? masters : report.items).filter(
     (i) =>
       (!lang || i.language === lang) &&
+      (show === 'all' || (show === 'missing') === !i.translated) &&
       (!type || i.type === type) &&
-      (!q || [i.objectLabel, i.object, i.name, i.master].some((v) => String(v || '').toLowerCase().includes(q)))
+      (!q || [i.objectLabel, i.object, i.name, i.master, i.translation].some((v) => String(v || '').toLowerCase().includes(q)))
   );
 }
 
 function renderRows() {
   const items = filtered();
   const names = new Map(report.languages.map((l) => [l.code, l.name]));
+  names.set(report.orgDefault, languageName(report.orgDefault) || report.orgDefault);
   const page = items.slice(0, shownCount);
-  $('shown').textContent = items.length === report.missing.length ? `${items.length} missing` : `${items.length} of ${report.missing.length} missing`;
+  const show = $('f-show');
+  show.disabled = masterChosen();
+  show.title = show.disabled ? 'The org default language holds the master texts: nothing is missing there.' : '';
+  const missingCount = items.filter((i) => !i.translated).length;
+  $('shown').textContent = `${items.length} ${items.length === 1 ? 'row' : 'rows'}${missingCount && missingCount < items.length ? `, ${missingCount} missing` : ''}`;
   $('rows').replaceChildren(
     ...page.map((i) => {
       const tr = el('tr');
@@ -118,14 +136,16 @@ function renderRows() {
         el('td', null, i.type),
         el('td', null, i.objectLabel || ''),
         el('td', 'api', i.name),
-        el('td', 'master', i.master)
+        el('td', 'master', i.master),
+        i.translated ? el('td', 'master', i.translation) : el('td', 'missing', 'Missing')
       );
-      const go = el('button', null, 'Go to translation');
+      const td = el('td', 'go');
+      tr.append(td);
+      if (!i.goto) return tr;
+      const go = el('button', null, i.translated ? 'Open translation' : 'Go to translation');
       go.title = buildGotoUrl(i.goto, i.language, report.orgDefault) ? 'Opens the translation screen and fills in what it can' : '';
       go.addEventListener('click', () => goTo(i, go));
-      const td = el('td', 'go');
       td.append(go);
-      tr.append(td);
       return tr;
     })
   );
@@ -163,15 +183,16 @@ async function goTo(item, button) {
 /** The rows that match the filter, as a CSV file (saved by the browser; nothing is sent anywhere). */
 function exportCsv() {
   const items = filtered();
-  const languageNames = Object.fromEntries(report.languages.map((l) => [l.code, l.name]));
+  const languageNames = Object.fromEntries([[report.orgDefault, languageName(report.orgDefault) || report.orgDefault], ...report.languages.map((l) => [l.code, l.name])]);
   const pageOf = (i) => {
-    const built = buildGotoUrl(i.goto, i.language, report.orgDefault);
+    const built = i.goto && buildGotoUrl(i.goto, i.language, report.orgDefault);
     return built ? origin + built.path : '';
   };
   const url = URL.createObjectURL(new Blob([toCsv(items, { languageNames, pageOf })], { type: 'text/csv;charset=utf-8' }));
   const a = el('a');
   a.href = url;
-  a.download = `missing-translations-${new URL(origin).hostname.split('.')[0]}-${new Date().toISOString().slice(0, 10)}.csv`;
+  const prefix = !masterChosen() && $('f-show').value === 'missing' ? 'missing-translations' : 'translations';
+  a.download = `${prefix}-${new URL(origin).hostname.split('.')[0]}-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.append(a);
   a.click();
   a.remove();
@@ -181,7 +202,7 @@ function exportCsv() {
 
 $('run').addEventListener('click', run);
 $('csv').addEventListener('click', exportCsv);
-for (const id of ['f-lang', 'f-type']) $(id).addEventListener('change', () => ((shownCount = PAGE_SIZE), renderRows()));
+for (const id of ['f-lang', 'f-show', 'f-type']) $(id).addEventListener('change', () => ((shownCount = PAGE_SIZE), renderRows()));
 $('f-text').addEventListener('input', () => ((shownCount = PAGE_SIZE), renderRows()));
 
 if (origin) run();

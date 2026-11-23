@@ -39,6 +39,7 @@
     td.api { font-family: ui-monospace, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
     td.master { overflow-wrap: anywhere; }
     td.go { white-space: nowrap; }
+    td.missing { color: var(--warn); font-style: italic; }
     td.go button { padding: 3px 8px; font-size: 12px; }
     .empty { padding: 24px; color: var(--muted); }
     .more { margin: 10px; }
@@ -57,14 +58,19 @@
     <div class="langs" id="langs"></div>
     <div class="bar" id="filters" hidden>
       <select id="f-lang" aria-label="Language"></select>
+      <select id="f-show" aria-label="Show">
+        <option value="missing" selected>Missing only</option>
+        <option value="translated">Translated only</option>
+        <option value="all">Missing and translated</option>
+      </select>
       <select id="f-type" aria-label="Type"></select>
-      <input type="search" id="f-text" placeholder="Filter by object, API name or master text" aria-label="Filter">
+      <input type="search" id="f-text" placeholder="Filter by object, API name, master text or translation" aria-label="Filter">
       <button id="csv" title="Saves the rows that match the filter as a CSV file">Export CSV</button>
       <span class="status" id="shown"></span>
     </div>
     <div class="table-wrap" id="table-wrap" hidden>
       <table>
-        <thead><tr><th>Language</th><th>Type</th><th>Object</th><th>API name</th><th>Master text</th><th></th></tr></thead>
+        <thead><tr><th>Language</th><th>Type</th><th>Object</th><th>API name</th><th>Master text</th><th>Translation</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
       <div id="more-wrap"></div>
