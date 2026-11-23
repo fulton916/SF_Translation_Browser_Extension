@@ -1262,13 +1262,13 @@ function flowTextMatch(needle, f) {
   return matchType(needle, full) ? 'partial' : null;
 }
 
+/** Salesforce's own flow navigation button names (English), normalized. */
+const FLOW_NAV_DEFAULTS = new Set(['next', 'previous', 'finish', 'pause']);
+
 /**
  * The flow's navigation bar (Next, Previous, Finish, Pause): Salesforce text, unless a screen sets its
  * own label for that button (FlowScreen backButtonLabel, nextOrFinishButtonLabel, pauseButtonLabel).
  */
-/** Salesforce's own flow navigation button names (English), normalized. */
-const FLOW_NAV_DEFAULTS = new Set(['next', 'previous', 'finish', 'pause']);
-
 function flowNavigationResult(flow, needle) {
   const own = (flow?.screens || []).some((s) => (s.buttonLabels || []).some((l) => normalize(l) === needle));
   if (own) return null;
