@@ -1266,6 +1266,9 @@ function flowTextMatch(needle, f) {
  * The flow's navigation bar (Next, Previous, Finish, Pause): Salesforce text, unless a screen sets its
  * own label for that button (FlowScreen backButtonLabel, nextOrFinishButtonLabel, pauseButtonLabel).
  */
+/** Salesforce's own flow navigation button names (English), normalized. */
+const FLOW_NAV_DEFAULTS = new Set(['next', 'previous', 'finish', 'pause']);
+
 function flowNavigationResult(flow, needle) {
   const own = (flow?.screens || []).some((s) => (s.buttonLabels || []).some((l) => normalize(l) === needle));
   if (own) return null;
@@ -2709,7 +2712,12 @@ function addOrgWideResults(org, needle, text, describes, results, add, pageFlowN
   const buttonHits = (idx.flows || []).flatMap((flow) =>
     (flow.screens || []).flatMap((sc) => (sc.buttons || []).filter((b) => normalize(b.label) === needle).map((b) => ({ flow, sc, b })))
   );
-  const navArea = results.find((r) => r.key === 'area:flow');
+  // The running flow's card: its screen text card, or (pointed at a footer button of a flow whose screens
+  // were not read, e.g. a flow run at /flow/Name) the Salesforce text card. A custom label found here replaces
+  // it, unless the text is one of Salesforce's own button names.
+  const navArea = results.find(
+    (r) => r.key === 'area:flow' || (r.key === 'sfdctext:flowNavigation' && r.confidence === 'context' && !FLOW_NAV_DEFAULTS.has(needle))
+  );
   for (const { flow, sc, b } of buttonHits.slice(0, MAX_ORG_WIDE)) {
     const base = workbench(org, { component: 'Flow' });
     const own = buttonHits.length === 1 || (flow.name === pageFlowName && buttonHits.filter((h) => h.flow.name === pageFlowName).length === 1);
