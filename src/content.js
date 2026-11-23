@@ -352,6 +352,12 @@
         b.blur();
       }),
       document.createTextNode(' · '),
+      button('Missing translations', 'link', 'Open the report of texts with no translation in this org', (ev) => {
+        const b = ev.currentTarget;
+        ask({ type: 'sftl:openReport' }, 3000).catch(() => {});
+        b.blur();
+      }),
+      document.createTextNode(' · '),
       button('Report a problem', 'link', 'Copy a report of this lookup to send to the person who gave you the extension', (ev) => reportProblem(ev.currentTarget)),
       // Version shows whether the extension was reloaded after an update.
       el('span', 'muted version', ` · v${chrome.runtime.getManifest?.().version || '?'}`)

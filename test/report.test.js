@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activeLanguages } from '../src/report.js';
+import { activeLanguages, reportPath } from '../src/report.js';
 import { loadActiveLanguages } from '../src/reportApi.js';
 
 const session = { host: 'x.my.salesforce.com', sid: 's' };
@@ -41,4 +41,16 @@ test('active languages: no Translation object: the error names the Workbench set
       ? { ok: false, status: 400, text: async () => JSON.stringify([{ message: "sObject type 'Translation' is not supported." }]) }
       : reply([{ LanguageLocaleKey: 'en_US' }]);
   await assert.rejects(loadActiveLanguages(session), /Translation Workbench languages not read: sObject type 'Translation' is not supported\. The report needs Translation Workbench on/);
+});
+
+test('report page path: the Salesforce origin of the tab, or null for another page', () => {
+  assert.equal(
+    reportPath('https://orgfarm-1-dev-ed.develop.lightning.force.com/lightning/r/Account/001/view'),
+    'src/report.html?org=https%3A%2F%2Forgfarm-1-dev-ed.develop.lightning.force.com'
+  );
+  assert.equal(reportPath('https://x.my.salesforce-setup.com/lightning/setup/Home'), 'src/report.html?org=https%3A%2F%2Fx.my.salesforce-setup.com');
+  assert.equal(reportPath('https://example.com/force.com'), null);
+  assert.equal(reportPath('http://x.my.salesforce.com/'), null);
+  assert.equal(reportPath(''), null);
+  assert.equal(reportPath(undefined), null);
 });
