@@ -3,6 +3,7 @@ import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, match
 import { loadOrgIndex, loadOrgSectionTranslations } from './orgIndex.js';
 import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
 import { loadLabelEditor, saveLabelTranslation } from './labelEdit.js';
+import { reportPath } from './report.js';
 
 // ---------- test log (viewer: Test log in the toolbar popup, or the panel link) ----------
 const pathOf = (url) => {
@@ -21,9 +22,9 @@ self.addEventListener('unhandledrejection', (e) =>
   log('error', 'background', e.reason?.message || String(e.reason), { stack: e.reason?.stack })
 );
 // Next to the tab it was opened from, in that tab's window (not the last-focused window).
-const openLog = (fromTab) =>
+const openPage = (path, fromTab) =>
   chrome.tabs.create({
-    url: chrome.runtime.getURL('src/log.html'),
+    url: chrome.runtime.getURL(path),
     ...(fromTab?.windowId != null ? { windowId: fromTab.windowId } : {}),
     ...(fromTab?.index != null ? { index: fromTab.index + 1 } : {}),
   });
@@ -163,7 +164,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg?.type === 'sftl:openLog') {
-    openLog(sender.tab);
+    openPage('src/log.html', sender.tab);
+    return;
+  }
+  if (msg?.type === 'sftl:openReport') {
+    // The tab's own address (a flow in a frame is on another host): the same org the toolbar popup reports on.
+    const path = reportPath(sender.tab?.url);
+    if (path) openPage(path, sender.tab);
+    sendResponse({ ok: !!path });
     return;
   }
   if (msg?.type === 'sftl:pending' && sender.tab) {

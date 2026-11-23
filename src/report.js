@@ -281,3 +281,17 @@ export function toCsv(items, { languageNames = {}, pageOf = () => '' } = {}) {
   const lines = [CSV_COLUMNS, ...(items || []).map((i) => [i.language, languageNames[i.language] || languageName(i.language) || i.language, i.type, i.objectLabel || '', i.name, i.master, pageOf(i) || ''])];
   return '\uFEFF' + lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
+
+/**
+ * The report page for the Salesforce tab at `tabUrl` (the toolbar popup and the panel link open the same page),
+ * or null when the tab is no Salesforce page.
+ */
+export function reportPath(tabUrl) {
+  let origin = null;
+  try {
+    origin = new URL(tabUrl || '').origin;
+  } catch {
+    return null;
+  }
+  return /^https:\/\/[^/]+\.(force\.com|salesforce\.com|salesforce-setup\.com)$/.test(origin) ? `src/report.html?org=${encodeURIComponent(origin)}` : null;
+}

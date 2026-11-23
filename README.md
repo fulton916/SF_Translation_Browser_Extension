@@ -82,7 +82,8 @@ Lower matches are behind the link **Show N similar texts in your org**. Click it
 
 Buttons: **Go to translation** (only on cards with a translation screen), **Open page** (the Setup or record page for that card),
 **Copy ...** (the API name or label reference), and **Edit translations** (custom label cards only). At the bottom: **Refresh org data** (reload the org's
-metadata after a change), **Test log**, and **Report a problem**.
+metadata after a change), **Test log**, **Missing translations** (the org's missing-translations report, the same page
+as the toolbar popup's report button), and **Report a problem**.
 
 ### Edit a custom label translation in the panel
 
