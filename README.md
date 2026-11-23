@@ -85,6 +85,9 @@ Buttons: **Go to translation** (only on cards with a translation screen), **Open
 metadata after a change), **Test log**, **Missing translations** (the org's missing-translations report, the same page
 as the toolbar popup's report button), and **Report a problem**.
 
+The report lists missing translations by default. **Show** switches to translated items (with their translated text) or both.
+The language list also has the org default language (for example English): it lists every checked item once with its master text.
+
 ### Edit a custom label translation in the panel
 
 1. On a custom label card, click **Edit translations**. The editor reads the label from the org and shows one

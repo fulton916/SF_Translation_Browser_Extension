@@ -13,6 +13,7 @@ import {
   tabItems,
   valueSetItems,
   summarize,
+  masterItems,
   ITEM_TYPE,
 } from '../src/report.js';
 import { reportObjects, loadMissingTranslations } from '../src/reportApi.js';
@@ -79,6 +80,12 @@ test('object items: field labels, related list labels, picklist values, record t
       [ITEM_TYPE.TAB, 'Demo_Gadget__c', 'Gadgets', false],
     ]
   );
+  assert.deepEqual(
+    items.filter((i) => i.translated).map((i) => i.translation),
+    ['Gadgets possédés', 'Couleur', 'Étape', 'Brouillon'],
+    'translated items carry the translated text'
+  );
+  assert.ok(items.filter((i) => !i.translated).every((i) => i.translation === null));
   assert.ok(!items.some((i) => i.name.includes('acme__')), 'package fields are left out');
   // The field label is translated: its values still name the field by the master label (org default file).
   const pv = items.find((i) => i.name.endsWith('Shipped & Done'));
@@ -108,6 +115,7 @@ test('object items: no tab item without a tab; German tab text is the Nominative
   );
   const tab = objectItems({ object: 'Demo_Gadget__c', language: 'de', translation: de, master: de, hasTab: true }).find((i) => i.type === ITEM_TYPE.TAB);
   assert.equal(tab.translated, true);
+  assert.equal(tab.translation, 'Geräte');
   assert.equal(tab.master, 'Geräte');
   assert.deepEqual(objectItems({ object: 'X__c', language: 'de', translation: null }), []);
 });
@@ -120,11 +128,15 @@ test('custom labels: untranslated per language; package labels and labels writte
     { Id: '101000000000004AAA', Name: 'Demo_Bonjour', NamespacePrefix: null, Value: 'Bonjour', Language: 'fr' },
   ];
   const locs = [
-    { ExternalStringId: '101000000000001AAA', Language: 'fr' },
+    { Id: '0Ap000000000001AAA', ExternalStringId: '101000000000001AAA', Language: 'fr', Value: 'Bonjour' },
     { ExternalStringId: '101000000000002AAA', Language: 'de' },
   ];
   const fr = labelItems(labels, locs, 'fr');
   assert.deepEqual(fr.map((i) => [i.name, i.translated]), [['Demo_Hello', true], ['Demo_Bye', false]]);
+  assert.deepEqual(fr.map((i) => i.translation), ['Bonjour', null]);
+  // A translated label opens its translation to edit; an untranslated one the New screen.
+  assert.equal(buildGotoUrl(fr[0].goto, 'fr').autofill, null);
+  assert.match(buildGotoUrl(fr[0].goto, 'fr').path, /0Ap000000000001AAA/);
   const bye = fr[1];
   assert.equal(bye.master, 'Bye');
   const url = buildGotoUrl(bye.goto, 'fr');
@@ -142,7 +154,7 @@ test('web tabs and global value set values: untranslated ones, with the master t
     ),
     master: parseTranslations('<fullName>en_US</fullName><customTabs><label><!-- Help Desk Home --></label><name>Demo_Help</name></customTabs>'),
   });
-  assert.deepEqual(tabs.map((t) => [t.name, t.master, t.translated]), [['Demo_Help', 'Help Desk Home', false], ['Demo_Home', 'Demo_Home', true]]);
+  assert.deepEqual(tabs.map((t) => [t.name, t.master, t.translated, t.translation]), [['Demo_Help', 'Help Desk Home', false, null], ['Demo_Home', 'Demo_Home', true, 'Accueil']]);
   assert.equal(tabs[0].goto.component, 'CustomTabDefinition');
 
   const values = parseValueSetTranslation(
@@ -150,7 +162,7 @@ test('web tabs and global value set values: untranslated ones, with the master t
       '<valueTranslation><masterLabel>South</masterLabel><translation><!-- South --></translation></valueTranslation>'
   );
   const vs = valueSetItems({ language: 'de', valueSet: { name: 'Demo_Regions', label: 'Regions' }, values });
-  assert.deepEqual(vs.map((v) => [v.name, v.translated]), [['Demo_Regions: North', true], ['Demo_Regions: South', false]]);
+  assert.deepEqual(vs.map((v) => [v.name, v.translated, v.translation]), [['Demo_Regions: North', true, 'Nord'], ['Demo_Regions: South', false, null]]);
   assert.equal(vs[1].goto.component, 'SharedPicklistDefinition');
   assert.equal(vs[1].goto.parent, 'Regions');
 });
@@ -169,9 +181,30 @@ test('summarize: counts per language and type; missing items sorted by language 
     ]
   );
   assert.deepEqual(out.missing.map((i) => `${i.language}:${i.name}`), ['fr:L', 'fr:z', 'fr:b', 'de:T']);
+  assert.deepEqual(out.items.map((i) => `${i.language}:${i.name}`), ['fr:L', 'fr:z', 'fr:a', 'fr:b', 'de:T'], 'every checked item of an active language, translated ones too');
   assert.deepEqual(out.languages.map((l) => [l.code, l.checked, l.missing]), [['fr', 4, 3], ['de', 1, 1]]);
   assert.equal(out.languages[0].byType[ITEM_TYPE.FIELD_LABEL], 2);
   assert.equal(out.languages[0].byType[ITEM_TYPE.TAB], 0);
+});
+
+test('org default rows: every checked item once with its master text; labels written in another language left out', () => {
+  const it = (language, type, name, master, extra = {}) => ({ language, type, objectLabel: null, name, master, translated: false, translation: null, goto: { page: 'x' }, ...extra });
+  const rows = masterItems(
+    [
+      it('fr', ITEM_TYPE.FIELD_LABEL, 'A.b__c', 'Bee'),
+      it('de', ITEM_TYPE.FIELD_LABEL, 'A.b__c', 'Bee', { translated: true, translation: 'Biene' }),
+      it('de', ITEM_TYPE.CUSTOM_LABEL, 'Hello', 'Hello', { goto: { page: 'label', masterLanguage: 'en_US' } }),
+      it('de', ITEM_TYPE.CUSTOM_LABEL, 'Bonjour', 'Bonjour', { goto: { page: 'label', masterLanguage: 'fr' } }),
+    ],
+    'en_US'
+  );
+  assert.deepEqual(
+    rows.map((r) => [r.language, r.type, r.name, r.translated, r.translation, r.goto]),
+    [
+      ['en_US', ITEM_TYPE.CUSTOM_LABEL, 'Hello', true, 'Hello', null],
+      ['en_US', ITEM_TYPE.FIELD_LABEL, 'A.b__c', true, 'Bee', null],
+    ]
+  );
 });
 
 test('report objects: own custom objects, and standard objects with own custom fields or record types', () => {
@@ -229,7 +262,7 @@ test('CSV: header, one row per item, quoting, formula guard, BOM and CRLF', asyn
   assert.equal(csvCell(null), '');
   const csv = toCsv(
     [
-      { language: 'fr', type: ITEM_TYPE.FIELD_LABEL, objectLabel: 'Gadget', name: 'Demo_Gadget__c.Demo_Color__c', master: 'Coat, Color' },
+      { language: 'fr', type: ITEM_TYPE.FIELD_LABEL, objectLabel: 'Gadget', name: 'Demo_Gadget__c.Demo_Color__c', master: 'Coat, Color', translation: 'Couleur' },
       { language: 'de', type: ITEM_TYPE.CUSTOM_LABEL, objectLabel: null, name: 'Demo_Bye', master: 'Tschüss' },
     ],
     { languageNames: { fr: 'French' }, pageOf: (i) => (i.language === 'fr' ? 'https://demo.lightning.force.com/lightning/setup/LabelWorkbenchTranslate/home' : '') }
@@ -237,7 +270,7 @@ test('CSV: header, one row per item, quoting, formula guard, BOM and CRLF', asyn
   assert.ok(csv.startsWith('\uFEFF'));
   const lines = csv.slice(1).split('\r\n');
   assert.equal(lines[0], CSV_COLUMNS.join(','));
-  assert.equal(lines[1], 'fr,French,Field label,Gadget,Demo_Gadget__c.Demo_Color__c,"Coat, Color",https://demo.lightning.force.com/lightning/setup/LabelWorkbenchTranslate/home');
-  assert.equal(lines[2], 'de,German,Custom label,,Demo_Bye,Tschüss,');
+  assert.equal(lines[1], 'fr,French,Field label,Gadget,Demo_Gadget__c.Demo_Color__c,"Coat, Color",Couleur,https://demo.lightning.force.com/lightning/setup/LabelWorkbenchTranslate/home');
+  assert.equal(lines[2], 'de,German,Custom label,,Demo_Bye,Tschüss,,');
   assert.equal(lines[3], '');
 });

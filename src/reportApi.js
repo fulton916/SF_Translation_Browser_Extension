@@ -79,7 +79,7 @@ export function reportObjects(objects, customFieldObjects, recordTypeObjects) {
 /**
  * Every checked item of the active languages, and the summary (report.js summarize).
  * `onProgress(text)`: a short status line while it reads. Read-only.
- * Returns { orgDefault, languages, missing, warnings }.
+ * Returns { orgDefault, languages, items, missing, warnings }.
  */
 export async function loadMissingTranslations(session, { onProgress } = {}) {
   const say = (t) => onProgress?.(t);
@@ -98,7 +98,7 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
   say('Reading custom labels, objects and tabs…');
   const [org, localizations, fieldObjects, rtObjects, valueSets] = await Promise.all([
     loadOrgData(session),
-    queryAll(session, `SELECT ExternalStringId, Language FROM ExternalStringLocalization WHERE Language IN ('${codes.join("','")}')`, { tooling: true }).catch(soft('Custom labels')),
+    queryAll(session, `SELECT Id, ExternalStringId, Language, Value FROM ExternalStringLocalization WHERE Language IN ('${codes.join("','")}')`, { tooling: true }).catch(soft('Custom labels')),
     queryAll(session, 'SELECT EntityDefinition.QualifiedApiName FROM CustomField WHERE NamespacePrefix = null', { tooling: true })
       .then((r) => r.map((f) => f.EntityDefinition?.QualifiedApiName))
       .catch(soft('Field labels on standard objects')),
