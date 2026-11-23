@@ -4,7 +4,7 @@ import { loadOrgIndex, loadOrgSectionTranslations } from './orgIndex.js';
 import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
 import { loadLabelEditor, saveLabelTranslation } from './labelEdit.js';
 
-// ---------- test log (viewer: click the toolbar icon) ----------
+// ---------- test log (viewer: Test log in the toolbar popup, or the panel link) ----------
 const pathOf = (url) => {
   try {
     const u = new URL(url);
@@ -27,7 +27,6 @@ const openLog = (fromTab) =>
     ...(fromTab?.windowId != null ? { windowId: fromTab.windowId } : {}),
     ...(fromTab?.index != null ? { index: fromTab.index + 1 } : {}),
   });
-chrome.action.onClicked.addListener(openLog);
 
 const MENU_SELECTION = 'sftl-selection';
 const MENU_ELEMENT = 'sftl-element';
