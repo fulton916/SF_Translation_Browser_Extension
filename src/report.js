@@ -110,7 +110,8 @@ export function parseValueSetTranslation(body) {
 
 // ---------- items per language ----------
 // Each check returns every item it looked at, translated or not, so the report can show coverage.
-// Item: { language, type, object, objectLabel, name, master, translated, goto }.
+// Item: { language, type, object, objectLabel, name, master, translated, translation, goto }; translation is the
+// translated text, or null when missing.
 
 const labelAndApi = (label, api) => (label && label !== api ? `${label} (${api})` : api);
 const NO_ORG = {}; // workbench() only needs the org for its click-path text, which the report does not show
@@ -119,10 +120,10 @@ const wb = (args) => workbench(NO_ORG, args).goto;
 /**
  * Custom labels: one ExternalStringLocalization row per translated label and language. Labels whose own
  * language is `language` are the master text there; package labels are left out (see isOwnItem).
- * `labels`: ExternalString rows { Id, Name, NamespacePrefix, Value, Language }; `localizations`: { ExternalStringId, Language }.
+ * `labels`: ExternalString rows { Id, Name, NamespacePrefix, Value, Language }; `localizations`: { Id, ExternalStringId, Language, Value }.
  */
 export function labelItems(labels, localizations, language) {
-  const done = new Set((localizations || []).filter((l) => l.Language === language).map((l) => l.ExternalStringId));
+  const done = new Map((localizations || []).filter((l) => l.Language === language).map((l) => [l.ExternalStringId, l]));
   return (labels || [])
     .filter((l) => l?.Id && !l.NamespacePrefix && l.Language !== language)
     .map((l) => ({
@@ -133,7 +134,9 @@ export function labelItems(labels, localizations, language) {
       name: l.Name,
       master: l.Value ?? '',
       translated: done.has(l.Id),
-      goto: { page: 'label', labelId: l.Id, masterLanguage: l.Language, existing: {}, namespace: null },
+      translation: done.has(l.Id) ? done.get(l.Id).Value ?? '' : null,
+      // A translated label opens its translation to edit (buildGotoUrl), an untranslated one the New screen.
+      goto: { page: 'label', labelId: l.Id, masterLanguage: l.Language, existing: done.get(l.Id)?.Id ? { [language]: done.get(l.Id).Id } : {}, namespace: null },
     }));
 }
 
@@ -149,7 +152,11 @@ export function objectItems({ object, objectLabel = null, language, translation,
   if (!translation) return [];
   const label = objectLabel || object;
   const masterField = (name) => master?.fields?.find((f) => f.name === name) || null;
-  const item = (type, name, masterText, translated, goto) => ({ language, type, object, objectLabel: label, name, master: masterText ?? '', translated, goto });
+  // `found`: the slot ({ translation }) or the translated text itself.
+  const item = (type, name, masterText, found, goto) => {
+    const t = (typeof found === 'string' ? found : found?.translation) || null;
+    return { language, type, object, objectLabel: label, name, master: masterText ?? '', translated: !!t, translation: t, goto };
+  };
   const out = [];
   for (const f of translation.fields || []) {
     if (!f.name || !isOwnItem(f.name)) continue;
@@ -157,21 +164,21 @@ export function objectItems({ object, objectLabel = null, language, translation,
     const fieldMaster = m?.label?.master || f.label?.master || f.name;
     if (f.label) {
       out.push(
-        item(ITEM_TYPE.FIELD_LABEL, `${object}.${f.name}`, fieldMaster, !!f.label.translation,
+        item(ITEM_TYPE.FIELD_LABEL, `${object}.${f.name}`, fieldMaster, f.label,
           wb({ component: 'Custom Field', object, objectLabel: label, aspect: 'Field Label', row: labelAndApi(fieldMaster, f.name), rows: [fieldMaster, f.name] }))
       );
     }
     if (f.relationshipLabel) {
       const relMaster = m?.relationshipLabel?.master || f.relationshipLabel.master || fieldMaster;
       out.push(
-        item(ITEM_TYPE.RELATED_LIST_LABEL, `${object}.${f.name}`, relMaster, !!f.relationshipLabel.translation,
+        item(ITEM_TYPE.RELATED_LIST_LABEL, `${object}.${f.name}`, relMaster, f.relationshipLabel,
           wb({ component: 'Custom Field', object, objectLabel: label, aspect: 'Related List Label', row: labelAndApi(fieldMaster, f.name), rows: [fieldMaster, relMaster, f.name] }))
       );
     }
     for (const pv of f.picklistValues || []) {
       if (!pv.masterLabel || !pv.translation) continue;
       out.push(
-        item(ITEM_TYPE.PICKLIST_VALUE, `${object}.${f.name}: ${pv.masterLabel}`, pv.masterLabel, !!pv.translation.translation,
+        item(ITEM_TYPE.PICKLIST_VALUE, `${object}.${f.name}: ${pv.masterLabel}`, pv.masterLabel, pv.translation,
           wb({ component: 'Picklist Value', object, objectLabel: label, row: `${pv.masterLabel} (field: ${fieldMaster})`, rows: [pv.masterLabel], parent: fieldMaster }))
       );
     }
@@ -180,7 +187,7 @@ export function objectItems({ object, objectLabel = null, language, translation,
     if (!rt.name || !rt.label || !isOwnItem(rt.name)) continue;
     const rtMaster = master?.recordTypes?.find((x) => x.name === rt.name)?.label?.master || rt.label.master || rt.name;
     out.push(
-      item(ITEM_TYPE.RECORD_TYPE, `${object}.${rt.name}`, rtMaster, !!rt.label.translation,
+      item(ITEM_TYPE.RECORD_TYPE, `${object}.${rt.name}`, rtMaster, rt.label,
         wb({ component: 'Record Type', object, objectLabel: label, aspect: 'Field Label', row: labelAndApi(rtMaster, rt.name), rows: [rtMaster, rt.name] }))
     );
   }
@@ -189,8 +196,8 @@ export function objectItems({ object, objectLabel = null, language, translation,
     // German lists every grammatical case: the Nominative plural is the tab's text.
     const plural = (cv) => cv.find((c) => c.plural && (!c.caseType || c.caseType === 'Nominative'))?.value || cv.find((c) => c.plural)?.value;
     const tabMaster = plural(master?.caseValues || [])?.translation || plural(master?.caseValues || [])?.master || label;
-    const translated = translation.caseValues.some((c) => c.value?.translation);
-    out.push(item(ITEM_TYPE.TAB, object, tabMaster, translated, { page: 'rename', object, custom: true, tabLabel: tabMaster, plural: true }));
+    const tabText = plural(translation.caseValues)?.translation || translation.caseValues.find((c) => c.value?.translation)?.value.translation || null;
+    out.push(item(ITEM_TYPE.TAB, object, tabMaster, tabText, { page: 'rename', object, custom: true, tabLabel: tabMaster, plural: true }));
   }
   return out;
 }
@@ -212,6 +219,7 @@ export function tabItems({ language, translation, master }) {
         name: t.name,
         master: tabMaster,
         translated: !!t.label.translation,
+        translation: t.label.translation || null,
         goto: wb({ component: 'Web Tab', row: tabMaster, rows: [tabMaster, t.name] }),
       };
     });
@@ -230,27 +238,20 @@ export function valueSetItems({ language, valueSet, values }) {
       name: `${valueSet.name}: ${v.masterLabel}`,
       master: v.masterLabel,
       translated: !!v.translation.translation,
+      translation: v.translation.translation || null,
       goto: wb({ component: 'Global Value Set', row: `${v.masterLabel} (value set: ${vsLabel})`, rows: [v.masterLabel], parent: vsLabel }),
     }));
 }
 
 /**
  * The report: per language, how many items were checked and which have no translation.
- * Returns { languages: [{ code, name, checked, missing, byType: { type → missing count } }], missing: items }.
- * Missing items are sorted by language, type (ITEM_TYPES order), object and name.
+ * Returns { languages: [{ code, name, checked, missing, byType: { type → missing count } }], items, missing }:
+ * every checked item and the missing ones, sorted by language, type (ITEM_TYPES order), object and name.
  */
 export function summarize(languages, items) {
-  const typeRank = (t) => ITEM_TYPES.indexOf(t);
   const langRank = new Map((languages || []).map((l, i) => [l.code, i]));
-  const missing = (items || [])
-    .filter((i) => !i.translated && langRank.has(i.language))
-    .sort(
-      (a, b) =>
-        langRank.get(a.language) - langRank.get(b.language) ||
-        typeRank(a.type) - typeRank(b.type) ||
-        String(a.objectLabel || '').localeCompare(String(b.objectLabel || '')) ||
-        String(a.name).localeCompare(String(b.name))
-    );
+  const all = (items || []).filter((i) => langRank.has(i.language)).sort((a, b) => langRank.get(a.language) - langRank.get(b.language) || byTypeObjectName(a, b));
+  const missing = all.filter((i) => !i.translated);
   return {
     languages: (languages || []).map((l) => {
       const mine = (items || []).filter((i) => i.language === l.code);
@@ -258,13 +259,34 @@ export function summarize(languages, items) {
       for (const i of mine) if (!i.translated) byType[i.type] = (byType[i.type] || 0) + 1;
       return { ...l, checked: mine.length, missing: mine.filter((i) => !i.translated).length, byType };
     }),
+    items: all,
     missing,
   };
 }
 
+const byTypeObjectName = (a, b) =>
+  ITEM_TYPES.indexOf(a.type) - ITEM_TYPES.indexOf(b.type) ||
+  String(a.objectLabel || '').localeCompare(String(b.objectLabel || '')) ||
+  String(a.name).localeCompare(String(b.name));
+
+/**
+ * The org default language's rows: every checked item once, with its master text (the org default text is the
+ * master, so nothing is missing there). Custom labels written in another language are left out: their master
+ * text is not in the org default language. No goto: Translation Workbench does not translate into the org default.
+ */
+export function masterItems(items, orgDefault) {
+  const seen = new Map();
+  for (const i of items || []) {
+    if (i.goto?.page === 'label' && i.goto.masterLanguage && i.goto.masterLanguage !== orgDefault) continue;
+    const key = `${i.type}|${i.name}`;
+    if (!seen.has(key)) seen.set(key, { ...i, language: orgDefault, translated: true, translation: i.master, goto: null });
+  }
+  return [...seen.values()].sort(byTypeObjectName);
+}
+
 // ---------- CSV export ----------
 
-export const CSV_COLUMNS = ['Language code', 'Language', 'Type', 'Object', 'API name', 'Master text', 'Translation page'];
+export const CSV_COLUMNS = ['Language code', 'Language', 'Type', 'Object', 'API name', 'Master text', 'Translation', 'Translation page'];
 
 /** One CSV cell: quoted when needed, and text a spreadsheet would run as a formula (=, +, -, @) starts with '. */
 export function csvCell(value) {
@@ -274,11 +296,11 @@ export function csvCell(value) {
 }
 
 /**
- * Missing items as CSV (RFC 4180, CRLF line ends, UTF-8 BOM so Excel reads accents).
+ * Items as CSV (RFC 4180, CRLF line ends, UTF-8 BOM so Excel reads accents).
  * `pageOf(item)`: the item's translation page URL, or '' (reportPage.js passes buildGotoUrl with the org origin).
  */
 export function toCsv(items, { languageNames = {}, pageOf = () => '' } = {}) {
-  const lines = [CSV_COLUMNS, ...(items || []).map((i) => [i.language, languageNames[i.language] || languageName(i.language) || i.language, i.type, i.objectLabel || '', i.name, i.master, pageOf(i) || ''])];
+  const lines = [CSV_COLUMNS, ...(items || []).map((i) => [i.language, languageNames[i.language] || languageName(i.language) || i.language, i.type, i.objectLabel || '', i.name, i.master, i.translation ?? '', pageOf(i) || ''])];
   return '\uFEFF' + lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
