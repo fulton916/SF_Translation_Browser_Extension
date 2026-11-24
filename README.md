@@ -54,6 +54,8 @@ Log in to Salesforce. Your user needs:
 - **Manage Translation**: to save or remove a custom label translation in the panel (**Edit translations**).
   Without it, the panel shows "Saving needs the Manage Translation permission." and nothing is written.
   Salesforce requires View Setup and Configuration for Manage Translation, so a user who can save can also read.
+- **Switch my language** needs no extra permission: tested as an admin and as a Minimum Access user. When Salesforce
+  refuses the save (for example a validation rule on User), the panel shows the reason and nothing is written.
 - For **Go to translation**, the permissions of the screen it opens:
   - Translation Workbench: enabled in the org, plus **Manage Translation** (or you are set up as a
     translator for the target language).
@@ -109,6 +111,17 @@ The language list also has the org default language (for example English): it li
    after Lightning refreshes its label cache, which takes a few minutes.
 4. To delete a translation, click **Remove**, then **Click again to remove**.
 
+### Switch your Salesforce language
+
+1. In the panel, click **Switch my language**. It shows your user name, your language now, and the languages
+   your org offers.
+2. Pick a language and click **Switch**. The extension saves it on your own user and reloads the page. All your
+   Salesforce pages use the new language.
+3. To return, open the panel again (right-click any text), click **Switch my language**, then **Switch back**.
+   The extension keeps the language you had before the first switch, in this browser, until you are back on it.
+
+Only the language changes, not the locale (date and number formats).
+
 ## Report a problem
 
 In the panel, click **Report a problem**. A report of the lookup is copied. Paste it into an email or chat
@@ -130,7 +143,10 @@ Right-click
            ─► content.js shows a panel with the results and buttons
 ```
 
-Read-only. The extension never writes to your org. Org metadata is cached in memory for 5 minutes.
+The extension writes only two things to your org, each only when you click: custom label translations
+(**Edit translations**: **Save** and **Remove**) and your own language (**Switch my language**:
+`LanguageLocaleKey` on your own user record, never another user's). Everything else is read-only.
+Org metadata is cached in memory for 5 minutes.
 Your language is read again on each lookup (cached 15 seconds): after you change it in your personal
 settings, the next lookup reads object names, tabs, apps and field labels again in the new language.
 Custom label translations are searched per lookup (by text and by matching label, then every language of
@@ -354,4 +370,5 @@ Auto-fill (`src/content.js`) runs against live Salesforce pages and is tested by
 | `src/locator.js` | Decides where each text is translated (no browser code; unit tested) |
 | `src/sfApi.js` | REST and Tooling API queries, and the write helper (`sfWrite`) |
 | `src/labelEdit.js` | Custom label translation editor: requests, plain-word errors, save and read back (unit tested) |
+| `src/myLanguage.js` | Switch my language: reads and saves the signed-in user's own language, remembers the one before the first switch (unit tested) |
 | `src/logStore.js`, `src/log.html`, `src/log.js` | Test log storage and viewer |

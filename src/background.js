@@ -3,6 +3,7 @@ import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, match
 import { loadOrgIndex, loadOrgSectionTranslations } from './orgIndex.js';
 import { addEntry, getEntries, formatEntries, pathDetails } from './logStore.js';
 import { loadLabelEditor, saveLabelTranslation } from './labelEdit.js';
+import { loadMyLanguage, switchMyLanguage } from './myLanguage.js';
 import { reportPath } from './report.js';
 
 // ---------- test log (viewer: Test log in the toolbar popup, or the panel link) ----------
@@ -217,6 +218,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+// Panel language switch (issue #46): op 'load' reads the signed-in user's language; 'switch' saves `language`;
+// 'back' saves the language before the first switch. The user is the session's own; `username` (the one
+// the panel names) only stops the save when someone else is signed in by now.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'sftl:myLanguage' || !sender.tab) return;
+  const page = pathOf(sender.tab.url);
+  const { op, language, username } = msg;
+  getSession(sender.tab.url)
+    .then((session) => {
+      const store = chrome.storage.local;
+      if (op === 'load') return loadMyLanguage(session, store);
+      if (op === 'switch' && language) return switchMyLanguage(session, store, language, username);
+      if (op === 'back') return switchMyLanguage(session, store, null, username);
+      throw new Error(`Unknown language change: ${op}`);
+    })
+    .then((res) => {
+      if (op !== 'load') log('info', 'my-language', `Your Salesforce language is now ${res.language}`, { page, details: { op, changed: res.changed } });
+      sendResponse(res);
+    })
+    .catch((e) => {
+      log('error', 'my-language', `${op} failed: ${e.message || e}`, { page, details: { language: language || null, code: e.code || null }, stack: e.stack });
+      sendResponse({ error: e.message || String(e) });
+    });
+  return true;
+});
 
 async function openTranslation({ goto, lang, orgDefault }, fromTab) {
   const built = buildGotoUrl(goto, lang, orgDefault);
