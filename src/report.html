@@ -39,6 +39,10 @@
     td.api { font-family: ui-monospace, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
     td.master { overflow-wrap: anywhere; }
     td.go { white-space: nowrap; }
+    th button.sort { all: unset; cursor: pointer; font-weight: 600; }
+    th button.sort:hover, th button.sort:focus-visible { color: var(--accent); }
+    th button.sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+    th button.sort::after { content: attr(data-arrow); margin-left: 4px; font-size: 10px; }
     td.missing { color: var(--warn); font-style: italic; }
     td.go button { padding: 3px 8px; font-size: 12px; }
     .empty { padding: 24px; color: var(--muted); }
@@ -70,7 +74,15 @@
     </div>
     <div class="table-wrap" id="table-wrap" hidden>
       <table>
-        <thead><tr><th>Language</th><th>Type</th><th>Object</th><th>API name</th><th>Master text</th><th>Translation</th><th></th></tr></thead>
+        <thead><tr>
+          <th><button class="sort" data-key="language">Language</button></th>
+          <th><button class="sort" data-key="type">Type</button></th>
+          <th><button class="sort" data-key="object">Object</button></th>
+          <th><button class="sort" data-key="name">API name</button></th>
+          <th><button class="sort" data-key="master">Master text</button></th>
+          <th><button class="sort" data-key="translation">Translation</button></th>
+          <th></th>
+        </tr></thead>
         <tbody id="rows"></tbody>
       </table>
       <div id="more-wrap"></div>
