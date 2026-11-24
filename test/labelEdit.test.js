@@ -5,7 +5,7 @@ import { translationRequest, plainError, editorLanguages, loadLabelEditor, saveL
 
 const LABEL = '101000000000001AAA';
 const LOC = '0Hd000000000001AAA';
-const BASE = '/services/data/v60.0/tooling/sobjects/ExternalStringLocalization';
+const BASE = '/services/data/v67.0/tooling/sobjects/ExternalStringLocalization';
 const session = { host: 'x.my.salesforce.com', sid: 's' };
 
 test('a language without a translation is created with ExternalStringId, Language and Value', () => {
