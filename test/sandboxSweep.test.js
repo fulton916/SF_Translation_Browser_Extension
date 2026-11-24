@@ -33,7 +33,7 @@ const baseOrg = {
 const GUIDE_LINE = 'Review the opportunity information with the team';
 const pathOrg = {
   ...baseOrg,
-  customLabels: [lbl('101D00000000001', 'MA_Connect', 'Sketch', 'acme')],
+  customLabels: [lbl('101D00000000001', 'Pkg_Sketch', 'Sketch', 'acme')],
   pathSteps: [
     { Id: '1CF000000000011', DeveloperName: `X11111111111111_01J000000000001AAA_${RT_RETAIL}_Opportunity_StageName`, Language: 'en_US', Info: `<ol><li>${GUIDE_LINE}</li><li>Pick the next date</li></ol>` },
     { Id: '1CF000000000012', DeveloperName: `X22222222222222_01J000000000002AAA_${RT_DESIGN}_Opportunity_Demo_Mid_Stage`, Language: 'en_US', Info: `<ol><li>${GUIDE_LINE}</li><li>List the designers</li></ol>` },
@@ -103,7 +103,7 @@ test('SB-01: guidance of another record type\'s path is not confirmed', () => {
 test('R-34: one word highlighted in the record\'s own path guidance finds that guidance', () => {
   const org = {
     ...pathOrg,
-    customLabels: [...pathOrg.customLabels, lbl('101D00000000020', 'MA_Info', 'Info', 'acme')],
+    customLabels: [...pathOrg.customLabels, lbl('101D00000000020', 'Pkg_Info', 'Info', 'acme')],
     labelTranslations: [{ ExternalStringId: '101D00000000020', Language: 'sv', Value: 'Information' }],
   };
   const rs = locate({ text: 'information', org, describes: [opp], hints: guidance, record: oppRecord(RT_RETAIL) }).results;
@@ -119,7 +119,7 @@ test('R-34: one word highlighted in the record\'s own path guidance finds that g
 test('R-34: a label that matches only through a non-user-language translation is "similar text"', () => {
   const org = {
     ...baseOrg,
-    customLabels: [lbl('101D00000000021', 'MA_Info', 'Info', 'acme')],
+    customLabels: [lbl('101D00000000021', 'Pkg_Info', 'Info', 'acme')],
     labelTranslations: [{ ExternalStringId: '101D00000000021', Language: 'sv', Value: 'Information' }],
   };
   const out = locate({ text: 'Information', org, describes: [] });
@@ -260,7 +260,7 @@ test('SB-10 review: a standard global action (New Contact) is Salesforce\'s, not
 // ---------- SB-05: the path's generic "Closed" step ----------
 
 test('SB-05: the Closed chevron is Salesforce path text; same-word labels, fields and record types drop', () => {
-  const org = { ...pathOrg, customLabels: [lbl('101D00000000004', 'Demo_Closed', 'Closed'), lbl('101D00000000005', 'MA_Closed', 'Closed', 'acme')] };
+  const org = { ...pathOrg, customLabels: [lbl('101D00000000004', 'Demo_Closed', 'Closed'), lbl('101D00000000005', 'Pkg_Closed', 'Closed', 'acme')] };
   const o = {
     ...opp,
     recordTypeInfos: [...opp.recordTypeInfos, { name: 'Closed', developerName: 'Closed', master: false, recordTypeId: '012000000000009AAA' }],
@@ -441,7 +441,7 @@ test('SB-08: "Stage:" in an Opportunities related list row on an Account → Opp
 // ---------- SB-11: nav bar Home ----------
 
 test('SB-11: nav bar Home is Salesforce\'s own tab; same-text managed labels are hidden', () => {
-  const org = { ...baseOrg, customLabels: [lbl('101D00000000006', 'Pkg_Home_Title', 'Home', 'exns'), lbl('101D00000000007', 'MA_Home', 'Home', 'acme')] };
+  const org = { ...baseOrg, customLabels: [lbl('101D00000000006', 'Pkg_Home_Title', 'Home', 'exns'), lbl('101D00000000007', 'Pkg_Home', 'Home', 'acme')] };
   // Real nav item: one-app-nav-bar-item-root data-id="home" data-target-selection-name="sfdc:TabDefinition.standard-home".
   const hints = { tags: ['span', 'a', 'one-app-nav-bar-item-root', 'one-app-nav-bar'], selectionNames: ['sfdc:TabDefinition.standard-home'], attrs: { 'data-id': 'home' } };
   const out = locate({ text: 'Home', org, describes: [], hints });
@@ -459,7 +459,7 @@ test('R-67: nav bar Calendar (standard-Event) is Salesforce\'s own tab; same-tex
     ...baseOrg,
     objects: [...baseOrg.objects, { name: 'Event', label: 'Event', labelPlural: 'Events', custom: false }],
     tabs: [...baseOrg.tabs, { Name: 'standard-Event', Label: 'Calendar', IsCustom: false, SobjectName: 'Event' }],
-    customLabels: [lbl('101D00000000030', 'calendar', 'Calendar', 'acme'), lbl('101D00000000031', 'MA_Calendar', 'Calendar', 'acme')],
+    customLabels: [lbl('101D00000000030', 'calendar', 'Calendar', 'acme'), lbl('101D00000000031', 'Pkg_Calendar', 'Calendar', 'acme')],
   };
   const hints = { tags: ['span', 'a', 'one-app-nav-bar-item-root', 'one-app-nav-bar'], selectionNames: ['sfdc:TabDefinition.standard-Event'], attrs: { 'data-id': 'Event' } };
   const out = locate({ text: 'Calendar', org, describes: [], hints });
@@ -547,8 +547,8 @@ const calOrg = {
   objects: [...baseOrg.objects, { name: 'Event', label: 'Event', labelPlural: 'Events', custom: false }],
   customLabels: [
     lbl('101D00000000010', 'Pkg_Framework_New_Event', 'New Event', 'acme'),
-    lbl('101D00000000011', 'MA_New_Event', 'New Event', 'acme'),
-    lbl('101D00000000012', 'MA_TODAY', 'Today', 'acme'),
+    lbl('101D00000000011', 'Pkg_New_Event', 'New Event', 'acme'),
+    lbl('101D00000000012', 'Pkg_TODAY', 'Today', 'acme'),
     lbl('101D00000000013', 'Example_Refresh', 'Refresh'),
   ],
 };

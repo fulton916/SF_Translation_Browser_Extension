@@ -22,12 +22,12 @@ const org = {
   validationRules: [],
   customLabels: [
     lbl('101P00000000001', 'Workshop', 'Workshop'),
-    lbl('101P00000000002', 'MA_Workshop', 'Workshop', 'acme'),
-    lbl('101P00000000003', 'MA_Details', 'Details', 'acme'),
+    lbl('101P00000000002', 'Pkg_Workshop', 'Workshop', 'acme'),
+    lbl('101P00000000003', 'Pkg_Details', 'Details', 'acme'),
     lbl('101P00000000004', 'Demo_Recorder', 'Demo Recorder'),
-    lbl('101P00000000005', 'MA_Account', 'Account', 'acme'),
+    lbl('101P00000000005', 'Pkg_Account', 'Account', 'acme'),
     lbl('101P00000000006', 'Account_Label', 'Account'),
-    lbl('101P00000000007', 'MA_Files', 'Files', 'acme'),
+    lbl('101P00000000007', 'Pkg_Files', 'Files', 'acme'),
   ],
 };
 const account = {

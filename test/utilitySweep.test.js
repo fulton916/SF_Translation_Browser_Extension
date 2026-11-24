@@ -12,7 +12,7 @@ const objects = [
 ];
 const org = {
   userLanguage: 'en_US', defaultLanguage: 'en_US', labelTranslations: [], objects, tabs: [], apps: [], validationRules: [],
-  customLabels: [lbl('101D00000000060', 'MA_Upload', 'Upload Files', 'acme'), lbl('101D00000000061', 'MA_List', 'List', 'acme')],
+  customLabels: [lbl('101D00000000060', 'Pkg_Upload', 'Upload Files', 'acme'), lbl('101D00000000061', 'Pkg_List', 'List', 'acme')],
 };
 
 test('objectFromTitle: a dialog title names its object, the longest label wins', () => {

@@ -991,14 +991,14 @@
     // Row = <th>master label</th><td><input value="current translation"></td>…gender options.
     // Try the label first, then the API name (Lead.Name is "Full Name" in the API, "Name" here), then
     // the other candidates from locator.js: the first column is the Salesforce master label, so a renamed
-    // label ("Billing Address/Account Address") is found by its parts or its API name in words.
+    // label ("Billing Address/Main Address") is found by its parts or its API name in words.
     const wants = [...new Set((p.candidates?.length ? p.candidates : [p.fieldLabel, p.fieldName]).filter(Boolean).map(norm))];
     let input = wants.reduce(
       (found, want) => found || inputs.find((i) => firstCell(i) === want) || inputs.find((i) => norm(i.value) === want),
       null
     );
     // Last resort: a row whose master label starts the wanted label at a word break ("billing address" in
-    // "billing address/account address"); the longest such label wins.
+    // "billing address/main address"); the longest such label wins.
     if (!input) {
       const label = norm(p.fieldLabel);
       input = inputs
@@ -1280,7 +1280,7 @@
     return true;
   }
 
-  /** Picklist Value tree: expand the field's node, then find the value under it. Verified in a real org (Nov 2026). */
+  /** Picklist Value tree: expand the field's node, then find the value under it. Verified live (Nov 2026). */
   async function findTreeRow(parents, candidates, log = true) {
     const want = candidates.filter(Boolean).map(norm);
     const pw = parents.filter(Boolean).map(norm);

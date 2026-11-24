@@ -1110,7 +1110,7 @@ export function pathStepMatch(needle, info, rawText = null) {
 }
 
 /**
- * The path a step belongs to. Step DeveloperNames seen in real orgs (Nov 2026):
+ * The path a step belongs to. Step DeveloperNames seen live (Nov 2026):
  * "X<num>_<picklist value Id 01J…>_<record type Id 012… or null>_<Object>_<field without __c>",
  * the older "<Object>_<record type or null>_<field>_<01J…>_<num>", and for a custom object the object's
  * Id instead of its name, cut at 80 characters (dev org: "X…_01J…_012…_01I…_SFTL_Stat" for SFTL_Status__c).

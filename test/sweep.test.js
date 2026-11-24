@@ -21,16 +21,16 @@ const baseOrg = {
   apps: [],
   validationRules: [],
   customLabels: [
-    lbl('101S00000000001', 'MA_Phone', 'Phone', 'acme'),
-    lbl('101S00000000002', 'MA_Description', 'Description', 'acme'),
+    lbl('101S00000000001', 'Pkg_Phone', 'Phone', 'acme'),
+    lbl('101S00000000002', 'Pkg_Description', 'Description', 'acme'),
     lbl('101S00000000003', 'Demo_Account_Owner', 'Account Owner'),
     lbl('101S00000000004', 'Demo_Information', 'Opportunity Information'),
     lbl('101S00000000005', 'Demo_Gadgets', 'Demo Gadgets'),
     lbl('101S00000000006', 'Workshop', 'Workshop', 'acme'),
     lbl('101S00000000007', 'Workshop', 'Workshop'),
-    lbl('101S00000000008', 'MA_Workshop_Name', 'Workshop', 'acme'),
+    lbl('101S00000000008', 'Pkg_Workshop_Name', 'Workshop', 'acme'),
     lbl('101S00000000009', 'Workshop_Tab', 'Workshop', 'exns'),
-    lbl('101S0000000000A', 'MA_Accounts', 'Accounts', 'acme'),
+    lbl('101S0000000000A', 'Pkg_Accounts', 'Accounts', 'acme'),
   ],
 };
 
@@ -191,7 +191,7 @@ const PATH_INFO =
   '<li>When is the review for your Teams?  </li><li>Who else reviews the sketch?</li></ol></li></ol><p><br></p>';
 const pathOrg = {
   ...baseOrg,
-  customLabels: [lbl('101S0000000000C', 'MA_Connect', 'Sketch', 'acme'), lbl('101S0000000000D', 'Dropped', 'Dropped')],
+  customLabels: [lbl('101S0000000000C', 'Pkg_Sketch', 'Sketch', 'acme'), lbl('101S0000000000D', 'Dropped', 'Dropped')],
   pathSteps: [{ Id: '1CF000000000001', DeveloperName: 'X11111111111111_01J000000000001AAA_012000000000002AAA_Opportunity_Demo_Mid_Stage', Language: 'en_US', Info: PATH_INFO }],
   paths: [
     { DeveloperName: 'Default_Opportunity', MasterLabel: 'Default', SobjectType: 'Opportunity', SobjectProcessField: 'StageName', RecordTypeId: null, IsActive: false },
@@ -241,7 +241,7 @@ test('M-15: path heading and step buttons are Salesforce text; the button names 
 });
 
 test('M-15: activity timeline, duplicates and feed text → Salesforce text first, same-text labels hidden', () => {
-  const org = { ...baseOrg, customLabels: [...baseOrg.customLabels, lbl('101S0000000000E', 'MA_Upcoming', 'Upcoming & Overdue', 'acme')] };
+  const org = { ...baseOrg, customLabels: [...baseOrg.customLabels, lbl('101S0000000000E', 'Pkg_Upcoming', 'Upcoming & Overdue', 'acme')] };
   const out = locate({ text: 'Upcoming & Overdue', org, describes: [account], hints: { tags: ['span', 'div'], sfComponents: ['runtime_sales_activities_activityPanel'] } });
   assert.equal(out.results[0].title, 'Salesforce text');
   assert.ok(!out.results.some((r) => r.source === SOURCE.CUSTOM_LABEL));
