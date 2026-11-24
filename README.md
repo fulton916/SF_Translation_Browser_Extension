@@ -86,7 +86,7 @@ metadata after a change), **Test log**, **Missing translations** (the org's miss
 as the toolbar popup's report button), and **Report a problem**.
 
 The report lists missing translations by default. **Show** switches to translated items (with their translated text) or both.
-The language list also has the org default language (for example English): it lists every checked item once with its master text.
+The language list also has the org default language (for example English): it lists every checked item once with its master text. Click a column header to sort A to Z, again for Z to A, and a third time for the report order.
 
 ### Edit a custom label translation in the panel
 
