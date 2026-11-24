@@ -7,7 +7,7 @@ body:
     attributes:
       label: What happened
       description: What you clicked and what went wrong.
-      placeholder: Right-clicked "Business Unit" on an Opportunity, clicked Go to translation, the button stayed on "Opening…".
+      placeholder: Right-clicked "Paint Color" on a Widget, clicked Go to translation, the button stayed on "Opening…".
     validations:
       required: true
   - type: textarea
@@ -28,8 +28,8 @@ body:
     id: org
     attributes:
       label: Org
-      description: Which org or sandbox (no passwords or session IDs).
-      placeholder: UAT2 sandbox
+      description: Kind of org, not its name (no passwords or session IDs).
+      placeholder: Developer Edition org
   - type: textarea
     id: log
     attributes:
