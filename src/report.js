@@ -101,9 +101,10 @@ export function parseObjectTranslation(body) {
     recordTypes: blocks(body, 'recordTypes').map((b) => ({ name: text(b, 'name'), label: slot(b, 'label') })),
     validationRules: blocks(body, 'validationRules').map((b) => ({ name: text(b, 'name'), errorMessage: slot(b, 'errorMessage') })),
     // Only section names an admin typed: Salesforce's own ("Account Information") are not in the file.
+    // "Custom Links" is: the links area Salesforce puts on page layouts, marked as a typed name.
     sections: blocks(body, 'layouts').flatMap((b) => {
       const layout = text(dropBlocks(b, ['sections']), 'layout');
-      return blocks(b, 'sections').map((s) => ({ layout, section: text(s, 'section'), label: slot(s, 'label') }));
+      return blocks(b, 'sections').map((s) => ({ layout, section: text(s, 'section'), label: slot(s, 'label') })).filter((s) => s.section !== 'Custom Links');
     }),
     // A translated action names its aspect; "Master" is the label. The others are left out: untranslated, they are not in the file.
     quickActions: blocks(body, 'quickActions')
