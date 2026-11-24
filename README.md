@@ -93,6 +93,10 @@ a button named after the page it opens, for example **Open Custom Labels** or **
 metadata after a change), **Test log**, **Missing translations** (the org's missing-translations report, the same page
 as the toolbar popup's report button), and **Report a problem**.
 
+The report checks custom labels, custom field labels and help texts, picklist values, related list labels, record types,
+messages of active validation rules, page layout sections, object quick actions, buttons and links, and tabs. It leaves out Salesforce's own
+section names and action labels (Salesforce translates them), managed package items, global quick actions, and help texts of standard fields.
+
 The report lists missing translations by default. **Show** switches to translated items (with their translated text) or both.
 The language list also has the org default language (for example English): it lists every checked item once with its master text. Click a column header to sort A to Z, again for Z to A, and a third time for the report order.
 

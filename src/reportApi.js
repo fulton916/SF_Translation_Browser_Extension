@@ -2,6 +2,7 @@
 // never a create, update or delete.
 
 import { queryAll, soapCall, loadOrgData, SfError } from './sfApi.js';
+import { layoutName, loadButtons } from './orgIndex.js';
 import {
   activeLanguages,
   metadataRecords,
@@ -36,6 +37,7 @@ export async function loadActiveLanguages(session) {
 
 const API_NAME = /^[A-Za-z0-9_]+$/;
 const LANGUAGE = /^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,4})?$/;
+const NO_FIELDS = 'on standard objects without custom fields';
 const READ_BATCH = 10; // readMetadata reads at most 10 names per call
 const PARALLEL = 3;
 
@@ -64,16 +66,26 @@ export async function readMetadata(session, type, fullNames, onProgress, { batch
 
 /**
  * The objects whose translations the report reads: the org's own custom objects, and standard objects
- * with a custom field or a record type of the org's own (package fields are left out, see isOwnItem).
+ * with a custom field, a record type or another translatable item of the org's own: `itemObjects`, one list of
+ * object names per item type (package items are left out, see isOwnItem).
  */
-export function reportObjects(objects, customFieldObjects, recordTypeObjects) {
+export function reportObjects(objects, ...itemObjects) {
   const known = new Set((objects || []).map((o) => o.name));
   const out = new Set();
   for (const o of objects || []) if (/__c$/.test(o.name) && isOwnItem(o.name)) out.add(o.name);
-  for (const n of [...(customFieldObjects || []), ...(recordTypeObjects || [])]) {
+  for (const n of itemObjects.flatMap((list) => list || [])) {
     if (n && known.has(n) && API_NAME.test(n) && isOwnItem(n) && !/__(mdt|e|b|x|kav|share|history|feed)$/i.test(n)) out.add(n);
   }
   return [...out].sort();
+}
+
+/**
+ * Objects of the page layouts an admin has changed since they were created (Layout rows). Only these can hold a
+ * section name the org typed; Salesforce's own unchanged layouts (most objects of a large org) are left out.
+ */
+export function editedLayoutObjects(layouts) {
+  const edited = (layouts || []).filter((l) => l.LastModifiedDate !== l.CreatedDate);
+  return [...new Set(edited.map((l) => l.EntityDefinition?.QualifiedApiName || layoutName(`${l.TableEnumOrId}-`)?.object).filter(Boolean))];
 }
 
 /**
@@ -96,7 +108,7 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
   };
 
   say('Reading custom labels, objects and tabs…');
-  const [org, localizations, fieldObjects, rtObjects, valueSets] = await Promise.all([
+  const [org, localizations, fieldObjects, rtObjects, valueSets, quickActions, buttons, layouts] = await Promise.all([
     loadOrgData(session),
     queryAll(session, `SELECT Id, ExternalStringId, Language, Value FROM ExternalStringLocalization WHERE Language IN ('${codes.join("','")}')`, { tooling: true }).catch(soft('Custom labels')),
     queryAll(session, 'SELECT EntityDefinition.QualifiedApiName FROM CustomField WHERE NamespacePrefix = null', { tooling: true })
@@ -106,25 +118,43 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
       .then((r) => r.map((x) => x.SobjectType))
       .catch(soft('Record types on standard objects')),
     queryAll(session, 'SELECT DeveloperName, MasterLabel FROM GlobalValueSet WHERE NamespacePrefix = null', { tooling: true }).catch(soft('Global value sets')),
+    // StandardLabel: the action shows a Salesforce label (LogACall, NewChild…), which Translation Workbench does not list.
+    queryAll(session, 'SELECT DeveloperName, MasterLabel, SobjectType FROM QuickActionDefinition WHERE NamespacePrefix = null AND StandardLabel = null', { tooling: true }).catch(soft('Quick actions')),
+    loadButtons(session).catch(soft(`Buttons and links ${NO_FIELDS}`)),
+    queryAll(session, 'SELECT Name, TableEnumOrId, EntityDefinition.QualifiedApiName, CreatedDate, LastModifiedDate FROM Layout WHERE NamespacePrefix = null', { tooling: true }).catch(
+      soft(`Layout sections ${NO_FIELDS}`)
+    ),
   ]);
-  warnings.push(...(org.warnings || []).filter((w) => /^(Custom labels|Object names|Tabs) not searched/.test(w)).map((w) => w.replace(' not searched', ' not checked')));
+  warnings.push(...(org.warnings || []).filter((w) => /^(Custom labels|Object names|Tabs|Validation messages) not searched/.test(w)).map((w) => w.replace('Validation messages', `Validation messages ${NO_FIELDS}`).replace(' not searched', ' not checked')));
 
   const items = [];
   if (org.customLabels && localizations) for (const c of codes) items.push(...labelItems(org.customLabels, localizations, c));
 
   // Objects: "<object>-<language>" per language, and "<object>-<org default>" for the master texts.
-  const objects = reportObjects(org.objects, fieldObjects, rtObjects);
+  const ownButtons = (buttons || []).filter((b) => !b.namespace);
+  const rules = (org.validationRules || []).filter((v) => !v.NamespacePrefix); // active ones only
+  const ruleObjects = rules.map((v) => v.EntityDefinition?.QualifiedApiName);
+  const activeRules = org.validationRules ? new Set(rules.map((v) => `${v.EntityDefinition?.QualifiedApiName}.${v.ValidationName}`)) : null;
+  const actions = new Map((quickActions || []).map((a) => [`${a.SobjectType}.${a.DeveloperName}`, a.MasterLabel]));
+  const buttonLabels = new Map(ownButtons.map((b) => [`${b.object}.${b.name}`, b.label]));
+  const ownLayouts = new Set((layouts || []).map((l) => l.Name));
+  const withItems = reportObjects(org.objects, fieldObjects, rtObjects, ruleObjects, (quickActions || []).map((a) => a.SobjectType), ownButtons.map((b) => b.object));
+  // Objects that can only have a layout section: the org default file first, so each language is read only for
+  // those that have one (few objects, even in a large org).
+  const layoutOnly = reportObjects(org.objects, editedLayoutObjects(layouts)).filter((o) => !withItems.includes(o));
+  const probe = await readMetadata(session, 'CustomObjectTranslation', layoutOnly.map((o) => `${o}-${orgDefault}`)).catch(soft(`Layout sections ${NO_FIELDS}`));
+  const objects = [...withItems, ...layoutOnly.filter((o) => parseObjectTranslation(probe?.[`${o}-${orgDefault}`])?.sections.length)].sort();
   const withTab = new Set((org.tabs || []).filter((t) => t.IsCustom && t.SobjectName).map((t) => t.SobjectName));
   const labelOf = new Map((org.objects || []).map((o) => [o.name, o.label]));
   const objectNames = objects.flatMap((o) => [orgDefault, ...codes].map((c) => `${o}-${c}`));
   const objectXml = await readMetadata(session, 'CustomObjectTranslation', objectNames, (d, n) => say(`Reading object translations… ${d} of ${n}`)).catch(
-    soft('Field labels, picklist values, related list labels, record types and object tabs')
+    soft('Field labels, help texts, picklist values, related list labels, record types, validation messages, layout sections, quick actions, buttons and links, and object tabs')
   );
   if (objectXml) {
     for (const o of objects) {
       const master = parseObjectTranslation(objectXml[`${o}-${orgDefault}`]);
       for (const c of codes) {
-        items.push(...objectItems({ object: o, objectLabel: labelOf.get(o), language: c, translation: parseObjectTranslation(objectXml[`${o}-${c}`]), master, hasTab: withTab.has(o) }));
+        items.push(...objectItems({ object: o, objectLabel: labelOf.get(o), language: c, translation: parseObjectTranslation(objectXml[`${o}-${c}`]), master, hasTab: withTab.has(o), actions, buttonLabels, activeRules, ownLayouts }));
       }
     }
   }
