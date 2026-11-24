@@ -1086,12 +1086,15 @@
     // Action: a "Quick Action Selection" list appears after the object (UAT2, Nov 2026). Its option values
     // are 09D Ids that do not equal the Tooling QuickActionDefinition Ids, and labels can repeat
     // ("Initiate Customer Creation" twice), so pick by label and say when there is more than one.
+    // Right after the object changes the list can still hold the previous object's actions while the grid already
+    // shows this object's (dev org, Nov 2026), so a missing action is said only when its row is not found either.
+    let noAction = null;
     if (p.component === 'QuickActionDefinition' && p.rows?.[0]) {
       const qa = await waitFor(() => q('quickActionSelect'), 5000).catch(() => null);
       if (qa) {
         const want = norm(p.rows[0]);
         const opts = [...qa.options].filter((o) => norm(o.text) === want);
-        if (!opts.length) warnings.push(`Action "${p.rows[0]}" is not in the Quick Action Selection list for ${p.objectLabel || 'this object'}.`);
+        if (!opts.length) noAction = `Action "${p.rows[0]}" is not in the Quick Action Selection list for ${p.objectLabel || 'this object'}.`;
         else {
           if (!opts.some((o) => o.value === qa.value)) {
             qa.value = opts[0].value;
@@ -1135,6 +1138,7 @@
     } else if (p.rows?.length) {
       row = await findGridRow(p.rows, p.rowMatch === 'richText' ? richTextMatcher(p.rows) : null);
     }
+    if (!row && noAction) warnings.push(noAction);
     const shown = (r) => {
       const t = (r.querySelector('.x-grid3-col-masterLabel, .x-tree-node-anchor')?.innerText || p.rows[0]).trim();
       return p.rowMatch === 'richText' ? p.rowLabel || t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : t;
