@@ -4,7 +4,8 @@ import { PAGE_COMPONENT_KINDS, namespaceOf } from './locator.js';
 // Session: reuse the browser's existing login (sid cookie), the same approach
 // Salesforce Inspector uses. Nothing is stored outside memory.
 
-export const API_VERSION = 'v60.0';
+// One fixed, tested version for every org, one release behind the newest so any org offers it. Raising it: README, "Develop".
+export const API_VERSION = 'v67.0';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const orgCache = new Map();
 const describeCache = new Map();

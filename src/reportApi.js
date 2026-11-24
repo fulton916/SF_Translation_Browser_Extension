@@ -80,6 +80,17 @@ export function reportObjects(objects, ...itemObjects) {
 }
 
 /**
+ * Objects with custom fields of the org's own that are not in the object list: newer than the API version, and
+ * Activity (never listed; it owns the custom fields of events and tasks). Their
+ * CustomObjectTranslation files can still be read by name. A field without an object name has the table's API name,
+ * or an Id (it starts with a digit: Data Cloud objects, which Translation Workbench does not hold).
+ */
+export function unlistedObjects(objects, fieldObjects) {
+  const known = new Set((objects || []).map((o) => o.name));
+  return reportObjects((fieldObjects || []).filter((n) => n && !known.has(n) && !/^\d/.test(n)).map((name) => ({ name })), fieldObjects);
+}
+
+/**
  * Objects of the page layouts an admin has changed since they were created (Layout rows). Only these can hold a
  * section name the org typed; Salesforce's own unchanged layouts (most objects of a large org) are left out.
  */
@@ -111,8 +122,8 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
   const [org, localizations, fieldObjects, rtObjects, valueSets, quickActions, buttons, layouts] = await Promise.all([
     loadOrgData(session),
     queryAll(session, `SELECT Id, ExternalStringId, Language, Value FROM ExternalStringLocalization WHERE Language IN ('${codes.join("','")}')`, { tooling: true }).catch(soft('Custom labels')),
-    queryAll(session, 'SELECT EntityDefinition.QualifiedApiName FROM CustomField WHERE NamespacePrefix = null', { tooling: true })
-      .then((r) => r.map((f) => f.EntityDefinition?.QualifiedApiName))
+    queryAll(session, 'SELECT TableEnumOrId, EntityDefinition.QualifiedApiName FROM CustomField WHERE NamespacePrefix = null', { tooling: true })
+      .then((r) => r.map((f) => f.EntityDefinition?.QualifiedApiName || f.TableEnumOrId))
       .catch(soft('Field labels on standard objects')),
     queryAll(session, 'SELECT SobjectType FROM RecordType WHERE NamespacePrefix = null')
       .then((r) => r.map((x) => x.SobjectType))
@@ -143,7 +154,14 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
   // those that have one (few objects, even in a large org).
   const layoutOnly = reportObjects(org.objects, editedLayoutObjects(layouts)).filter((o) => !withItems.includes(o));
   const probe = await readMetadata(session, 'CustomObjectTranslation', layoutOnly.map((o) => `${o}-${orgDefault}`)).catch(soft(`Layout sections ${NO_FIELDS}`));
-  const objects = [...withItems, ...layoutOnly.filter((o) => parseObjectTranslation(probe?.[`${o}-${orgDefault}`])?.sections.length)].sort();
+  // A switched-off feature leaves fields on an object the org does not have: its file is empty.
+  const unlisted = org.objects ? unlistedObjects(org.objects, fieldObjects) : [];
+  const unlistedXml = await readMetadata(session, 'CustomObjectTranslation', unlisted.map((o) => `${o}-${orgDefault}`)).catch(soft(unlisted.join(', ')));
+  const objects = [
+    ...withItems,
+    ...layoutOnly.filter((o) => parseObjectTranslation(probe?.[`${o}-${orgDefault}`])?.sections.length),
+    ...unlisted.filter((o) => parseObjectTranslation(unlistedXml?.[`${o}-${orgDefault}`])?.fields.length),
+  ].sort();
   const withTab = new Set((org.tabs || []).filter((t) => t.IsCustom && t.SobjectName).map((t) => t.SobjectName));
   const labelOf = new Map((org.objects || []).map((o) => [o.name, o.label]));
   const objectNames = objects.flatMap((o) => [orgDefault, ...codes].map((c) => `${o}-${c}`));

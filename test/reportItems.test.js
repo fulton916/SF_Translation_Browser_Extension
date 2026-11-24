@@ -16,7 +16,7 @@ import {
   masterItems,
   ITEM_TYPE,
 } from '../src/report.js';
-import { reportObjects, editedLayoutObjects, loadMissingTranslations } from '../src/reportApi.js';
+import { reportObjects, unlistedObjects, editedLayoutObjects, loadMissingTranslations } from '../src/reportApi.js';
 import { buildGotoUrl } from '../src/locator.js';
 
 const envelope = (records) =>
@@ -299,6 +299,48 @@ test('org default rows: every checked item once with its master text; labels wri
 test('report objects: own custom objects, and standard objects with own custom fields or record types', () => {
   const objects = [{ name: 'Account' }, { name: 'Case' }, { name: 'Lead' }, { name: 'Demo_Gadget__c' }, { name: 'acme__Pkg__c' }, { name: 'Demo_Setting__mdt' }];
   assert.deepEqual(reportObjects(objects, ['Account', 'Account', null, 'Ghost', 'Demo_Setting__mdt'], ['Case']), ['Account', 'Case', 'Demo_Gadget__c']);
+});
+
+test('unlisted objects: own custom fields on an object the API version does not list; no Ids, package or metadata type objects', () => {
+  assert.deepEqual(unlistedObjects([{ name: 'Account' }], ['Account', 'NewThing', 'NewThing', '9sdHu000001azwKIAQ', 'acme__Pkg__c', 'Demo_Setting__mdt', undefined, null]), ['NewThing']);
+});
+
+test('an unlisted object is read by name; an empty file gives no row; a failed read names the object; custom Activity fields are listed once, under Activity', async () => {
+  const run = async (host, fail) => {
+    const read = [];
+    globalThis.fetch = async (u, init = {}) => {
+      const url = decodeURIComponent(String(u));
+      if (init.method === 'POST') {
+        const names = [...String(init.body).matchAll(/<s:fullNames>([^<]+)</g)].map((m) => m[1]);
+        read.push(...names);
+        if (fail && names.some((n) => /^NewThing/.test(n))) throw new Error('no access');
+        const field = '<fields><label><!-- Color --></label><name>Color__c</name></fields>';
+        return { ok: true, text: async () => envelope(names.map((n) => record('X', `<fullName>${n}</fullName>${/^Goal/.test(n) ? '' : field}`))) };
+      }
+      if (/\/sobjects$/.test(url)) return { ok: true, json: async () => ({ sobjects: ['Event', 'Task', 'Account'].map((n) => ({ name: n, label: n })) }) };
+      if (/userinfo/.test(url)) return { ok: true, json: async () => ({ language: 'en_US' }) };
+      let rows = [];
+      if (/FROM Organization/.test(url)) rows = [{ LanguageLocaleKey: 'en_US' }];
+      else if (/FROM Translation/.test(url)) rows = [{ Language: 'fr', IsActive: true }];
+      else if (/FROM CustomField/.test(url)) rows = [
+        { TableEnumOrId: 'NewThing', EntityDefinition: null },
+        { TableEnumOrId: 'Goal', EntityDefinition: null },
+        { TableEnumOrId: '9sdHu000001azwKIAQ', EntityDefinition: null },
+        { TableEnumOrId: 'Task', EntityDefinition: { QualifiedApiName: 'Task' } },
+        { TableEnumOrId: 'Activity', EntityDefinition: { QualifiedApiName: 'Activity' } },
+      ];
+      return { ok: true, json: async () => ({ records: rows, done: true }) };
+    };
+    return { out: await loadMissingTranslations({ host, sid: 's' }), read };
+  };
+  const ok = await run('report3.my.salesforce.com', false);
+  assert.deepEqual(ok.out.warnings, []);
+  assert.deepEqual(ok.out.missing.map((i) => i.name), ['Activity.Color__c', 'NewThing.Color__c']);
+  assert.deepEqual(ok.read.filter((n) => /-fr$/.test(n)).sort(), ['Activity-fr', 'NewThing-fr', 'Task-fr']);
+  assert.ok(!ok.read.some((n) => /^(9sd|Account)/.test(n)));
+  const failed = await run('report4.my.salesforce.com', true);
+  assert.deepEqual(failed.out.warnings, ['Activity, Goal, NewThing not checked: no access']);
+  assert.deepEqual(failed.out.missing, []);
 });
 
 test('the whole report only reads (GET queries and readMetadata) and lists the missing items per language', async () => {

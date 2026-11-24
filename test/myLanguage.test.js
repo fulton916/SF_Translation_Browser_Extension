@@ -47,7 +47,7 @@ test('load: the user, the language now and the active languages; nothing to swit
 test('switch writes only LanguageLocaleKey on the session user, and the memory is stored before the write', async () => {
   const f = fake();
   assert.deepEqual(await switchMyLanguage(f.session, f.store, 'fr', NAME), { language: 'fr', changed: true });
-  assert.deepEqual(f.writes(), [{ method: 'PATCH', url: `https://${f.session.host}/services/data/v60.0/sobjects/User/${ME}`, body: { LanguageLocaleKey: 'fr' } }]);
+  assert.deepEqual(f.writes(), [{ method: 'PATCH', url: `https://${f.session.host}/services/data/v67.0/sobjects/User/${ME}`, body: { LanguageLocaleKey: 'fr' } }]);
   assert.deepEqual(Object.values(f.calls.find((c) => c.method === 'PATCH').mem), ['en_US']);
   assert.equal(await f.before(), 'en_US');
 });

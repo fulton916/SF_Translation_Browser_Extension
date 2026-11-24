@@ -213,7 +213,7 @@ test('5: the SOAP describe in the default language gives master labels', async (
   globalThis.fetch = async (u, init) => (calls.push({ u, init }), { ok: true, text: async () => SOAP_DESCRIBE });
   const m = await loadMasterDescribe({ host: 'retest-master.my.salesforce.com', sid: '00D000000000001!x' }, 'Demo_Gadget__c', 'en_US');
   assert.equal(m.label, 'Gadget');
-  assert.equal(calls[0].u, 'https://retest-master.my.salesforce.com/services/Soap/u/60.0');
+  assert.equal(calls[0].u, 'https://retest-master.my.salesforce.com/services/Soap/u/67.0');
   assert.equal(calls[0].init.method, 'POST');
   assert.match(calls[0].init.body, /<s:LocaleOptions><s:language>en_US<\/s:language><\/s:LocaleOptions>/);
   assert.match(calls[0].init.body, /<s:sessionId>00D000000000001!x<\/s:sessionId>/);

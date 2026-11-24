@@ -344,6 +344,13 @@ Tests run on every push and pull request (GitHub Actions). They cover:
   `src/pointerTarget.js` and the auto-fill retry in `src/waitUntil.js`.
 - `test/devVersion.test.js`: the code fingerprint used by the auto-reload below.
 
+### Salesforce API version
+
+`API_VERSION` in `src/sfApi.js` is the version of every Salesforce call, the same for every org. Keep it one release
+behind the newest: an org that is not upgraded yet rejects the newest. Raise it about once a year. Then run `npm test`,
+compare the report and the org-wide data on the old and new version, and retest by hand: lookups, Go to translation,
+saving a custom label translation, and the language switch.
+
 ### Auto-reload while developing
 
 ```bash
