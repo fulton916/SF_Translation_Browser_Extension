@@ -8,6 +8,13 @@ filters. You type the translation and click Save.
 
 **Roadmap:** [open features](https://github.com/fulton916/SF_Translation_Browser_Extension/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
 
+## Demo
+
+[![Pointing at Customer Priority on an account, pressing Alt + Shift + T, picking Spanish, and Go to translation opening Translation Workbench with the row marked](media/translation-workbench-demo.gif)](media/translation-workbench-demo.mp4)
+
+Click the picture for the full-quality video (28 seconds, no sound). Loading time is trimmed and the web
+address is a placeholder.
+
 ## Install (developer mode, about 2 minutes)
 
 1. Get the zip. From GitHub: open
