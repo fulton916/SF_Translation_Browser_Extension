@@ -109,7 +109,7 @@ const moreTypes = (lang) =>
     ? '<fields><help>Choisir.</help><label>Couleur</label><name>Demo_Color__c</name></fields><fields><help>Aide</help><name>Industry</name></fields>'
     : '<fields><help><!-- Pick one. --></help><label><!-- Coat Color --></label><name>Demo_Color__c</name></fields>') +
   '<layouts><layout>Gadget (Sales) Layout</layout><sections><label>' + (lang === 'fr' ? 'Bases' : '<!-- Basics -->') + '</label><section>Basics</section></sections>' +
-  '<sections><label><!-- A &amp; B --></label><section>A &amp; B</section></sections></layouts>' +
+  '<sections><label><!-- A &amp; B --></label><section>A &amp; B</section></sections><sections><label><!-- Custom Links --></label><section>Custom Links</section></sections></layouts>' +
   '<layouts><layout>Gadget Layout</layout><sections><label><!-- Basics --></label><section>Basics</section></sections></layouts>' +
   '<layouts><layout>Demo_Gadget__c Layout</layout><sections><label><!-- Own --></label><section>Own</section></sections></layouts>' +
   '<layouts><layout>acme__Pkg Layout</layout><sections><label><!-- Pkg --></label><section>Pkg</section></sections></layouts>' +
@@ -145,7 +145,7 @@ test('object items: help texts, validation messages, layout sections, quick acti
       [ITEM_TYPE.QUICK_ACTION, 'Demo_Gadget__c.Demo_Check', 'Check It', 'Vérifier'],
       [ITEM_TYPE.BUTTON_LINK, 'Demo_Gadget__c.Demo_Docs', 'Open Docs', null],
     ],
-    'standard labels, package items and standard fields are left out; a section is one item per layout'
+    'standard labels, package items, standard fields and Custom Links sections are left out; a section is one item per layout'
   );
   const go = (type) => buildGotoUrl(items.find((i) => i.type === type).goto, 'fr').autofill;
   assert.deepEqual([go(ITEM_TYPE.HELP_TEXT).component, go(ITEM_TYPE.HELP_TEXT).aspect, go(ITEM_TYPE.HELP_TEXT).rows], ['CustomFieldDefinition', 'help', ['Coat Color', 'Demo_Color__c']]);
@@ -156,7 +156,7 @@ test('object items: help texts, validation messages, layout sections, quick acti
   assert.deepEqual([go(ITEM_TYPE.BUTTON_LINK).component, go(ITEM_TYPE.BUTTON_LINK).rows], ['WebLink', ['Demo_Docs']]);
 });
 
-test('a standard object with only one new type is read; a layout-only one without a typed section is not read per language', async () => {
+test('a standard object with only one new type is read; a layout-only one without a typed section (or with only Custom Links) is not read per language', async () => {
   const read = [];
   globalThis.fetch = async (u, init = {}) => {
     const url = decodeURIComponent(String(u));
@@ -164,8 +164,9 @@ test('a standard object with only one new type is read; a layout-only one withou
       const names = [...String(init.body).matchAll(/<s:fullNames>([^<]+)</g)].map((m) => m[1]);
       read.push(...names);
       const section = '<layouts><layout>L</layout><sections><label><!-- Facts --></label><section>Facts</section></sections></layouts>';
+      const customLinks = section.replace(/Facts/g, 'Custom Links');
       const link = '<webLinks><label><!-- Docs --></label><name>Docs</name></webLinks>';
-      return { ok: true, text: async () => envelope(names.map((n) => record('X', `<fullName>${n}</fullName>${/^Solution/.test(n) ? section : /^Campaign/.test(n) ? link : ''}`))) };
+      return { ok: true, text: async () => envelope(names.map((n) => record('X', `<fullName>${n}</fullName>${/^Solution/.test(n) ? section : /^Campaign/.test(n) ? link : /^Event/.test(n) ? customLinks : ''}`))) };
     }
     if (/\/sobjects$/.test(url)) return { ok: true, json: async () => ({ sobjects: ['Campaign', 'Solution', 'Event', 'Task', 'Contract', 'Idea'].map((n) => ({ name: n, label: n })) }) };
     if (/userinfo/.test(url)) return { ok: true, json: async () => ({ language: 'en_US' }) };
