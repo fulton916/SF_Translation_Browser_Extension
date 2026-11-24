@@ -121,7 +121,7 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
     // StandardLabel: the action shows a Salesforce label (LogACall, NewChild…), which Translation Workbench does not list.
     queryAll(session, 'SELECT DeveloperName, MasterLabel, SobjectType FROM QuickActionDefinition WHERE NamespacePrefix = null AND StandardLabel = null', { tooling: true }).catch(soft('Quick actions')),
     loadButtons(session).catch(soft(`Buttons and links ${NO_FIELDS}`)),
-    queryAll(session, 'SELECT TableEnumOrId, EntityDefinition.QualifiedApiName, CreatedDate, LastModifiedDate FROM Layout WHERE NamespacePrefix = null', { tooling: true }).catch(
+    queryAll(session, 'SELECT Name, TableEnumOrId, EntityDefinition.QualifiedApiName, CreatedDate, LastModifiedDate FROM Layout WHERE NamespacePrefix = null', { tooling: true }).catch(
       soft(`Layout sections ${NO_FIELDS}`)
     ),
   ]);
@@ -137,6 +137,7 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
   const activeRules = org.validationRules ? new Set(rules.map((v) => `${v.EntityDefinition?.QualifiedApiName}.${v.ValidationName}`)) : null;
   const actions = new Map((quickActions || []).map((a) => [`${a.SobjectType}.${a.DeveloperName}`, a.MasterLabel]));
   const buttonLabels = new Map(ownButtons.map((b) => [`${b.object}.${b.name}`, b.label]));
+  const ownLayouts = new Set((layouts || []).map((l) => l.Name));
   const withItems = reportObjects(org.objects, fieldObjects, rtObjects, ruleObjects, (quickActions || []).map((a) => a.SobjectType), ownButtons.map((b) => b.object));
   // Objects that can only have a layout section: the org default file first, so each language is read only for
   // those that have one (UAT2: about 110 objects).
@@ -153,7 +154,7 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
     for (const o of objects) {
       const master = parseObjectTranslation(objectXml[`${o}-${orgDefault}`]);
       for (const c of codes) {
-        items.push(...objectItems({ object: o, objectLabel: labelOf.get(o), language: c, translation: parseObjectTranslation(objectXml[`${o}-${c}`]), master, hasTab: withTab.has(o), actions, buttonLabels, activeRules }));
+        items.push(...objectItems({ object: o, objectLabel: labelOf.get(o), language: c, translation: parseObjectTranslation(objectXml[`${o}-${c}`]), master, hasTab: withTab.has(o), actions, buttonLabels, activeRules, ownLayouts }));
       }
     }
   }

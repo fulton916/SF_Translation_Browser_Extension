@@ -167,9 +167,9 @@ export const isOwnItem = (apiName) => !namespaceOf(apiName);
  * `actions`: Map of "Object.Name" → label, the quick actions with a label of their own; others show a Salesforce
  * standard label (Case.LogACall), which Translation Workbench does not list. `buttonLabels`: Map of "Object.Name" →
  * label (the file's comment holds the button's API name, not its label). `activeRules`: Set of "Object.Name" (null: not
- * known, every rule counts); the message of an inactive rule never shows.
+ * known, every rule counts); the message of an inactive rule never shows. `ownLayouts`: Set of names of the org's own layouts.
  */
-export function objectItems({ object, objectLabel = null, language, translation, master, hasTab = false, actions = new Map(), buttonLabels = new Map(), activeRules = null }) {
+export function objectItems({ object, objectLabel = null, language, translation, master, hasTab = false, actions = new Map(), buttonLabels = new Map(), activeRules = null, ownLayouts = new Set() }) {
   if (!translation) return [];
   const label = objectLabel || object;
   const masterField = (name) => master?.fields?.find((f) => f.name === name) || null;
@@ -229,7 +229,8 @@ export function objectItems({ object, objectLabel = null, language, translation,
     );
   }
   for (const s of translation.sections || []) {
-    if (!s.layout || !s.section || !s.label || !isOwnItem(s.layout)) continue;
+    // A layout name is free text ("My_Object__c Layout"): what looks like a package prefix may not be one.
+    if (!s.layout || !s.section || !s.label || !(isOwnItem(s.layout) || ownLayouts.has(s.layout))) continue;
     // Each layout has its own copy of a section name; the layout is the section's node in the Workbench tree.
     out.push(
       item(ITEM_TYPE.LAYOUT_SECTION, `${object}.${s.layout}: ${s.section}`, s.section, s.label,

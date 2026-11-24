@@ -111,6 +111,7 @@ const moreTypes = (lang) =>
   '<layouts><layout>Gadget (Sales) Layout</layout><sections><label>' + (lang === 'fr' ? 'Bases' : '<!-- Basics -->') + '</label><section>Basics</section></sections>' +
   '<sections><label><!-- A &amp; B --></label><section>A &amp; B</section></sections></layouts>' +
   '<layouts><layout>Gadget Layout</layout><sections><label><!-- Basics --></label><section>Basics</section></sections></layouts>' +
+  '<layouts><layout>Demo_Gadget__c Layout</layout><sections><label><!-- Own --></label><section>Own</section></sections></layouts>' +
   '<layouts><layout>acme__Pkg Layout</layout><sections><label><!-- Pkg --></label><section>Pkg</section></sections></layouts>' +
   (lang === 'fr'
     ? '<quickActions><aspect>Master</aspect><label>Vérifier</label><name>Demo_Check</name></quickActions><quickActions><aspect>InfoMessage</aspect><label>Fait</label><name>Demo_Check</name></quickActions>'
@@ -127,6 +128,7 @@ test('object items: help texts, validation messages, layout sections, quick acti
     language: 'fr',
     translation: parseObjectTranslation(moreTypes('fr')),
     master: parseObjectTranslation(moreTypes('en_US')),
+    ownLayouts: new Set(['Demo_Gadget__c Layout']),
     activeRules: new Set(['Demo_Gadget__c.Demo_Need_Color']),
     actions: new Map([['Demo_Gadget__c.Demo_Check', 'Check It']]),
     buttonLabels: new Map([['Demo_Gadget__c.Demo_Docs', 'Open Docs']]),
@@ -139,6 +141,7 @@ test('object items: help texts, validation messages, layout sections, quick acti
       [ITEM_TYPE.LAYOUT_SECTION, 'Demo_Gadget__c.Gadget (Sales) Layout: Basics', 'Basics', 'Bases'],
       [ITEM_TYPE.LAYOUT_SECTION, 'Demo_Gadget__c.Gadget (Sales) Layout: A & B', 'A & B', null],
       [ITEM_TYPE.LAYOUT_SECTION, 'Demo_Gadget__c.Gadget Layout: Basics', 'Basics', null],
+      [ITEM_TYPE.LAYOUT_SECTION, 'Demo_Gadget__c.Demo_Gadget__c Layout: Own', 'Own', null],
       [ITEM_TYPE.QUICK_ACTION, 'Demo_Gadget__c.Demo_Check', 'Check It', 'Vérifier'],
       [ITEM_TYPE.BUTTON_LINK, 'Demo_Gadget__c.Demo_Docs', 'Open Docs', null],
     ],
