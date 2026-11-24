@@ -150,7 +150,7 @@ Org metadata is cached in memory for 5 minutes.
 Your language is read again on each lookup (cached 15 seconds): after you change it in your personal
 settings, the next lookup reads object names, tabs, apps and field labels again in the new language.
 Custom label translations are searched per lookup (by text and by matching label, then every language of
-each label found), not cached: large orgs have 150,000+ of them.
+each label found), not cached: a large org can have very many of them.
 
 Viewing a language other than the org default, the panel also reads the master labels of the objects in
 play (SOAP `describeSObject` with the `LocaleOptions` header in the org default language) and, for a page
@@ -186,12 +186,12 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Flow footer button label (a screen's own Next/Finish, Back or Pause label) | **Translation Workbench** → Flow → the flow → Flow Component "Screen Info" → Flow Version → Aspect "Next or Finish Button Label", "Back Button Label" or "Pause Button Label" | Org-wide: the footer labels set in Flow Builder → Configure Footer. Flow Version is the newest version (the one read). Without a custom label, the buttons are Salesforce text |
 | Path guidance ("Guidance for Success") | **Translation Workbench** → Path Step Rich Text (find the row by its raw HTML; the whole block is one translation) | Yes (all paths; a whole list line is enough). Confirmed when you point inside the guidance of the record's own path. A custom object's step names the object by its Id (01I…), cut at 80 characters: the step is matched to its path by record type Id, or by object Id and field |
 | Report / dashboard names and parts | **Translation Workbench** → Report, Dashboard, Report Chart… | Not yet |
-| Anything from an installed package (namespace like `acme__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
+| Anything from an installed package (namespace like `devedapp__`) | **Translation Workbench → Override** (pick the package) | Yes, for Custom Field, Action, Button, Record Type, Validation, Web Tab, Flow, Custom Label |
 | Record data: Product / Product Category Name and Description, plus enabled custom fields | **Data Translation**: the record's Translations tab (an admin adds it in Lightning App Builder) | Yes, on record pages; says how to enable it if off |
-| Record data in an org-built translation object (e.g. `Demo_Translations__c`) | That object's related list on the record | Yes: any custom child object with "Translat" in its name |
+| Record data in an org-built translation object | That object's related list on the record | Yes: any custom child object with "Translat" in its name |
 | Standard button (Edit, Delete) | Owned by Salesforce (Salesforce translates it) | Flagged |
 | Text typed into a custom LWC/Aura component or into Lightning App Builder | Admin work required to translate: move the text into a Custom Label | Flagged |
-| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → Admin work required to translate | Read from the FlexiPage for the section (also on a New or Edit form), list header or tab you point at (any component identifier, also custom ones like `my_tab_greeting`). A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field. In the standard Related Lists component, the list's title link (`…/related/<relationship>/view`) names the relationship |
+| Lightning App Builder text: field section label, Dynamic Related List label, record page tab title | `{!$Label.X}` → that **Custom Label**; `@@@SFDC…SFDC@@@` / `Standard.Tab.*` / standard related lists → Salesforce text; plain text → Admin work required to translate | Read from the FlexiPage for the section (also on a New or Edit form), list header or tab you point at (any component identifier, also custom ones like `sftl_tab_greeting`). A custom lookup list (`…__r`) → **Translation Workbench** → Custom Field → Related List Label of the child lookup field. In the standard Related Lists component, the list's title link (`…/related/<relationship>/view`) names the relationship |
 | Rich Text component text (Lightning App Builder) | Admin work required to translate: replace it with a component that shows a Custom Label, or one Rich Text component per language with a Component Visibility filter on the user's Language | From the page area (`data-aura-class="flexipageRichText"`) |
 | Report chart title (Report Chart component) | Admin work required to translate: set its Label to a Custom Label | From the page area |
 | User calendar names in My Calendars / Other Calendars | Admin work required to translate: a user named it; only its owner can change it | From the page area. My Events is told apart by its fixed calendar Id (`input#calendarToggle-03A0000000000000001`), in any language |
@@ -200,7 +200,7 @@ This is the core rule set, coded in [src/locator.js](src/locator.js).
 | Pipeline Inspection (Opportunities → Pipeline Inspection) | Metric tiles (Open Pipeline, Moved In…), filters, the Metrics menu, the Inspection / Chart tabs, buttons and the empty-list message: Owned by Salesforce. The heading above the view name is the object name: **Rename Tabs and Labels**. The view name is a list view name: Admin work required to translate (clone the view per language). List column headers are field labels; the columns Pipeline Inspection adds (Alerts, Contacts, Activity, Important) and the Activity chart ("No recent activity") are Owned by Salesforce; other cells are record data. A metric name an admin set in Pipeline Settings → Metrics Settings: **Translation Workbench** → Pipeline Inspection Metric Configuration, row = the metric name, column "Pipeline Inspection Metric Custom Label" (confirmed) | From the page area (`data-aura-class="runtime_pipeline_inspectorPipelineInspectorHome"`; the view name in `lst-list-view-picker`). A metric tile's text is matched against the org's `PipelineInspMetricConfig` rows (REST query, `MasterLabel`); an org without Pipeline Inspection has none. Viewing a language other than the org default, a tile shows a renamed metric's translation, which `MasterLabel` never holds: the tile card drops to context and the renamed metrics are listed as context. Same-text custom labels and the New quick action drop to similar text |
 | Utility bar item (its button, or the open panel's title) | A label typed in App Manager → the app → Edit → Utility Items: Admin work required to translate (Translation Workbench has no component for it), confirmed with the app and item named. An item with no label of its own (To Do List, History, Notes): Owned by Salesforce. To Do List is found by its component (`runtime_sales_todo_list…`; in the open panel, the component inside `oneUtilityBarPanel`), in any language. An item not found in the org's utility bars: the App Manager context card | From the page area (`oneUtilityBarItem`, the item's component id), then the utility bar FlexiPages: the current app first (`UserAppInfo` → `AppDefinition.UtilityBar`), other apps' bars only when it has no match. The item label is the `label` decorator property |
 | Upload Files / Or drop files in the Files related list | Owned by Salesforce | From the page area (`forceContentFileDroppableZone`) |
-| Picklist value in a dialog (e.g. Team Role in Add Opportunity Team Members) | **Translation Workbench** → Picklist Value → the dialog's object (Opportunity Team Member) | The dialog title names the object; the picklist's options open in a popup outside the dialog |
+| Picklist value in a dialog | **Translation Workbench** → Picklist Value → the dialog's object | The dialog title names the object; the picklist's options open in a popup outside the dialog |
 | Reminder and notification cards in the global header | The card frame is Salesforce text; event subjects and custom notification text in them come from your org | "From page area" |
 | Heading of the error popup after a failed save ("We hit a snag.") | Owned by Salesforce | From the page area (`.slds-popover_error` with `.slds-popover__header`, Aura `forcePageError`). The fields and messages listed below it are looked up as usual |
 
@@ -221,7 +221,7 @@ compared in three places with no marker: the step buttons, "Closed" step and "Gu
 another language it matches the step as similar text), and Salesforce's required-field messages under a field
 (in another language the field's validation rules are listed as context).
 
-## "Go to translation" (verified in real orgs, Nov 2026)
+## "Go to translation" (verified in test orgs, Nov 2026)
 
 Salesforce has no documented deep links for these pages. These were found by inspecting the pages.
 
@@ -325,7 +325,7 @@ Get the code: on GitHub click **Code → Download ZIP**, or run
 `git clone https://github.com/fulton916/SF_Translation_Browser_Extension.git`.
 Bugs and test findings: open a [new issue](https://github.com/fulton916/SF_Translation_Browser_Extension/issues/new/choose)
 (**Bug report** or **Test finding**) and paste the test log. Labels: `bug`, `test-finding`, `enhancement`.
-The repository is private: test logs contain org details (field names, page addresses).
+The repository is public, and test logs contain org details (field names, page addresses): remove those before you paste.
 
 Needs Node.js 20 or newer. No dependencies to install.
 
@@ -335,12 +335,12 @@ npm test
 
 Tests run on every push and pull request (GitHub Actions). They cover:
 
-- `test/locator.test.js`: matching and classification in `src/locator.js`, using fake org data and cases found in real orgs.
+- `test/locator.test.js`: matching and classification in `src/locator.js`, using fake org data and cases found while testing.
 - `test/sfApi.test.js`: the per-lookup custom label translation query.
 - `test/logStore.test.js`: the test log (redaction, size cap, export).
-- `test/pipeline.test.js`, `test/utilitySweep.test.js`: Pipeline Inspection, dialog picklists, the utility bar and the Files upload area (element paths read from a test sandbox).
-- `test/sweep.test.js`, `test/sweepPage.test.js`, `test/sandbox.test.js`, `test/live2.test.js`, `test/devorg.test.js`: one test per
-  finding from the live test and Developer Edition runs (made-up names and Ids), including the Alt+Shift+T pointer logic in
+- `test/pipeline.test.js`: Pipeline Inspection.
+- The other files in `test/`: mostly one test per finding from test runs in a large test sandbox and a Developer Edition org,
+  including dialog picklists, the utility bar, the Files upload area, the Alt+Shift+T pointer logic in
   `src/pointerTarget.js` and the auto-fill retry in `src/waitUntil.js`.
 - `test/devVersion.test.js`: the code fingerprint used by the auto-reload below.
 

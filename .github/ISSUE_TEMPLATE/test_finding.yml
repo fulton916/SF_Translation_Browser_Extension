@@ -6,14 +6,14 @@ body:
     id: text
     attributes:
       label: Text you looked up
-      placeholder: Demo Team
+      placeholder: Paint Color
     validations:
       required: true
   - type: input
     id: page
     attributes:
       label: Where you clicked
-      placeholder: Opportunity record page, field label
+      placeholder: Widget record page, field label
   - type: textarea
     id: result
     attributes:
@@ -29,7 +29,7 @@ body:
     id: org
     attributes:
       label: Org
-      placeholder: a test sandbox sandbox
+      placeholder: Developer Edition org
   - type: textarea
     id: log
     attributes:
