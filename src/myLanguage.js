@@ -9,8 +9,9 @@ const USER_PATH = `/services/data/${API_VERSION}/sobjects/User`;
 const USER_ID = /^005[a-zA-Z0-9]{12}(?:[a-zA-Z0-9]{3})?$/;
 
 export const MESSAGES = {
-  noPermission: 'Your Salesforce permissions do not allow changing your language. Nothing was changed. Your Salesforce admin can change it for you.',
+  noPermission: 'Your Salesforce permissions do not allow changing your language. Your Salesforce admin can change it for you.',
   notOffered: 'This language is not available in this org. Nothing was changed.',
+  otherUser: 'You are signed in as another user now. Reload the page and try again. Nothing was changed.',
   noUser: 'Salesforce did not return your user. Reload the page and try again.',
   nothingToSwitchBack: 'You have not switched your language from the panel, so there is nothing to switch back.',
 };
@@ -18,7 +19,7 @@ export const MESSAGES = {
 /** A refused save in plain words. Salesforce's own message is kept for rules an admin made (validation rule, flow, trigger). */
 export function plainSaveError(e) {
   const code = e?.code || '';
-  if (e?.status === 403 || /^INSUFFICIENT_ACCESS/.test(code) || code === 'INVALID_FIELD_FOR_INSERT_UPDATE') return MESSAGES.noPermission;
+  if (/^INSUFFICIENT_ACCESS/.test(code) || code === 'INVALID_FIELD_FOR_INSERT_UPDATE') return MESSAGES.noPermission;
   if (code === 'INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST') return MESSAGES.notOffered;
   return `Salesforce did not save your language: ${e?.message || e}`;
 }
@@ -64,11 +65,13 @@ export async function loadMyLanguage(session, store) {
 
 /**
  * Saves the signed-in user's own language. `language`: a language code, or null for Switch back.
+ * `username`: the user the panel names; a page left open from another sign-in (Login As) is refused.
  * The language before the first switch is remembered until the user is back on it.
  * Returns { language, changed }.
  */
-export async function switchMyLanguage(session, store, language) {
+export async function switchMyLanguage(session, store, language, username) {
   const user = await readOwnUser(session);
+  if (username !== user.username) throw new Error(MESSAGES.otherUser);
   const key = memoryKey(session, user.id);
   const before = (await store.get(key))[key] || null;
   const to = language ?? before;
@@ -84,8 +87,8 @@ export async function switchMyLanguage(session, store, language) {
     try {
       await sfWrite(session, 'PATCH', `${USER_PATH}/${user.id}`, { LanguageLocaleKey: to });
     } catch (e) {
-      // A lost reply (no status) keeps the memory: the save can have gone through.
-      if (!e?.status) throw e;
+      // A lost reply (no status, or a server error) keeps the memory: the save can have gone through.
+      if (!e?.status || e.status >= 500) throw e;
       if (first === user.current) await store.remove(key);
       if (e.status === 401) throw e;
       throw new SfError(e.status, plainSaveError(e), e.code || null);

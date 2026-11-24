@@ -219,17 +219,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // Panel language switch (issue #46): op 'load' reads the signed-in user's language; 'switch' saves `language`;
-// 'back' saves the language before the first switch. The user is the session's own, never one from the message.
+// 'back' saves the language before the first switch. The user is the session's own; `username` (the one
+// the panel names) only stops the save when someone else is signed in by now.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type !== 'sftl:myLanguage' || !sender.tab) return;
   const page = pathOf(sender.tab.url);
-  const { op, language } = msg;
+  const { op, language, username } = msg;
   getSession(sender.tab.url)
     .then((session) => {
       const store = chrome.storage.local;
       if (op === 'load') return loadMyLanguage(session, store);
-      if (op === 'switch' && language) return switchMyLanguage(session, store, language);
-      if (op === 'back') return switchMyLanguage(session, store, null);
+      if (op === 'switch' && language) return switchMyLanguage(session, store, language, username);
+      if (op === 'back') return switchMyLanguage(session, store, null, username);
       throw new Error(`Unknown language change: ${op}`);
     })
     .then((res) => {

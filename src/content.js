@@ -610,11 +610,11 @@
       update(true);
       status.className = 'muted';
       status.textContent = 'Saving…';
-      ask({ type: 'sftl:myLanguage', ...change }, 30000)
+      ask({ type: 'sftl:myLanguage', username: me.username, ...change }, 30000)
         .then((res) => {
           if (res?.error) throw new Error(res.error);
           status.className = 'ok';
-          status.textContent = `Saved: ${langName(res.language)}. Reloading the page…`;
+          status.textContent = `Saved: ${langName(res.language)}. Reload this page to see it.`;
           location.reload();
         })
         .catch((e) => {
