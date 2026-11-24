@@ -43,6 +43,31 @@ export const SETUP = {
   flows: '/lightning/setup/Flows/home',
 };
 
+// Button text for a card's page link: names the page it opens.
+const PAGE_NAMES = [
+  [/^\/lightning\/setup\/ExternalStrings\/page/, 'Open custom label'],
+  [/^\/lightning\/setup\/ExternalStrings\/home/, 'Open Custom Labels'],
+  [/^\/lightning\/setup\/RenameTab\//, 'Open Rename Tabs and Labels'],
+  [/^\/lightning\/setup\/LabelWorkbenchTranslate\//, 'Open Translation Workbench'],
+  [/^\/lightning\/setup\/LabelWorkbenchOverride\//, 'Open Workbench Override'],
+  [/^\/lightning\/setup\/CompanyProfileInfo\//, 'Open Company Information'],
+  [/^\/lightning\/setup\/ObjectManager\//, 'Open Object Manager'],
+  [/^\/lightning\/setup\/NavigationMenus\//, 'Open App Manager'],
+  [/^\/lightning\/setup\/CustomTabs\//, 'Open Tabs'],
+  [/^\/lightning\/setup\/Flows\//, 'Open Flows'],
+  [/^\/lightning\/r\/[^/]+\/[^/]+\/related\//, 'Open related list'],
+  [/^\/lightning\/r\//, 'Open record'],
+];
+
+/**
+ * Text of a card's page link, or null for no link. "Go to translation" already opens the same screen, so a card
+ * with one has no second link, except a custom label: its own page shows the master text and every translation.
+ */
+export function pageLinkText(r) {
+  if (!r.url || (r.goto && r.goto.page !== 'label')) return null;
+  return PAGE_NAMES.find(([re]) => re.test(r.url))?.[1] || null;
+}
+
 // ---------- "Go to translation" URLs ----------
 
 /** Page to open plus what content.js should auto-fill there. Pure, so it is unit tested. */
@@ -2782,6 +2807,7 @@ function finalize(results, areas, orgWide = {}) {
     r.source ||= SOURCE.WORKBENCH;
     if (r.packageNote) r.notes = [r.packageNote, ...(r.notes || [])];
     delete r.packageNote;
+    r.linkText = pageLinkText(r);
   });
   unique.sort(
     (a, b) =>
