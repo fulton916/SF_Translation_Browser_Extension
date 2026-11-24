@@ -1057,7 +1057,7 @@
       return p.rowMatch === 'richText' ? p.rowLabel || t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : t;
     };
     if (row) {
-      mark(row, false);
+      mark(row, false, true);
       // The edit box is not opened for you: one opened by a script closed on the next click, and the
       // text typed into it was lost with no warning (dev org B-07, B-09). A double-click opens a stable one.
       toast(`Found "${shown(row)}" (marked). Double-click its translation cell, type the translation, then Save.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length > 0);
@@ -1366,9 +1366,10 @@
     });
   }
 
-  function mark(node, focus) {
+  // inside: Workbench rows fill a table that hides its overflow, so a box drawn outside the row loses an edge.
+  function mark(node, focus, inside = false) {
     node.style.outline = '3px solid #ff9a3c';
-    node.style.outlineOffset = '1px';
+    node.style.outlineOffset = inside ? '-3px' : '1px';
     node.scrollIntoView({ block: 'center' });
     if (focus) node.focus?.();
   }
