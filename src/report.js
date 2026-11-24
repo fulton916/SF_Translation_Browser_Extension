@@ -284,6 +284,34 @@ export function masterItems(items, orgDefault) {
   return [...seen.values()].sort(byTypeObjectName);
 }
 
+// ---------- column sort ----------
+
+/** The report table's sortable columns: key → the text it sorts by. Language sorts by its name. */
+export const SORT_COLUMNS = {
+  language: (i, names) => names[i.language] || i.language,
+  type: (i) => i.type,
+  object: (i) => i.objectLabel || '',
+  name: (i) => i.name,
+  master: (i) => i.master,
+  translation: (i) => (i.translated ? i.translation : null),
+};
+
+const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
+/**
+ * Items sorted A to Z (`dir` 'asc') or Z to A ('desc') by one column; ties keep the report order.
+ * Empty cells (no object, a missing translation) go last both ways. No known `key`: the items as given.
+ */
+export function sortItems(items, key, dir = 'asc', languageNames = {}) {
+  const get = SORT_COLUMNS[key];
+  if (!get) return items;
+  const sign = dir === 'desc' ? -1 : 1;
+  return items
+    .map((item, n) => ({ item, n, v: String(get(item, languageNames) ?? '') }))
+    .sort((a, b) => (!a.v || !b.v ? !a.v - !b.v : sign * collator.compare(a.v, b.v)) || a.n - b.n)
+    .map((x) => x.item);
+}
+
 // ---------- CSV export ----------
 
 export const CSV_COLUMNS = ['Language code', 'Language', 'Type', 'Object', 'API name', 'Master text', 'Translation', 'Translation page'];

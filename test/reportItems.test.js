@@ -274,3 +274,17 @@ test('CSV: header, one row per item, quoting, formula guard, BOM and CRLF', asyn
   assert.equal(lines[2], 'de,German,Custom label,,Demo_Bye,Tschüss,,');
   assert.equal(lines[3], '');
 });
+
+test('column sort: A to Z and Z to A, ignoring case; empty cells last both ways; ties keep the report order', async () => {
+  const { sortItems } = await import('../src/report.js');
+  const it = (n, language, master, translation, objectLabel = null) => ({ n, language, type: ITEM_TYPE.FIELD_LABEL, objectLabel, name: `N${n}`, master, translated: translation != null, translation });
+  const items = [it(1, 'fr', 'banana', null, 'Zeta'), it(2, 'de', 'Apple', 'Apfel'), it(3, 'fr', 'cherry', 'Cerise', 'alpha'), it(4, 'de', 'apple', null), it(5, 'fr', 'Item 10', 'x'), it(6, 'fr', 'Item 9', 'y')];
+  const order = (key, dir) => sortItems(items, key, dir, { fr: 'French', de: 'German' }).map((i) => i.n);
+  assert.deepEqual(order('master', 'asc'), [2, 4, 1, 3, 6, 5], 'case-insensitive, numbers in number order, ties keep order');
+  assert.deepEqual(order('master', 'desc'), [5, 6, 3, 1, 2, 4]);
+  assert.deepEqual(order('translation', 'asc'), [2, 3, 5, 6, 1, 4], 'missing translations last');
+  assert.deepEqual(order('translation', 'desc'), [6, 5, 3, 2, 1, 4], 'missing translations last Z to A too');
+  assert.deepEqual(order('object', 'asc'), [3, 1, 2, 4, 5, 6]);
+  assert.deepEqual(order('language', 'asc'), [1, 3, 5, 6, 2, 4], 'by language name: French before German');
+  assert.deepEqual(order(null), [1, 2, 3, 4, 5, 6], 'no column: the report order');
+});

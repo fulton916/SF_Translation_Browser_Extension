@@ -5,7 +5,7 @@
 import { getSession } from './sfApi.js';
 import { buildGotoUrl, languageName } from './locator.js';
 import { loadMissingTranslations } from './reportApi.js';
-import { ITEM_TYPES, masterItems, toCsv } from './report.js';
+import { ITEM_TYPES, masterItems, sortItems, toCsv } from './report.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE_SIZE = 500;
@@ -23,6 +23,7 @@ const origin = (() => {
 let report = null;
 let masters = []; // the org default language's rows (masterItems)
 let shownCount = PAGE_SIZE;
+let sort = { key: null, dir: 'asc' }; // column header clicks: A to Z, Z to A, then the report order
 
 const log = (level, message, details) => chrome.runtime.sendMessage({ type: 'sftl:log', level, where: 'report', message, details }).catch(() => {});
 
@@ -109,13 +110,27 @@ function filtered() {
   const type = $('f-type').value;
   const show = masterChosen() ? 'all' : $('f-show').value;
   const q = $('f-text').value.trim().toLowerCase();
-  return (masterChosen() ? masters : report.items).filter(
+  const rows = (masterChosen() ? masters : report.items).filter(
     (i) =>
       (!lang || i.language === lang) &&
       (show === 'all' || (show === 'missing') === !i.translated) &&
       (!type || i.type === type) &&
       (!q || [i.objectLabel, i.object, i.name, i.master, i.translation].some((v) => String(v || '').toLowerCase().includes(q)))
   );
+  return sortItems(rows, sort.key, sort.dir, languageNames());
+}
+
+const languageNames = () => Object.fromEntries([[report.orgDefault, languageName(report.orgDefault) || report.orgDefault], ...report.languages.map((l) => [l.code, l.name])]);
+
+/** Header buttons: show the sorted column and its direction. */
+function showSort() {
+  for (const b of document.querySelectorAll('th button.sort')) {
+    const on = b.dataset.key === sort.key;
+    b.parentElement.setAttribute('aria-sort', on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+    b.dataset.arrow = on ? (sort.dir === 'asc' ? '▲' : '▼') : '';
+    const col = b.textContent;
+    b.title = on && sort.dir === 'asc' ? `${col}: sorted A to Z. Click for Z to A` : on ? `${col}: sorted Z to A. Click for the report order` : `Sort by ${col}, A to Z`;
+  }
 }
 
 function renderRows() {
@@ -183,12 +198,12 @@ async function goTo(item, button) {
 /** The rows that match the filter, as a CSV file (saved by the browser; nothing is sent anywhere). */
 function exportCsv() {
   const items = filtered();
-  const languageNames = Object.fromEntries([[report.orgDefault, languageName(report.orgDefault) || report.orgDefault], ...report.languages.map((l) => [l.code, l.name])]);
+  const names = languageNames();
   const pageOf = (i) => {
     const built = i.goto && buildGotoUrl(i.goto, i.language, report.orgDefault);
     return built ? origin + built.path : '';
   };
-  const url = URL.createObjectURL(new Blob([toCsv(items, { languageNames, pageOf })], { type: 'text/csv;charset=utf-8' }));
+  const url = URL.createObjectURL(new Blob([toCsv(items, { languageNames: names, pageOf })], { type: 'text/csv;charset=utf-8' }));
   const a = el('a');
   a.href = url;
   const prefix = !masterChosen() && $('f-show').value === 'missing' ? 'missing-translations' : 'translations';
@@ -203,6 +218,15 @@ function exportCsv() {
 $('run').addEventListener('click', run);
 $('csv').addEventListener('click', exportCsv);
 for (const id of ['f-lang', 'f-show', 'f-type']) $(id).addEventListener('change', () => ((shownCount = PAGE_SIZE), renderRows()));
+for (const b of document.querySelectorAll('th button.sort')) {
+  b.addEventListener('click', () => {
+    const key = b.dataset.key;
+    sort = sort.key !== key ? { key, dir: 'asc' } : sort.dir === 'asc' ? { key, dir: 'desc' } : { key: null, dir: 'asc' };
+    showSort();
+    if (report) ((shownCount = PAGE_SIZE), renderRows());
+  });
+}
+showSort();
 $('f-text').addEventListener('input', () => ((shownCount = PAGE_SIZE), renderRows()));
 
 if (origin) run();
