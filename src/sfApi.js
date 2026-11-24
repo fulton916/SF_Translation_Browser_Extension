@@ -230,6 +230,11 @@ export function loadUserLanguage(session, { refresh = false } = {}) {
   return promise;
 }
 
+/** The language just saved for this user (myLanguage.js) replaces the cached one: the next lookup uses it. */
+export function setUserLanguage(session, language) {
+  languageCache.set(session.host, { at: Date.now(), promise: Promise.resolve(language) });
+}
+
 /** Escapes text for a SOQL string literal used with LIKE. */
 export function soqlLike(text) {
   return String(text).replace(/[\\'%_]/g, (c) => '\\' + c);
