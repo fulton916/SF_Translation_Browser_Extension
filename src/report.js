@@ -25,9 +25,14 @@ export function activeLanguages(rows, orgDefault) {
 export const ITEM_TYPE = {
   CUSTOM_LABEL: 'Custom label',
   FIELD_LABEL: 'Field label',
+  HELP_TEXT: 'Help text',
   PICKLIST_VALUE: 'Picklist value',
   RELATED_LIST_LABEL: 'Related list label',
   RECORD_TYPE: 'Record type',
+  VALIDATION_MESSAGE: 'Validation message',
+  LAYOUT_SECTION: 'Layout section',
+  QUICK_ACTION: 'Quick action',
+  BUTTON_LINK: 'Button or link',
   TAB: 'Tab',
 };
 export const ITEM_TYPES = Object.values(ITEM_TYPE);
@@ -88,11 +93,23 @@ export function parseObjectTranslation(body) {
       return {
         name: text(own, 'name'),
         label: slot(own, 'label'),
+        help: slot(own, 'help'),
         relationshipLabel: slot(own, 'relationshipLabel'),
         picklistValues: blocks(b, 'picklistValues').map((p) => ({ masterLabel: text(p, 'masterLabel'), translation: slot(p, 'translation') })),
       };
     }),
     recordTypes: blocks(body, 'recordTypes').map((b) => ({ name: text(b, 'name'), label: slot(b, 'label') })),
+    validationRules: blocks(body, 'validationRules').map((b) => ({ name: text(b, 'name'), errorMessage: slot(b, 'errorMessage') })),
+    // Only section names an admin typed: Salesforce's own ("Account Information") are not in the file.
+    sections: blocks(body, 'layouts').flatMap((b) => {
+      const layout = text(dropBlocks(b, ['sections']), 'layout');
+      return blocks(b, 'sections').map((s) => ({ layout, section: text(s, 'section'), label: slot(s, 'label') }));
+    }),
+    // A translated action names its aspect; "Master" is the label. The others are left out: untranslated, they are not in the file.
+    quickActions: blocks(body, 'quickActions')
+      .filter((b) => /^(master)?$/i.test(text(b, 'aspect') || ''))
+      .map((b) => ({ name: text(b, 'name'), label: slot(b, 'label') })),
+    webLinks: blocks(body, 'webLinks').map((b) => ({ name: text(b, 'name'), label: slot(b, 'label') })),
   };
 }
 
@@ -144,11 +161,15 @@ export function labelItems(labels, localizations, language) {
 export const isOwnItem = (apiName) => !namespaceOf(apiName);
 
 /**
- * Field labels, related list labels, picklist values and record types of one object, and its tab (custom
- * objects with a tab). `translation`/`master`: parseObjectTranslation of "<object>-<language>" and of
+ * Field labels and help texts, related list labels, picklist values, record types, validation messages, layout
+ * sections, quick actions, buttons and links of one object, and its tab (custom objects with a tab). `translation`/`master`: parseObjectTranslation of "<object>-<language>" and of
  * "<object>-<org default>" (the master texts, as comments). `objectLabel`: the object's label for display.
+ * `actions`: Map of "Object.Name" → label, the quick actions with a label of their own; others show a Salesforce
+ * standard label (Case.LogACall), which Translation Workbench does not list. `buttonLabels`: Map of "Object.Name" →
+ * label (the file's comment holds the button's API name, not its label). `activeRules`: Set of "Object.Name" (null: not
+ * known, every rule counts); the message of an inactive rule never shows. `ownLayouts`: Set of names of the org's own layouts.
  */
-export function objectItems({ object, objectLabel = null, language, translation, master, hasTab = false }) {
+export function objectItems({ object, objectLabel = null, language, translation, master, hasTab = false, actions = new Map(), buttonLabels = new Map(), activeRules = null, ownLayouts = new Set() }) {
   if (!translation) return [];
   const label = objectLabel || object;
   const masterField = (name) => master?.fields?.find((f) => f.name === name) || null;
@@ -166,6 +187,13 @@ export function objectItems({ object, objectLabel = null, language, translation,
       out.push(
         item(ITEM_TYPE.FIELD_LABEL, `${object}.${f.name}`, fieldMaster, f.label,
           wb({ component: 'Custom Field', object, objectLabel: label, aspect: 'Field Label', row: labelAndApi(fieldMaster, f.name), rows: [fieldMaster, f.name] }))
+      );
+    }
+    // Custom fields only: an untranslated help text of a standard field is not in the file.
+    if (f.help && /__c$/i.test(f.name)) {
+      out.push(
+        item(ITEM_TYPE.HELP_TEXT, `${object}.${f.name}`, m?.help?.master || f.help.master, f.help,
+          wb({ component: 'Custom Field', object, objectLabel: label, aspect: 'Help Text', row: labelAndApi(fieldMaster, f.name), rows: [fieldMaster, f.name] }))
       );
     }
     if (f.relationshipLabel) {
@@ -189,6 +217,42 @@ export function objectItems({ object, objectLabel = null, language, translation,
     out.push(
       item(ITEM_TYPE.RECORD_TYPE, `${object}.${rt.name}`, rtMaster, rt.label,
         wb({ component: 'Record Type', object, objectLabel: label, aspect: 'Field Label', row: labelAndApi(rtMaster, rt.name), rows: [rtMaster, rt.name] }))
+    );
+  }
+  for (const vr of translation.validationRules || []) {
+    if (!vr.name || !vr.errorMessage || !isOwnItem(vr.name) || (activeRules && !activeRules.has(`${object}.${vr.name}`))) continue;
+    const vrMaster = master?.validationRules?.find((x) => x.name === vr.name)?.errorMessage?.master || vr.errorMessage.master;
+    // Row by API name only: several rules of an object can show the same message.
+    out.push(
+      item(ITEM_TYPE.VALIDATION_MESSAGE, `${object}.${vr.name}`, vrMaster, vr.errorMessage,
+        wb({ component: 'Validation Error Message', object, objectLabel: label, row: vr.name }))
+    );
+  }
+  for (const s of translation.sections || []) {
+    // A layout name is free text ("My_Object__c Layout"): what looks like a package prefix may not be one.
+    if (!s.layout || !s.section || !s.label || !(isOwnItem(s.layout) || ownLayouts.has(s.layout))) continue;
+    // Each layout has its own copy of a section name; the layout is the section's node in the Workbench tree.
+    out.push(
+      item(ITEM_TYPE.LAYOUT_SECTION, `${object}.${s.layout}: ${s.section}`, s.section, s.label,
+        wb({ component: 'Layout Section', object, objectLabel: label, row: s.section, parent: s.layout }))
+    );
+  }
+  for (const qa of translation.quickActions || []) {
+    const key = `${object}.${qa.name}`;
+    if (!qa.name || !qa.label || !actions.has(key)) continue;
+    const qaMaster = master?.quickActions?.find((x) => x.name === qa.name)?.label?.master || qa.label.master || actions.get(key) || qa.name;
+    out.push(
+      item(ITEM_TYPE.QUICK_ACTION, key, qaMaster, qa.label,
+        wb({ component: 'Action', object, objectLabel: label, aspect: 'Field Label', row: labelAndApi(qaMaster, qa.name), rows: [qaMaster, qa.name] }))
+    );
+  }
+  for (const b of translation.webLinks || []) {
+    const key = `${object}.${b.name}`;
+    if (!b.name || !b.label || !isOwnItem(b.name)) continue;
+    // Row by API name only: two buttons of an object can have the same label.
+    out.push(
+      item(ITEM_TYPE.BUTTON_LINK, key, buttonLabels.get(key) || b.name, b.label,
+        wb({ component: 'Button and Link Label', object, objectLabel: label, row: b.name }))
     );
   }
   // A custom object's tab shows its plural name: translated when any of its name forms is (Rename Tabs and Labels).

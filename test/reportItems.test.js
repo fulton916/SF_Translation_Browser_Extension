@@ -16,7 +16,7 @@ import {
   masterItems,
   ITEM_TYPE,
 } from '../src/report.js';
-import { reportObjects, loadMissingTranslations } from '../src/reportApi.js';
+import { reportObjects, editedLayoutObjects, loadMissingTranslations } from '../src/reportApi.js';
 import { buildGotoUrl } from '../src/locator.js';
 
 const envelope = (records) =>
@@ -73,6 +73,7 @@ test('object items: field labels, related list labels, picklist values, record t
       [ITEM_TYPE.FIELD_LABEL, 'Demo_Gadget__c.Demo_Owner__c', 'Gadget Owner', false],
       [ITEM_TYPE.RELATED_LIST_LABEL, 'Demo_Gadget__c.Demo_Owner__c', 'Owned Gadgets', true],
       [ITEM_TYPE.FIELD_LABEL, 'Demo_Gadget__c.Demo_Color__c', 'Coat Color', true],
+      [ITEM_TYPE.HELP_TEXT, 'Demo_Gadget__c.Demo_Color__c', 'Pick one.', false],
       [ITEM_TYPE.FIELD_LABEL, 'Demo_Gadget__c.Demo_Stage__c', 'Stage', true],
       [ITEM_TYPE.PICKLIST_VALUE, 'Demo_Gadget__c.Demo_Stage__c: Draft', 'Draft', true],
       [ITEM_TYPE.PICKLIST_VALUE, 'Demo_Gadget__c.Demo_Stage__c: Shipped & Done', 'Shipped & Done', false],
@@ -99,6 +100,93 @@ test('object items: field labels, related list labels, picklist values, record t
   assert.equal(buildGotoUrl(tab.goto, 'fr').autofill.tabLabel, 'Gadgets');
   const rel = items.find((i) => i.type === ITEM_TYPE.RELATED_LIST_LABEL);
   assert.equal(rel.goto.aspect, 'relationshiplabel');
+});
+
+// Shaped as the dev org returns it: a translated action names its aspect, a button's comment is its API name.
+const moreTypes = (lang) =>
+  `<fullName>Demo_Gadget__c-${lang}</fullName>` +
+  (lang === 'fr'
+    ? '<fields><help>Choisir.</help><label>Couleur</label><name>Demo_Color__c</name></fields><fields><help>Aide</help><name>Industry</name></fields>'
+    : '<fields><help><!-- Pick one. --></help><label><!-- Coat Color --></label><name>Demo_Color__c</name></fields>') +
+  '<layouts><layout>Gadget (Sales) Layout</layout><sections><label>' + (lang === 'fr' ? 'Bases' : '<!-- Basics -->') + '</label><section>Basics</section></sections>' +
+  '<sections><label><!-- A &amp; B --></label><section>A &amp; B</section></sections></layouts>' +
+  '<layouts><layout>Gadget Layout</layout><sections><label><!-- Basics --></label><section>Basics</section></sections></layouts>' +
+  '<layouts><layout>Demo_Gadget__c Layout</layout><sections><label><!-- Own --></label><section>Own</section></sections></layouts>' +
+  '<layouts><layout>acme__Pkg Layout</layout><sections><label><!-- Pkg --></label><section>Pkg</section></sections></layouts>' +
+  (lang === 'fr'
+    ? '<quickActions><aspect>Master</aspect><label>Vérifier</label><name>Demo_Check</name></quickActions><quickActions><aspect>InfoMessage</aspect><label>Fait</label><name>Demo_Check</name></quickActions>'
+    : '<quickActions><label><!-- Check It --></label><name>Demo_Check</name></quickActions>') +
+  '<quickActions><label><!-- LogACall --></label><name>LogACall</name></quickActions>' +
+  '<validationRules><errorMessage>' + (lang === 'fr' ? 'Il faut une couleur.' : '<!-- Needs a color. -->') + '</errorMessage><name>Demo_Need_Color</name></validationRules>' +
+  '<validationRules><errorMessage><!-- Pkg --></errorMessage><name>acme__Rule</name></validationRules><validationRules><errorMessage><!-- Off --></errorMessage><name>Demo_Off</name></validationRules>' +
+  '<webLinks><label><!-- Demo_Docs --></label><name>Demo_Docs</name></webLinks>';
+
+test('object items: help texts, validation messages, layout sections, quick actions, buttons and links', () => {
+  const items = objectItems({
+    object: 'Demo_Gadget__c',
+    objectLabel: 'Gadget',
+    language: 'fr',
+    translation: parseObjectTranslation(moreTypes('fr')),
+    master: parseObjectTranslation(moreTypes('en_US')),
+    ownLayouts: new Set(['Demo_Gadget__c Layout']),
+    activeRules: new Set(['Demo_Gadget__c.Demo_Need_Color']),
+    actions: new Map([['Demo_Gadget__c.Demo_Check', 'Check It']]),
+    buttonLabels: new Map([['Demo_Gadget__c.Demo_Docs', 'Open Docs']]),
+  }).filter((i) => i.type !== ITEM_TYPE.FIELD_LABEL);
+  assert.deepEqual(
+    items.map((i) => [i.type, i.name, i.master, i.translation]),
+    [
+      [ITEM_TYPE.HELP_TEXT, 'Demo_Gadget__c.Demo_Color__c', 'Pick one.', 'Choisir.'],
+      [ITEM_TYPE.VALIDATION_MESSAGE, 'Demo_Gadget__c.Demo_Need_Color', 'Needs a color.', 'Il faut une couleur.'],
+      [ITEM_TYPE.LAYOUT_SECTION, 'Demo_Gadget__c.Gadget (Sales) Layout: Basics', 'Basics', 'Bases'],
+      [ITEM_TYPE.LAYOUT_SECTION, 'Demo_Gadget__c.Gadget (Sales) Layout: A & B', 'A & B', null],
+      [ITEM_TYPE.LAYOUT_SECTION, 'Demo_Gadget__c.Gadget Layout: Basics', 'Basics', null],
+      [ITEM_TYPE.LAYOUT_SECTION, 'Demo_Gadget__c.Demo_Gadget__c Layout: Own', 'Own', null],
+      [ITEM_TYPE.QUICK_ACTION, 'Demo_Gadget__c.Demo_Check', 'Check It', 'Vérifier'],
+      [ITEM_TYPE.BUTTON_LINK, 'Demo_Gadget__c.Demo_Docs', 'Open Docs', null],
+    ],
+    'standard labels, package items and standard fields are left out; a section is one item per layout'
+  );
+  const go = (type) => buildGotoUrl(items.find((i) => i.type === type).goto, 'fr').autofill;
+  assert.deepEqual([go(ITEM_TYPE.HELP_TEXT).component, go(ITEM_TYPE.HELP_TEXT).aspect, go(ITEM_TYPE.HELP_TEXT).rows], ['CustomFieldDefinition', 'help', ['Coat Color', 'Demo_Color__c']]);
+  assert.deepEqual([go(ITEM_TYPE.VALIDATION_MESSAGE).component, go(ITEM_TYPE.VALIDATION_MESSAGE).rows], ['ValidationFormula', ['Demo_Need_Color']]);
+  assert.deepEqual([go(ITEM_TYPE.LAYOUT_SECTION).component, go(ITEM_TYPE.LAYOUT_SECTION).parent, go(ITEM_TYPE.LAYOUT_SECTION).rows], ['LayoutSection', 'Gadget (Sales) Layout', ['Basics']]);
+  // The first row text picks the action in the Workbench Quick Action list.
+  assert.deepEqual([go(ITEM_TYPE.QUICK_ACTION).component, go(ITEM_TYPE.QUICK_ACTION).rows], ['QuickActionDefinition', ['Check It', 'Demo_Check']]);
+  assert.deepEqual([go(ITEM_TYPE.BUTTON_LINK).component, go(ITEM_TYPE.BUTTON_LINK).rows], ['WebLink', ['Demo_Docs']]);
+});
+
+test('a standard object with only one new type is read; a layout-only one without a typed section is not read per language', async () => {
+  const read = [];
+  globalThis.fetch = async (u, init = {}) => {
+    const url = decodeURIComponent(String(u));
+    if (init.method === 'POST') {
+      const names = [...String(init.body).matchAll(/<s:fullNames>([^<]+)</g)].map((m) => m[1]);
+      read.push(...names);
+      const section = '<layouts><layout>L</layout><sections><label><!-- Facts --></label><section>Facts</section></sections></layouts>';
+      const link = '<webLinks><label><!-- Docs --></label><name>Docs</name></webLinks>';
+      return { ok: true, text: async () => envelope(names.map((n) => record('X', `<fullName>${n}</fullName>${/^Solution/.test(n) ? section : /^Campaign/.test(n) ? link : ''}`))) };
+    }
+    if (/\/sobjects$/.test(url)) return { ok: true, json: async () => ({ sobjects: ['Campaign', 'Solution', 'Event', 'Task', 'Contract', 'Idea'].map((n) => ({ name: n, label: n })) }) };
+    if (/userinfo/.test(url)) return { ok: true, json: async () => ({ language: 'en_US' }) };
+    let rows = [];
+    if (/FROM Organization/.test(url)) rows = [{ LanguageLocaleKey: 'en_US' }];
+    else if (/FROM Translation/.test(url)) rows = [{ Language: 'fr', IsActive: true }];
+    else if (/FROM WebLink/.test(url)) rows = [{ Name: 'Docs', MasterLabel: 'Open Docs', PageOrSobjectType: 'Campaign', NamespacePrefix: null }];
+    else if (/FROM QuickActionDefinition/.test(url)) rows = [{ DeveloperName: 'Demo_Do', MasterLabel: 'Do', SobjectType: 'Task' }];
+    else if (/FROM ValidationRule/.test(url)) rows = [{ ValidationName: 'R', ErrorMessage: 'No', NamespacePrefix: null, EntityDefinition: { QualifiedApiName: 'Contract' } }];
+    else if (/FROM Layout /.test(url)) rows = ['Solution', 'Event', 'Idea'].map((n) => ({ TableEnumOrId: n, EntityDefinition: { QualifiedApiName: n }, CreatedDate: '1', LastModifiedDate: n === 'Idea' ? '1' : '2' }));
+    return { ok: true, json: async () => ({ records: rows, done: true }) };
+  };
+  const out = await loadMissingTranslations({ host: 'report2.my.salesforce.com', sid: 's' });
+  assert.deepEqual(out.warnings, []);
+  assert.deepEqual(out.missing.map((i) => [i.type, i.name, i.master]), [
+    [ITEM_TYPE.LAYOUT_SECTION, 'Solution.L: Facts', 'Facts'],
+    [ITEM_TYPE.BUTTON_LINK, 'Campaign.Docs', 'Open Docs'],
+  ]);
+  assert.deepEqual(read.filter((n) => /-fr$/.test(n)).sort(), ['Campaign-fr', 'Contract-fr', 'Solution-fr', 'Task-fr']);
+  assert.ok(read.includes('Event-en_US') && !read.includes('Idea-en_US'));
+  assert.deepEqual(editedLayoutObjects([{ TableEnumOrId: 'CommunityMemberLayout', EntityDefinition: null, CreatedDate: '1', LastModifiedDate: '2' }]), ['User']);
 });
 
 test('object items: no tab item without a tab; German tab text is the Nominative plural; any translated form counts', () => {
@@ -237,8 +325,8 @@ test('the whole report only reads (GET queries and readMetadata) and lists the m
   const steps = [];
   const out = await loadMissingTranslations({ host: 'report.my.salesforce.com', sid: 's' }, { onProgress: (s) => steps.push(s) });
   assert.deepEqual(out.warnings, []);
-  assert.deepEqual(out.languages.map((l) => [l.code, l.checked, l.missing]), [['fr', 9, 5]]);
-  assert.deepEqual(out.missing.map((i) => i.type), [ITEM_TYPE.CUSTOM_LABEL, ITEM_TYPE.FIELD_LABEL, ITEM_TYPE.PICKLIST_VALUE, ITEM_TYPE.RECORD_TYPE, ITEM_TYPE.TAB]);
+  assert.deepEqual(out.languages.map((l) => [l.code, l.checked, l.missing]), [['fr', 10, 6]]);
+  assert.deepEqual(out.missing.map((i) => i.type), [ITEM_TYPE.CUSTOM_LABEL, ITEM_TYPE.FIELD_LABEL, ITEM_TYPE.HELP_TEXT, ITEM_TYPE.PICKLIST_VALUE, ITEM_TYPE.RECORD_TYPE, ITEM_TYPE.TAB]);
   assert.ok(steps.length >= 3, 'progress lines while it reads');
   // Read-only: every POST is a readMetadata, everything else a GET.
   for (const c of calls) {
