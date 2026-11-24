@@ -11,15 +11,15 @@ const org = (extra = {}) => ({
 const pl = (extra = {}) => org({ userLanguage: 'pl', ...extra });
 
 // Opportunity as the French describe shows it: IsClosed is "Fermée", the same word as the path's Closed step.
-const opp = (stage = 'Étape', closed = 'Fermée', subStage = 'Sous-étape') => ({
+const opp = (stage = 'Étape', closed = 'Fermée', subStage = 'Mi-étape') => ({
   name: 'Opportunity', label: 'Opportunité', labelPlural: 'Opportunités', custom: false, quickActions: [], recordTypeInfos: [],
   fields: [
     { name: 'StageName', label: stage, custom: false, type: 'picklist', picklistValues: [{ label: 'Prospection', value: 'Prospecting', active: true }] },
-    { name: 'Sub_Stage__c', label: subStage, custom: true, type: 'picklist', picklistValues: [{ label: 'Connecter', value: 'CONNECT', active: true }] },
+    { name: 'Demo_Mid_Stage__c', label: subStage, custom: true, type: 'picklist', picklistValues: [{ label: 'Esquisser', value: 'SKETCH', active: true }] },
     { name: 'IsClosed', label: closed, custom: false, type: 'boolean', picklistValues: [] },
   ],
 });
-const oppPl = () => opp('Etap', 'Zamknięta', 'Podetap');
+const oppPl = () => opp('Etap', 'Zamknięta', 'Półetap');
 
 const PATH_AURA = ['runtime_sales_pathassistantCollapsibleDrawer', 'runtime_sales_pathassistantPathAssistant'];
 // span.title < a < li[data-target-selection-name=closedPathTab] (live, French "Fermée").
@@ -76,10 +76,10 @@ test('#13: a closed record shows its value on the closedPathTab step: that is th
 });
 
 test('#13: the step button is Salesforce text in French and Polish and names the path field', () => {
-  const paths = [{ SobjectType: 'Opportunity', SobjectProcessField: 'Sub_Stage__c', IsActive: true }];
+  const paths = [{ SobjectType: 'Opportunity', SobjectProcessField: 'Demo_Mid_Stage__c', IsActive: true }];
   for (const [o, text, d, label] of [
     [org(), 'Marquer Étape comme terminé(e)', opp(), 'StageName'],
-    [org(), 'Marquer comme Sous-étape actuel(le)', opp(), 'Sub_Stage__c'],
+    [org(), 'Marquer comme Mi-étape actuel(le)', opp(), 'Demo_Mid_Stage__c'],
     [pl(), 'Oznacz Etap jako ukończony', oppPl(), 'StageName'],
   ]) {
     const out = locate({ text, org: o, describes: [d], hints: stepButton });
@@ -87,13 +87,13 @@ test('#13: the step button is Salesforce text in French and Polish and names the
     assert.equal(out.results[0].confidence, 'confirmed', text);
     assert.ok(out.results.some((r) => r.key === `field:Opportunity.${label}` && r.confidence === 'context'), `${text}: names ${label}`);
   }
-  // Both labels are in "Marquer Sous-étape …" ("étape" is inside "sous-étape"): the record's path field wins…
-  const withPath = locate({ text: 'Marquer Sous-étape comme terminé(e)', org: org({ paths }), describes: [opp()], hints: stepButton }).results;
-  assert.ok(withPath.some((r) => r.key === 'field:Opportunity.Sub_Stage__c' && r.confidence === 'context'));
+  // Both labels are in "Marquer Mi-étape …" ("étape" is inside "mi-étape"): the record's path field wins…
+  const withPath = locate({ text: 'Marquer Mi-étape comme terminé(e)', org: org({ paths }), describes: [opp()], hints: stepButton }).results;
+  assert.ok(withPath.some((r) => r.key === 'field:Opportunity.Demo_Mid_Stage__c' && r.confidence === 'context'));
   assert.ok(!withPath.some((r) => r.key === 'field:Opportunity.StageName' && r.confidence === 'context'));
   // …and with no path data, the longer label.
-  const noPath = locate({ text: 'Marquer Sous-étape comme terminé(e)', org: org({ paths: undefined }), describes: [opp()], hints: stepButton }).results;
-  assert.ok(noPath.some((r) => r.key === 'field:Opportunity.Sub_Stage__c' && r.confidence === 'context'));
+  const noPath = locate({ text: 'Marquer Mi-étape comme terminé(e)', org: org({ paths: undefined }), describes: [opp()], hints: stepButton }).results;
+  assert.ok(noPath.some((r) => r.key === 'field:Opportunity.Demo_Mid_Stage__c' && r.confidence === 'context'));
   assert.ok(!noPath.some((r) => r.key === 'field:Opportunity.StageName' && r.confidence === 'context'));
 });
 
@@ -142,7 +142,7 @@ test('#13: the open To Do List panel is Salesforce text in French and Polish', (
 
 test('#13: viewing another language, a Pipeline metric tile lists the renamed metrics instead of confirming Salesforce text', () => {
   const tile = { tags: ['span', 'div', 'runtime_pipeline_inspector-kpi-panel', 'div'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorHome'] };
-  const pipelineMetrics = [{ Id: '0Xm000000000001', DeveloperName: 'ClosedLostCumulative', MasterLabel: 'Lost Deals', Metric: 'ClosedLost' }];
+  const pipelineMetrics = [{ Id: '0Xm000000000001', DeveloperName: 'LostDeals', MasterLabel: 'Lost Deals', Metric: 'ClosedLost' }];
   for (const [o, text] of [[org({ pipelineMetrics }), 'Affaires perdues'], [pl({ pipelineMetrics }), 'Utracone transakcje']]) {
     const out = locate({ text, org: o, describes: [], hints: tile }).results;
     assert.equal(out.find((r) => r.key === 'sfdctext:pipelineInspection').confidence, 'context', text);

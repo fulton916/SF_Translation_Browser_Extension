@@ -25,7 +25,7 @@ globalThis.sftlPointer = (() => {
 
   /**
    * The innermost child of el (shadow children too) whose box holds the point. elementFromPoint skips
-   * elements with pointer-events: none, such as Lightning's disabled buttons (DV2: the disabled calendar
+   * elements with pointer-events: none, such as Lightning's disabled buttons (seen live: the disabled calendar
    * "Today" gave its container, whose first label is "Previous Week").
    */
   function innermostAt(el, x, y) {

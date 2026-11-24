@@ -13,7 +13,7 @@ function fakeStorage() {
 }
 
 test('sanitize removes session ids, bearer tokens and query strings', () => {
-  const s = sanitize('sid 00D5g000000abcd!AQ8AQ.x_y-z and Bearer abc.def at https://x.my.salesforce.com/a/b?sid=123&x=1 end');
+  const s = sanitize('sid 00D000000000001!AQ8AQ.x_y-z and Bearer abc.def at https://x.my.salesforce.com/a/b?sid=123&x=1 end');
   assert.ok(!s.includes('AQ8AQ'));
   assert.ok(!s.includes('abc.def'));
   assert.ok(!s.includes('sid=123'));

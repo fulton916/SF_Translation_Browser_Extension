@@ -87,7 +87,7 @@
     // tabRole: 'tab' when the click was on a tab's label, 'tabpanel' when inside its content.
     // auraClasses: data-aura-class values on the path, e.g. runtime_sales_pathassistantPathAssistantInfo
     // (Path "Guidance for Success" is plain Aura divs, so tag names alone do not show it).
-    // fieldPart: 'label' or 'value' of a record field (classes checked on a UAT2 Account, Nov 2026:
+    // fieldPart: 'label' or 'value' of a record field (classes checked live on an Account, Nov 2026:
     // span.test-id__field-label / span.test-id__field-value.slds-form-element__static), or 'error' on its
     // error message.
     // helpIcon: pointed at a field's (i) icon (lightning-helptext). helpLabel: the label of that field.
@@ -128,7 +128,7 @@
         } else if (/\btest-id__field-label\b|\bslds-form-element__label\b/.test(cls)) hints.fieldPart = 'label';
         else if (/\btest-id__field-value\b|\bslds-form-element__static\b|\bslds-form-element__control\b/.test(cls)) hints.fieldPart = 'value';
       }
-      // Highlights panel (compact layout) field, seen in DV2 (Nov 2026): records-highlights-details-item
+      // Highlights panel (compact layout) field, seen live (Nov 2026): records-highlights-details-item
       // (shadow) > div > p.slds-text-title (label) + p.fieldComponent > slot (value). No RecordField name here,
       // so keep the item's label text too: locator.js finds the field by it.
       if (/\bslds-text-title\b/.test(cls)) titleSeen = true;
@@ -159,7 +159,7 @@
       // A page deployed from metadata can use any identifier (dev org: sftl_tab_greetingTab, sftl_tabset), so
       // every identifier-shaped name is kept; sfdc:… names and FeedItem.… tabs are not identifiers.
       if (tsn && /^[A-Za-z][A-Za-z0-9_]*$/.test(tsn) && hints.componentIds.length < 10) hints.componentIds.push(tsn.slice(0, 100));
-      // Salesforce's own record page components (seen in UAT2): runtime_sales_activities_activityPanel,
+      // Salesforce's own record page components (seen live): runtime_sales_activities_activityPanel,
       // runtime_sales_merge_mergeCandidatesPreviewCard2 (duplicates), forceChatter_recordFeedContainer.
       if (tsn && /^(runtime_|forceChatter_)/.test(tsn) && hints.sfComponents.length < 10) hints.sfComponents.push(tsn.slice(0, 100));
       const aura = el.getAttribute('data-aura-class');
@@ -175,7 +175,7 @@
         const v = el.getAttribute(a);
         if (!v) continue;
         if (a === 'data-target-selection-name' && v.startsWith('sfdc:')) hints.selectionNames.push(v);
-        // Publisher tabs carry no sfdc: prefix (DV2 R-21: "Post" is FeedItem.TextPostTab): the feed action.
+        // Publisher tabs carry no sfdc: prefix (R-21: "Post" is FeedItem.TextPostTab): the feed action.
         const feedTab = a === 'data-target-selection-name' && /^FeedItem\.(\w+?)Tab$/.exec(v);
         if (feedTab) hints.selectionNames.push(`sfdc:QuickAction.FeedItem.${feedTab[1]}`);
         if (a === 'object-api-name') hints.objectApiNames.push(v);
@@ -228,8 +228,8 @@
     return { help: help.slice(0, 1000), label: label.slice(0, 200) };
   }
 
-  // The title of the dialog the element is in ("Add Opportunity Team Members", "New Involved Party"): it names
-  // the object. A picklist's options open in a popup outside the dialog (UAT2: a[role=option] <
+  // The title of the dialog the element is in ("Add Opportunity Team Members", "New Demo Part"): it names
+  // the object. A picklist's options open in a popup outside the dialog (a[role=option] <
   // div[data-aura-class=uiPopupTarget]), so for a popup the open dialog on top is used.
   function dialogTitle(path) {
     const titleOf = (d) => (d?.querySelector?.('h1, h2')?.innerText || '').trim().slice(0, 200) || null;
@@ -241,7 +241,7 @@
     return titleOf(open[open.length - 1]);
   }
 
-  // Screen-reader-only text (seen in UAT2: "Enable table equivalent for screen reader users" on a chart).
+  // Screen-reader-only text (seen live: "Enable table equivalent for screen reader users" on a chart).
   const isAssistive = (el) => /\b(slds-assistive-text|assistiveText)\b/.test(typeof el.className === 'string' ? el.className : '');
   // Text without the assistive spans inside the element, when it has other text (src/pointerTarget.js).
   const visibleText = (el) => (globalThis.sftlPointer?.visibleText ? globalThis.sftlPointer.visibleText(el) : (el.innerText || '').trim());
@@ -964,10 +964,10 @@
       return finish();
     }
     if (!p.fieldLabel) {
-      // Step 1 inputs (UAT2, Nov 2026): val___0 Singular, val___1 Plural. The page header can have its
+      // Step 1 inputs (checked live, Nov 2026): val___0 Singular, val___1 Plural. The page header can have its
       // own text inputs (search), so never take "the first input".
       const byLabel = (re) => [...document.querySelectorAll('input[type=text]')].find((i) => re.test(document.querySelector(`label[for="${i.id}"]`)?.innerText || ''));
-      // German (DV2, a3-13): one input per case, val___0-n / val___1-n (nominative) / -a / -g / -d.
+      // German (checked live, a3-13): one input per case, val___0-n / val___1-n (nominative) / -a / -g / -d.
       const byId = (i) => document.getElementById(`val___${i}`) || document.getElementById(`val___${i}-n`);
       const input = p.plural ? byId(1) || byLabel(/plural/i) : byId(0) || byLabel(/singular/i);
       if (input) {
@@ -991,14 +991,14 @@
     // Row = <th>master label</th><td><input value="current translation"></td>…gender options.
     // Try the label first, then the API name (Lead.Name is "Full Name" in the API, "Name" here), then
     // the other candidates from locator.js: the first column is the Salesforce master label, so a renamed
-    // label ("Billing Address/Account Address") is found by its parts or its API name in words.
+    // label ("Billing Address/Main Address") is found by its parts or its API name in words.
     const wants = [...new Set((p.candidates?.length ? p.candidates : [p.fieldLabel, p.fieldName]).filter(Boolean).map(norm))];
     let input = wants.reduce(
       (found, want) => found || inputs.find((i) => firstCell(i) === want) || inputs.find((i) => norm(i.value) === want),
       null
     );
     // Last resort: a row whose master label starts the wanted label at a word break ("billing address" in
-    // "billing address/account address"); the longest such label wins.
+    // "billing address/main address"); the longest such label wins.
     if (!input) {
       const label = norm(p.fieldLabel);
       input = inputs
@@ -1052,7 +1052,7 @@
       const matches = pk ? [...pk.options].filter((o) => o.value.split(':')[0].toLowerCase() === p.package.toLowerCase()) : [];
       const opt = matches[0];
       if (!opt) throw new Error(`Package "${p.package}" is not listed on the Override page.`);
-      // Seen in a real org: two packages share the "genesyscloud" namespace.
+      // Two packages can share one namespace (seen live).
       if (matches.length > 1) warnings.push(`${matches.length} packages use "${p.package}". Picked "${opt.text.trim()}"; if the row is missing, pick the other one.`);
       if (pk.value !== opt.value) {
         pk.value = opt.value;
@@ -1083,9 +1083,9 @@
         warnings.push(`Object "${p.objectLabel || p.object}" is not listed for ${p.componentLabel}.`);
       }
     }
-    // Action: a "Quick Action Selection" list appears after the object (UAT2, Nov 2026). Its option values
+    // Action: a "Quick Action Selection" list appears after the object (checked live, Nov 2026). Its option values
     // are 09D Ids that do not equal the Tooling QuickActionDefinition Ids, and labels can repeat
-    // ("Initiate Customer Creation" twice), so pick by label and say when there is more than one.
+    // (the same label twice), so pick by label and say when there is more than one.
     // Right after the object changes the list can still hold the previous object's actions while the grid already
     // shows this object's (dev org, Nov 2026), so a missing action is said only when its row is not found either.
     let noAction = null;
@@ -1280,7 +1280,7 @@
     return true;
   }
 
-  /** Picklist Value tree: expand the field's node, then find the value under it. Verified in a real org (Nov 2026). */
+  /** Picklist Value tree: expand the field's node, then find the value under it. Verified live (Nov 2026). */
   async function findTreeRow(parents, candidates, log = true) {
     const want = candidates.filter(Boolean).map(norm);
     const pw = parents.filter(Boolean).map(norm);
@@ -1308,7 +1308,7 @@
   /**
    * Layout Section tree (layout → sections), parent unknown: open each layout and collect every
    * match. A closed node's children are not on the page, so a search of what is visible stops at
-   * whichever layout happens to be open (bug: "Business Unit" under Buying Account Layout missed).
+   * whichever layout happens to be open (bug: a section under a closed layout missed).
    * Returns [{ row, place }], first match first.
    */
   async function findInEveryNode(candidates, log = true) {
@@ -1338,7 +1338,7 @@
   }
 
   /**
-   * Path Step Rich Text: the master cell shows the guidance as raw HTML (in UAT2 it equals Info exactly).
+   * Path Step Rich Text: the master cell shows the guidance as raw HTML (checked live: it equals Info exactly).
    * Fallback when the exact compare misses: compare the text without tags, entities and spaces, and
    * accept a prefix either way (a cut-off cell, or a shortened candidate). Returns a row scorer.
    */
@@ -1385,7 +1385,7 @@
         rows.find((r) => [...r.querySelectorAll('.x-grid3-cell-inner')].some((c) => want.includes(norm(c.innerText)))) ||
         (scorer && bestBy(rows));
       if (hit) return hit;
-      // Workbench pager: <table id="nextBtn" class="x-btn ..."><button>. Verified in a 238-row grid (Nov 2026).
+      // Workbench pager: <table id="nextBtn" class="x-btn ..."><button>. Verified in a grid of several pages (Nov 2026).
       const nextWrap = document.querySelector('#nextBtn') || document.querySelector('.x-tbar-page-next')?.closest('table');
       const next = nextWrap?.querySelector('button') || nextWrap;
       if (!next || next.disabled || nextWrap.classList.contains('x-item-disabled')) {

@@ -81,7 +81,7 @@ export function reportObjects(objects, ...itemObjects) {
 
 /**
  * Objects of the page layouts an admin has changed since they were created (Layout rows). Only these can hold a
- * section name the org typed; Salesforce's own unchanged layouts (UAT2: 240 objects) are left out.
+ * section name the org typed; Salesforce's own unchanged layouts (most objects of a large org) are left out.
  */
 export function editedLayoutObjects(layouts) {
   const edited = (layouts || []).filter((l) => l.LastModifiedDate !== l.CreatedDate);
@@ -140,7 +140,7 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
   const ownLayouts = new Set((layouts || []).map((l) => l.Name));
   const withItems = reportObjects(org.objects, fieldObjects, rtObjects, ruleObjects, (quickActions || []).map((a) => a.SobjectType), ownButtons.map((b) => b.object));
   // Objects that can only have a layout section: the org default file first, so each language is read only for
-  // those that have one (UAT2: about 110 objects).
+  // those that have one (few objects, even in a large org).
   const layoutOnly = reportObjects(org.objects, editedLayoutObjects(layouts)).filter((o) => !withItems.includes(o));
   const probe = await readMetadata(session, 'CustomObjectTranslation', layoutOnly.map((o) => `${o}-${orgDefault}`)).catch(soft(`Layout sections ${NO_FIELDS}`));
   const objects = [...withItems, ...layoutOnly.filter((o) => parseObjectTranslation(probe?.[`${o}-${orgDefault}`])?.sections.length)].sort();
@@ -160,7 +160,7 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
   }
 
   // Web tabs are in the Translations file of each language, which also holds every custom label, flow and
-  // report type: UAT2 (33 languages), 1.5 MB and 19 s per language. Read only when the org has a web tab
+  // report type: over 1 MB and many seconds per language in a large test sandbox. Read only when the org has a web tab
   // of its own, one language per call.
   const sets = (valueSets || []).filter((v) => API_NAME.test(v.DeveloperName || ''));
   const webTabs = (org.tabs || []).filter((t) => t.IsCustom && !t.SobjectName && isOwnItem(t.Name));

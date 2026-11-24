@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { sfWrite, SfError } from '../src/sfApi.js';
 import { translationRequest, plainError, editorLanguages, loadLabelEditor, saveLabelTranslation, MESSAGES, MAX_VALUE } from '../src/labelEdit.js';
 
-const LABEL = '101Hn00000ABCDEAAA';
+const LABEL = '101000000000001AAA';
 const LOC = '0Hd000000000001AAA';
 const BASE = '/services/data/v60.0/tooling/sobjects/ExternalStringLocalization';
 const session = { host: 'x.my.salesforce.com', sid: 's' };

@@ -15,7 +15,7 @@ test('every page the cards link to has a named button', () => {
   assert.equal(pageLinkText({ url: SETUP.renameTabs }), 'Open Rename Tabs and Labels');
   assert.equal(pageLinkText({ url: SETUP.objectFields('Account') }), 'Open Object Manager');
   assert.equal(pageLinkText({ url: SETUP.appManager }), 'Open App Manager');
-  assert.equal(pageLinkText({ url: '/lightning/r/Product2/01t000000000001AAA/related/Product_Translations__r/view' }), 'Open related list');
+  assert.equal(pageLinkText({ url: '/lightning/r/Product2/01t000000000001AAA/related/Demo_Translations__r/view' }), 'Open related list');
 });
 
 test('every url written out in locator.js has a named button', () => {
@@ -45,15 +45,15 @@ test('locate sets the link text on its cards', () => {
   const org = {
     userLanguage: 'en_US',
     defaultLanguage: 'en_US',
-    customLabels: [{ Id: '101000000000001', Name: 'Delivery', MasterLabel: 'Delivery', NamespacePrefix: null, Value: 'Delivery Status', Language: 'en_US' }],
+    customLabels: [{ Id: '101000000000001', Name: 'Demo_Delivery', MasterLabel: 'Demo_Delivery', NamespacePrefix: null, Value: 'Demo Delivery', Language: 'en_US' }],
     labelTranslations: [],
     objects: [],
     tabs: [],
   };
-  const describes = [{ name: 'Opportunity', label: 'Opportunity', labelPlural: 'Opportunities', fields: [{ name: 'DeliveryStatus__c', label: 'Delivery Status', custom: true, type: 'string' }] }];
-  const { results } = locate({ text: 'Delivery Status', org, describes });
+  const describes = [{ name: 'Opportunity', label: 'Opportunity', labelPlural: 'Opportunities', fields: [{ name: 'Demo_Delivery__c', label: 'Demo Delivery', custom: true, type: 'string' }] }];
+  const { results } = locate({ text: 'Demo Delivery', org, describes });
   const label = results.find((r) => r.source === SOURCE.CUSTOM_LABEL);
-  const field = results.find((r) => r.key === 'field:Opportunity.DeliveryStatus__c');
+  const field = results.find((r) => r.key === 'field:Opportunity.Demo_Delivery__c');
   assert.equal(label.linkText, 'Open custom label');
   assert.equal(field.goto.page, 'workbench');
   assert.equal(field.linkText, null);

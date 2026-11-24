@@ -1,4 +1,4 @@
-// UAT2 checks (Nov 2026): Team Role in Add Opportunity Team Members, the To Do List utility, the Files upload
+// Test sandbox checks (Nov 2026): Team Role in Add Opportunity Team Members, the To Do List utility, the Files upload
 // area. Paths below are the real element paths with made-up names and Ids.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,17 +8,17 @@ const lbl = (Id, Name, Value, NamespacePrefix = null) => ({ Id, Name, MasterLabe
 const objects = [
   { name: 'Opportunity', label: 'Opportunity', labelPlural: 'Opportunities', custom: false },
   { name: 'OpportunityTeamMember', label: 'Opportunity Team Member', labelPlural: 'Opportunity Team Members', custom: false },
-  { name: 'Example_Party__c', label: 'Example Party', labelPlural: 'Example Parties', custom: true },
+  { name: 'Demo_Part__c', label: 'Demo Part', labelPlural: 'Demo Parts', custom: true },
 ];
 const org = {
   userLanguage: 'en_US', defaultLanguage: 'en_US', labelTranslations: [], objects, tabs: [], apps: [], validationRules: [],
-  customLabels: [lbl('101D00000000060', 'MA_Upload', 'Upload Files', 'maps'), lbl('101D00000000061', 'MA_List', 'List', 'maps')],
+  customLabels: [lbl('101D00000000060', 'Pkg_Upload', 'Upload Files', 'acme'), lbl('101D00000000061', 'Pkg_List', 'List', 'acme')],
 };
 
 test('objectFromTitle: a dialog title names its object, the longest label wins', () => {
   assert.equal(objectFromTitle('Add Opportunity Team Members', objects), 'OpportunityTeamMember');
-  assert.equal(objectFromTitle('New Opportunity: Sales', objects), 'Opportunity');
-  assert.equal(objectFromTitle('New Example Party', objects), 'Example_Party__c');
+  assert.equal(objectFromTitle('New Opportunity: Retail', objects), 'Opportunity');
+  assert.equal(objectFromTitle('New Demo Part', objects), 'Demo_Part__c');
   assert.equal(objectFromTitle('Edit Example Deal 42', objects), null);
 });
 

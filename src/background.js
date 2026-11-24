@@ -314,7 +314,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   let labelTranslations = null;
   const warnings = [...(org.warnings || [])];
   if (org.customLabels) {
-    // Drop a card's record count ("Active Relationships (0)"), as normalize() does.
+    // Drop a card's record count ("Demo Gadgets (0)"), as normalize() does.
     labelTranslations = await loadLabelTranslations(session, text.replace(/\s*\(\d+\+?\)\s*$/, ''), labelIds).catch((e) => {
       warnings.push(`Custom label translations not searched: ${e.message || e}`);
       return null;
@@ -357,14 +357,14 @@ async function lookup({ text, hints, urls, refresh = false }) {
   const liveDescribes = describes.filter(Boolean);
   const parentDescribe = liveDescribes.find((d) => d.name === record?.object) || liveDescribes[0];
   // Custom related list title (relatedListApiName …__r, no label of its own): its Related List Label is on
-  // the child object's lookup field (DV2: SalesAgreements__r → SalesAgreement.Opportunity_ID_LUR__c).
+  // the child object's lookup field (e.g. Demo_Contracts__r → Contract.Demo_Opportunity__c).
   const api = pageComponent?.props?.relatedListApiName;
   // Also with a label typed in Lightning App Builder: the card then names the title the list falls back to.
   if (areas.has('relatedList') && /__r$/.test(api || '')) {
     const child = await relatedChild(session, parentDescribe, api, refresh, language);
     if (child) pageComponent = { ...pageComponent, child: { ...child.rel, fieldLabel: child.field?.label || null, objectLabel: child.describe?.label || null } };
   }
-  // Inside related list rows (DV2: "Stage:" in Opportunities on an Account): the rows are the child
+  // Inside related list rows ("Stage:" in Opportunities on an Account): the rows are the child
   // object's records, so its field labels are searched too.
   let listObject = null;
   const listComponentId = (hints.componentIds || []).find((c) => /^(lst_|force_relatedList)/.test(c));
@@ -378,7 +378,7 @@ async function lookup({ text, hints, urls, refresh = false }) {
   }
   // Global Value Sets: only for the custom picklists this text can be about (each costs 2-3 Tooling queries).
   // A standard picklist the user pointed at: its StandardValueSet (all values, inactive ones too), so a value
-  // that is in no list is confirmed (DV2 R-07: Opportunity Lead Source "Partner Referral").
+  // that is in no list is confirmed (R-07: Opportunity Lead Source "Example Referral").
   const valueSets = {};
   const hinted = new Set((hints.selectionNames || []).map((s) => /^sfdc:RecordField\.(.+)$/.exec(s)?.[1]).filter(Boolean));
   const picklistFields = [];

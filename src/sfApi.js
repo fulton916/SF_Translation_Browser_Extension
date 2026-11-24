@@ -242,7 +242,7 @@ export function soqlLike(text) {
 }
 
 /**
- * Custom label translations, searched per lookup. Big orgs have 100k+ of these
+ * Custom label translations, searched per lookup. Big orgs have very many of these
  * (one per label per language), so they are never loaded in full.
  * Returns translations of the given labels plus any translation whose value contains the text, and every
  * translation of a label found through one of its translations (dev org: "Bienvenue À L'atelier" listed
@@ -319,7 +319,7 @@ async function loadFlexiPage(session, name) {
 /**
  * Reads one Lightning App Builder component (e.g. a Dynamic Forms field section) from a record
  * page's metadata. The page's generated tag is "forcegenerated-flexipage_<dev name>_<object>__view_js…", and
- * "…__create_js…" on the New form of a Dynamic Forms page (UAT2 New Involved Party, Nov 2026);
+ * "…__create_js…" on the New form of a Dynamic Forms page (checked live, Nov 2026);
  * SOQL DeveloperName comparisons ignore case. Returns { page, id, component, label } or null.
  */
 export async function loadFlexiPageComponent(session, flexipageTag, componentId, objects = []) {
@@ -327,7 +327,7 @@ export async function loadFlexiPageComponent(session, flexipageTag, componentId,
   for (const name of flexiPageNames(flexipageTag, objects)) {
     const page = await loadFlexiPage(session, name);
     if (!page) continue;
-    // A tab's page element is "flexipage_tab2Tab" for the component "flexipage_tab2" (UAT2, Nov 2026).
+    // A tab's page element is "flexipage_tab2Tab" for the component "flexipage_tab2" (checked live, Nov 2026).
     const ids = /Tab$/.test(componentId) ? [componentId, componentId.slice(0, -3)] : [componentId];
     for (const id of ids) {
       for (const region of page.Metadata?.flexiPageRegions || []) {
@@ -426,7 +426,7 @@ const metricCache = new Map();
 /**
  * Pipeline Inspection metric names an admin set (Pipeline Settings → Metrics Settings): one PipelineInspMetricConfig
  * row per renamed metric, MasterLabel = the name on the tile, Metric = which tile (OpenPipeline, ClosedWon…).
- * UAT2 and DV2, checked live: REST and Tooling both answer. An org without Pipeline Inspection has no such
+ * Checked live: REST and Tooling both answer. An org without Pipeline Inspection has no such
  * object (dev org: "not supported"): that is an empty list, not an error.
  */
 export function loadPipelineMetrics(session, { refresh = false } = {}) {
@@ -539,7 +539,7 @@ const valueSetCache = new Map();
 
 /**
  * Picklist values from field or value set metadata, inactive ones included. Tooling names the value
- * valueName (DV2 keys: color, default, description, isActive, label, urls, valueName); the Metadata API
+ * valueName (its keys: color, default, description, isActive, label, urls, valueName); the Metadata API
  * names it fullName. Either can be URL-encoded. Active values come back with isActive null.
  */
 function valueList(raw) {
@@ -560,7 +560,7 @@ function valueList(raw) {
 const STANDARD_VALUE_SET_NAMES = { 'Opportunity.StageName': 'OpportunityStage', 'Lead.Rating': 'AccountRating' };
 
 /**
- * A standard picklist's values from its StandardValueSet (DV2, checked live: MasterLabel 'LeadSource',
+ * A standard picklist's values from its StandardValueSet (checked live: MasterLabel 'LeadSource',
  * Metadata.standardValue[] with valueName, label, isActive). Names tried in order: known name,
  * "<Object><Field>" (AccountType, CaseStatus), the field name (LeadSource, Industry).
  * Returns { name: null, values } or null.
@@ -570,7 +570,7 @@ async function loadStandardValueSet(session, objectName, fieldName) {
   const rows = await queryAll(session, `SELECT MasterLabel FROM StandardValueSet WHERE MasterLabel IN ('${names.join("','")}')`, { tooling: true });
   const name = names.find((n) => rows.some((r) => r.MasterLabel === n));
   if (!name) return null;
-  // Read Metadata by MasterLabel, not by Id: DV2 (checked live, v62.0) returns the placeholder Id
+  // Read Metadata by MasterLabel, not by Id: Salesforce (checked live, v62.0) returns the placeholder Id
   // '000000000000000AAA' for every StandardValueSet, and `WHERE Id = ...` fails with MALFORMED_QUERY
   // "filtered column Id not found". `name` is one of `names`, which are [A-Za-z0-9_] only.
   const full = await queryAll(session, `SELECT Metadata FROM StandardValueSet WHERE MasterLabel = '${name}'`, { tooling: true });
@@ -581,7 +581,7 @@ async function loadStandardValueSet(session, objectName, fieldName) {
 /**
  * The Global Value Set a custom picklist field uses, or null (REST describe does not say).
  * Tooling CustomField Metadata can only be read one row at a time, so: find the Id, then read it.
- * Checked in UAT2 (Nov 2026): Account.Market_Unit_MST__c → valueSetName "Market_Unit_LST" (label "Market Unit").
+ * Checked live (Nov 2026), e.g. Account.Demo_Markets__c → valueSetName "Demo_Market_List" (label "Demo Market").
  * Returns { name, label, namespace }, { name: null, values } (the field's own values, or a standard
  * picklist's StandardValueSet values) or null.
  */
@@ -611,7 +611,7 @@ export function loadValueSet(session, objectName, fieldName) {
     const name = meta?.valueSetName;
     if (!name) {
       // The field's own values, inactive ones included (REST describe lists active values only;
-      // DV2: an inactive Contact picklist value).
+      // seen live: an inactive Contact picklist value).
       const values = valueList(meta?.valueSetDefinition?.value);
       return values.length ? { name: null, values } : null;
     }
@@ -797,7 +797,7 @@ export function loadDescribe(session, objectName, { refresh = false, language = 
       childRelationships: (d.childRelationships || [])
         .filter((c) => c.relationshipName && c.childSObject && c.field)
         .map((c) => ({ childSObject: c.childSObject, field: c.field, relationshipName: c.relationshipName })),
-      // Org-built translation objects, e.g. Product_Translations__c (not the standard *DataTranslation).
+      // Org-built translation objects, e.g. Demo_Translations__c (not the standard *DataTranslation).
       translationChildren: (d.childRelationships || [])
         .filter((c) => c.relationshipName && /__c$/.test(c.childSObject) && /translat/i.test(c.childSObject))
         .map((c) => ({ object: c.childSObject, relationship: c.relationshipName, label: null })),

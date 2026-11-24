@@ -34,7 +34,7 @@ test('stripAttributes keeps nested arrays as arrays', () => {
   assert.deepEqual(out.Metadata.flexiPageRegions[0].itemInstances[0], { a: 1 });
 });
 
-test('loadFlexiPageComponent reads a field section label (real UAT2 shape)', async () => {
+test('loadFlexiPageComponent reads a field section label (real shape)', async () => {
   const urls = [];
   globalThis.fetch = async (u) => {
     urls.push(decodeURIComponent(u));
@@ -43,21 +43,21 @@ test('loadFlexiPageComponent reads a field section label (real UAT2 shape)', asy
       json: async () => ({
         done: true,
         records: [{
-          attributes: { type: 'FlexiPage' }, DeveloperName: 'Prospect_Record_Page_Three_Column', MasterLabel: 'Prospect Record Page Three Column',
+          attributes: { type: 'FlexiPage' }, DeveloperName: 'Demo_Account_Record_Page', MasterLabel: 'Demo Account Record Page',
           Metadata: { flexiPageRegions: [{ itemInstances: [
             { componentInstance: { identifier: 'flexipage_tabset', componentName: 'flexipage:tabset', componentInstanceProperties: [] } },
             { componentInstance: { identifier: 'flexipage_fieldSection6', componentName: 'flexipage:fieldSection',
-              componentInstanceProperties: [{ name: 'columns', value: 'Facet-1' }, { name: 'label', value: '{!$Label.Business_Unit}' }] } },
+              componentInstanceProperties: [{ name: 'columns', value: 'Facet-1' }, { name: 'label', value: '{!$Label.Demo_Team}' }] } },
           ] }] },
         }],
       }),
     };
   };
   const pc = await loadFlexiPageComponent({ host: 'x', sid: 's' },
-    'forcegenerated-flexipage_prospect_record_page_three_column_account__view_js___lmt___1', 'flexipage_fieldSection6', ['Account']);
-  assert.equal(pc.label, '{!$Label.Business_Unit}');
-  assert.equal(pc.page, 'Prospect Record Page Three Column');
-  assert.match(urls[0], /DeveloperName = 'prospect_record_page_three_column' LIMIT 1/);
+    'forcegenerated-flexipage_demo_account_record_page_account__view_js___lmt___1', 'flexipage_fieldSection6', ['Account']);
+  assert.equal(pc.label, '{!$Label.Demo_Team}');
+  assert.equal(pc.page, 'Demo Account Record Page');
+  assert.match(urls[0], /DeveloperName = 'demo_account_record_page' LIMIT 1/);
 });
 
 test('loadFlexiPageComponent reads the New form of a Dynamic Forms page (tag ends in __create_js)', async () => {
@@ -69,7 +69,7 @@ test('loadFlexiPageComponent reads the New form of a Dynamic Forms page (tag end
       json: async () => ({
         done: true,
         records: [{
-          DeveloperName: 'Example_Party_Record_Page', MasterLabel: 'Example Party Record Page',
+          DeveloperName: 'Demo_Part_Record_Page', MasterLabel: 'Demo Part Record Page',
           Metadata: { flexiPageRegions: [{ itemInstances: [
             { componentInstance: { identifier: 'flexipage_fieldSection2', componentName: 'flexipage:fieldSection',
               componentInstanceProperties: [{ name: 'label', value: 'System Information' }] } },
@@ -79,9 +79,9 @@ test('loadFlexiPageComponent reads the New form of a Dynamic Forms page (tag end
     };
   };
   const pc = await loadFlexiPageComponent({ host: 'create-form', sid: 's' },
-    'forcegenerated-flexipage_example_party_record_page_example_party__c__create_js___lmt___1783417856000', 'flexipage_fieldSection2', ['Example_Party__c']);
+    'forcegenerated-flexipage_demo_part_record_page_demo_part__c__create_js___lmt___1', 'flexipage_fieldSection2', ['Demo_Part__c']);
   assert.equal(pc.label, 'System Information');
-  assert.match(urls[0], /DeveloperName = 'example_party_record_page' LIMIT 1/);
+  assert.match(urls[0], /DeveloperName = 'demo_part_record_page' LIMIT 1/);
 });
 
 test('loadOrgData: path guidance queries fail → warnings only, other sources still load', async () => {

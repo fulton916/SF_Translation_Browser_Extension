@@ -107,7 +107,7 @@ const body = (records) => `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelo
 const record = (type, fullName, xml) => `<records xsi:type="${type}"><fullName>${fullName}</fullName>${xml.replace(/^<\?xml[^>]*>\s*<\w+[^>]*>|<\/\w+>\s*$/g, '')}</records>`;
 
 test('readMetadataRecords splits a response into its records', () => {
-  // A name that cannot be read comes back as <records xsi:nil="true"/> (UAT2).
+  // A name that cannot be read comes back as <records xsi:nil="true"/>.
   const recs = readMetadataRecords(body('<records xsi:nil="true"/>' + record('Layout', 'SFTL_Widget__c-Widget Layout', LAYOUT) + record('Layout', 'Account-Account %28Sales%29 Layout', '<Layout></Layout>')));
   assert.deepEqual(recs.map((r) => r.fullName), ['SFTL_Widget__c-Widget Layout', 'Account-Account %28Sales%29 Layout']);
   assert.deepEqual(parseLayoutSections(recs[0].xml), ['Widget Basics', 'Owner & Status']);
@@ -137,7 +137,7 @@ function fakeOrg() {
         assert.match(soap, /<s:type>Layout<\/s:type>/);
         const names = ['SFTL_Widget__c-Widget Layout', ...layoutNames];
         // A managed-package layout is not read (readMetadata returns it empty).
-        const managed = '<result><fullName>Account-maps__Map Layout</fullName><manageableState>installed</manageableState><namespacePrefix>maps</namespacePrefix></result>';
+        const managed = '<result><fullName>Account-acme__Map Layout</fullName><manageableState>installed</manageableState><namespacePrefix>acme</namespacePrefix></result>';
         return { ok: true, text: async () => `<result>${managed}${names.map((n) => `<result><fullName>${n}</fullName><manageableState>unmanaged</manageableState></result>`).join('')}</result>` };
       }
       const type = /<s:type>(\w+)<\/s:type>/.exec(soap)[1];

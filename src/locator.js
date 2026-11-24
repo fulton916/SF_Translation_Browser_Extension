@@ -108,8 +108,8 @@ export function buildGotoUrl(goto, lang, orgDefault) {
 
 /**
  * Texts to look for in the first column of Rename Tabs Step 2, best first. That column shows the
- * Salesforce master label, which differs from a renamed describe label (DV2: Account.BillingAddress
- * is "Billing Address/Account Address" in the describe, "Billing Address" on Step 2).
+ * Salesforce master label, which differs from a renamed describe label (e.g. Account.BillingAddress
+ * is "Billing Address/Main Address" in the describe, "Billing Address" on Step 2).
  */
 export function renameFieldCandidates(fieldLabel, fieldName) {
   const out = [fieldLabel, fieldName];
@@ -133,7 +133,7 @@ export function normalize(s) {
     .trim()
     .replace(/^[*\s]+/, '') // required-field asterisk
     .replace(/[\s:*]+$/, '') // trailing colon / asterisk
-    .replace(/\s*\(\d+\+?\)$/, '') // record count on a card title: "Active Relationships (0)", "Cases (10+)"
+    .replace(/\s*\(\d+\+?\)$/, '') // record count on a card title: "Demo Gadgets (0)", "Cases (10+)"
     .toLowerCase();
 }
 
@@ -142,7 +142,7 @@ export function matchType(needle, candidate) {
   const c = normalize(candidate);
   if (!c || !needle) return null;
   if (c === needle) return 'exact';
-  // A short highlight ("ANZ") only matches whole words: inside other words ("ganz") it is noise (DV2 R-02).
+  // A short highlight ("old") only matches whole words: inside other words ("gold") it is noise (R-02).
   if (needle.length >= 3 && (needle.length >= 5 ? c.includes(needle) : wordContains(c, needle))) return 'partial';
   // Selected text contains the candidate, e.g. "Edit Industry" contains "Industry".
   if (c.length >= 4 && c.length / needle.length >= 0.4 && wordContains(needle, c)) return 'partial';
@@ -158,7 +158,7 @@ function labelMatch(needle, value) {
 }
 
 function wordContains(haystack, word) {
-  // Every occurrence: "ganz anz" holds the word "anz" at its second one.
+  // Every occurrence: "gold old" holds the word "old" at its second one.
   for (let i = haystack.indexOf(word); i >= 0; i = haystack.indexOf(word, i + 1)) {
     const before = i === 0 ? ' ' : haystack[i - 1];
     const after = i + word.length >= haystack.length ? ' ' : haystack[i + word.length];
@@ -199,7 +199,7 @@ export function contextObjects(urls, hints = {}) {
 /**
  * The object a dialog title names ("Add Opportunity Team Members" → OpportunityTeamMember): the object whose
  * plural or singular label is the longest whole-word part of the title. Null when none is.
- * A picklist inside a dialog opens its options in a popup outside the dialog (UAT2 Add Opportunity Team
+ * A picklist inside a dialog opens its options in a popup outside the dialog (Add Opportunity Team
  * Members: a[role=option] < div[data-aura-class=uiPopupTarget], nothing names the object), so the title does.
  */
 export function objectFromTitle(title, objects = []) {
@@ -225,10 +225,10 @@ export function detectAreas(hints = {}) {
   const has = (re) => tags.some((t) => re.test(t));
   const areas = new Set();
   if (has(/^one-app-nav-bar/)) areas.add('navTab');
-  // The app name left of the nav items (DV2: h1.appName inside one-appnav, outside one-app-nav-bar).
+  // The app name left of the nav items (h1.appName inside one-appnav, outside one-app-nav-bar).
   else if (has(/^one-appnav$/)) areas.add('appName');
   if (has(/layout-section$/) && !has(/layout-item$/)) areas.add('layoutSection');
-  // Aura record layout (DV2 Event Details, checked live): span < button < h3.slds-section__title < legend <
+  // Aura record layout (Event Details, checked live): span < button < h3.slds-section__title < legend <
   // fieldset[data-aura-class="forcePageBlockSection ..."] < div.forcePageBlock. Fields are forcePageBlockItem.
   const aura = hints.auraClasses || [];
   const inAuraField = aura.includes('forcePageBlockItem') || (hints.selectionNames || []).some((s) => s.startsWith('sfdc:RecordField.'));
@@ -238,7 +238,7 @@ export function detectAreas(hints = {}) {
   // Details tab was reported as "Lightning page tab label").
   // A role=tab must be in a page tab bar (lightning-tab-bar) that is nearer than any tab panel: the Chatter
   // publisher's own Post/Poll tabs (Aura div[role=tablist]) inside a page's Chatter tab are not tab labels
-  // (DV2, checked live: a[role=tab] < ... < flexipage-tab2[role=tabpanel] < lightning-tabset, no tab bar).
+  // (checked live: a[role=tab] < ... < flexipage-tab2[role=tabpanel] < lightning-tabset, no tab bar).
   const tabBarAt = tags.indexOf('lightning-tab-bar');
   const tabPanelAt = tags.findIndex((t) => /^flexipage-tab\d*$/.test(t));
   const onPageTabBar = tabBarAt >= 0 && (tabPanelAt < 0 || tabBarAt < tabPanelAt);
@@ -248,18 +248,18 @@ export function detectAreas(hints = {}) {
   // Dynamic Forms field section header (not a field inside it).
   if (has(/^flexipage-field-section/) && !has(/^(flexipage-field$|record_flexipage-record-field)/)) areas.add('fieldSection');
   // A related list's title bar only; rows and cells inside the list are record data or child fields
-  // (bug: "Sales Representative" in Opportunity Team got the "Related list title" card).
+  // (bug: a role name in Opportunity Team got the "Related list title" card).
   // hints.listHeader is null/undefined from older content.js: keep the old behaviour then.
   if (has(/^(lst-related-list|force-related-list)/)) areas.add(hints.listHeader === false ? 'relatedListRow' : 'relatedList');
   // Record highlights panel (records-highlights2): the object name above the record name, or the record name.
-  // A field (label or value) in the highlights panel is 'highlightsField' (DV2: "Account Number" there).
+  // A field (label or value) in the highlights panel is 'highlightsField' ("Account Number" there).
   if (has(/^records-(lwc-)?highlights/)) {
     areas.add(hints.recordTitle ? 'recordTitle' : has(/^records-highlights-details-item$/) ? 'highlightsField' : 'highlights');
   }
   if (hints.helpIcon) areas.add('helpIcon');
   // The error popup of a failed save (content.js hints.errorPopover): its heading is Salesforce's.
   if (hints.errorPopover) areas.add(hints.errorPopover === 'header' ? 'errorPopoverHeader' : 'errorPopover');
-  // Salesforce's own components on a record page (component ids seen in the UAT2 Account page DOM).
+  // Salesforce's own components on a record page (component ids seen live in an Account page DOM).
   const comps = [...(hints.componentIds || []), ...(hints.sfComponents || [])];
   const comp = (re) => comps.some((c) => re.test(c));
   if (comp(/^runtime_sales_activities/)) areas.add('activityTimeline');
@@ -273,7 +273,7 @@ export function detectAreas(hints = {}) {
   // div[data-aura-class=flexipageRichText] < flexipage-aura-wrapper < flexipage-component2).
   if (!utilityLabel && (aura.includes('flexipageRichText') || has(/^flexipage-rich-?text/) || comp(/^flexipage_richText/))) areas.add('richText');
   // Path: the guidance is in Aura divs (no custom tag names), so read their data-aura-class too.
-  // Verified on a UAT2 Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
+  // Verified live on an Opportunity (Nov 2026): runtime_sales_pathassistantPathAssistantInfo wraps "Guidance for Success".
   if (has(/(^lightning-path|pathassistant)/) || aura.some((a) => /pathassistant/i.test(a))) areas.add('path');
   if (aura.some((a) => /pathassistantPathAssistantInfo/i.test(a)) || has(/pathassistant-?info/i)) areas.add('pathGuidance');
   // Path parts by page marker, so they are found in every language (dev org, checked live Nov 2026):
@@ -290,11 +290,11 @@ export function detectAreas(hints = {}) {
     const inCoach = aura.some((a) => /^runtime_sales_pathassistantPathAssistant(Info|Fields)$/.test(a));
     if (inCoach && tags.slice(0, 5).includes('h2') && !aura.includes('uiOutputRichText')) areas.add('pathHeading');
   }
-  // Calendar page (DV2 /lightning/o/Event/home, checked live): Salesforce's own Aura calendar. Header buttons
+  // Calendar page (/lightning/o/Event/home, checked live): Salesforce's own Aura calendar. Header buttons
   // (button.new-event-button carries no action name: it is not the NewEvent global action), day headers
   // (forceCalendarDayHeader) and the sidebar (calendarListPanel > calendarListItem). Event boxes
   // (runtime_calendar-timed-event; all-day strip runtime_calendar-horizontal-layout-display) show record data.
-  // Global header (DV2, checked live): header[data-aura-class=oneHeader] holds search, notifications and the
+  // Global header (checked live): header[data-aura-class=oneHeader] holds search, notifications and the
   // event reminder popup (div[data-aura-class=unsCardQueue]). The nav bar and app name are not part of it.
   if (!areas.has('navTab') && !areas.has('appName') && (aura.some((a) => /^(oneHeader|unsCardQueue|forceSearchDesktopHeader)$/.test(a)) || has(/^(one-header|search_dialog-)/))) {
     areas.add('globalHeader');
@@ -308,7 +308,7 @@ export function detectAreas(hints = {}) {
     // org and language (dev org, checked live). content.js sends that Id as hints.calendarId.
     if (areas.has('calendarList') && hints.calendarId === MY_EVENTS_CALENDAR_ID) areas.add('calendarOwn');
   }
-  // Pipeline Inspection (UAT2 /lightning/o/Opportunity/pipelineInspection, checked live Nov 2026): Salesforce's own
+  // Pipeline Inspection (/lightning/o/Opportunity/pipelineInspection, checked live Nov 2026): Salesforce's own
   // page in div[data-aura-class=runtime_pipeline_inspectorPipelineInspectorHome]. Metric tiles
   // (runtime_pipeline_inspector-kpi-panel), filters (runtime_pipeline_inspectorHighlightPanel), Metrics picker and
   // buttons (runtime_pipeline_inspectorActionsBar, ...RecordsView) are Salesforce text. The view name is a list view
@@ -322,7 +322,7 @@ export function detectAreas(hints = {}) {
     else if (has(/^h1$/)) areas.add('pipelineObjectName');
     if (has(/^runtime_pipeline_inspector-kpi-panel$/)) areas.add('pipelineMetric');
   }
-  // Utility bar (UAT2, checked live): span.itemTitle < button < div[oneUtilityBarItem] <
+  // Utility bar (checked live): span.itemTitle < button < div[oneUtilityBarItem] <
   // div[flexipageComponent][tsn=runtime_sales_todo_list_unifiedToDoListAuraWrapper] < ul.slds-utility-bar; an open
   // item's panel title is h2.panelTitle < div[oneUtilityBarPanel]. Item labels are set in App Manager → Utility Items.
   // Only the label: the item's button, or the open panel's own title (not the records listed in the panel).
@@ -333,7 +333,7 @@ export function detectAreas(hints = {}) {
     areas.add('utilityBar');
     if (comp(/^runtime_sales_todo_list/) || /^runtime_sales_todo_list/.test(hints.utilityPanelComponent || '')) areas.add('utilityToDo');
   }
-  // File upload area of the Files related list (UAT2, checked live): "Upload Files" / "Or drop files" are a span <
+  // File upload area of the Files related list (checked live): "Upload Files" / "Or drop files" are a span <
   // label < lightning-primitive-file-droppable-zone < lightning-input < div[forceContentFileDroppableZone].
   if (aura.includes('forceContentFileDroppableZone') || has(/^lightning-primitive-file-droppable-zone$/)) areas.add('fileUpload');
   const custom = tags.filter((t) => /^c-/.test(t));
@@ -402,7 +402,7 @@ function fieldRow(org, d, f) {
 
 // ---------- result builders ----------
 
-// Translate page dropdown values, read from a real org (Setup Component and Aspect <select>s).
+// Translate page dropdown values, read from the live page (Setup Component and Aspect <select>s).
 export const WB_COMPONENT = {
   'Custom Field': 'CustomFieldDefinition',
   'Standard Field Help': 'FieldAttributes',
@@ -423,7 +423,7 @@ export const WB_COMPONENT = {
 };
 const WB_ASPECT = { 'Field Label': 'master', 'Help Text': 'help', 'Related List Label': 'relationshiplabel', Description: 'description' };
 
-// Setup Components offered on Translation Workbench → Override (read from a real org).
+// Setup Components offered on Translation Workbench → Override (read from the live page).
 // Picklist Value, Layout Section and App are NOT overridable, so they stay on Translate.
 const OVERRIDE_COMPONENTS = new Set(['Action', 'Button and Link Label', 'Custom Field', 'Custom Label', 'Flow', 'Record Type', 'Validation Error Message', 'Web Tab']);
 
@@ -538,7 +538,7 @@ function objectResult(org, obj, confidence, plural, tab) {
   };
 }
 
-// Labels Lightning shows for standard fields whose describe label differs (checked in UAT2, Nov 2026:
+// Labels Lightning shows for standard fields whose describe label differs (checked live, Nov 2026:
 // OwnerId "Owner ID" shows "Account Owner", Opportunity.AccountId "Account ID" shows "Account Name").
 const STD_DISPLAY = {
   OwnerId: (d) => [`${d.label} Owner`, 'Owner'],
@@ -602,7 +602,7 @@ function systemFieldResult(d, f, confidence, what = 'System field') {
 
 /**
  * The Step 2 (master) label of a renamed standard field, when the label proves it: one "/" part equals the
- * API name as words (DV2 R-01: BillingAddress "Billing Address/Account Address" is "Billing Address" on Step 2).
+ * API name as words (R-01: BillingAddress "Billing Address/Main Address" is "Billing Address" on Step 2).
  */
 function renamedMasterLabel(f) {
   const parts = String(f.label || '').split('/').map((s) => s.trim());
@@ -710,8 +710,8 @@ function picklistResult(org, d, f, pv, confidence) {
       notes: ['One translation for the whole org: it applies to every address field.', 'Master name: Setup → State and Country/Territory Picklists.'],
     };
   }
-  // Field uses a Global Value Set (sfApi.loadValueSet; UAT2: Preferred_Language_LST__c → "Languages").
-  // TW → Global Value Set is a tree of value set labels with their values under them (checked in UAT2).
+  // Field uses a Global Value Set (sfApi.loadValueSet; e.g. Demo_Language__c → "Demo Languages").
+  // TW → Global Value Set is a tree of value set labels with their values under them (checked live).
   const vs = org.valueSets?.[`${d.name}.${f.name}`];
   // The Workbench tree lists values (and their fields) by master label: in another language, read from the
   // master describe or the field's metadata (both master), else the API value, which is often the same.
@@ -828,7 +828,7 @@ const RECORD_DATA_STEPS = [
   'If every user must see it in their language, use a picklist field instead, or Data Translation where the object supports it.',
 ];
 
-/** An event box on the Calendar page shows the Event's Subject (DV2: a.subject-link in runtime_calendar-timed-event). */
+/** An event box on the Calendar page shows the Event's Subject (a.subject-link in runtime_calendar-timed-event). */
 function calendarEventResult() {
   return {
     key: 'value:Event.Subject',
@@ -889,7 +889,7 @@ function dataOffResult(object, fieldName) {
   };
 }
 
-/** An org-built translation object (e.g. Product_Translations__c) linked to the record. */
+/** An org-built translation object (e.g. Demo_Translations__c) linked to the record. */
 function customTranslationResult(d, child, record) {
   const url = record?.id && record.object === d.name ? `/lightning/r/${d.name}/${record.id}/related/${child.relationship}/view` : null;
   return {
@@ -926,7 +926,7 @@ function recordTypeResult(org, d, rt, confidence) {
 
 function quickActionResult(org, object, objectLabel, qa, confidence) {
   return {
-    // A global action is "Global.NewContact" in page metadata and "NewContact" in the describe: one key (DV2-10).
+    // A global action is "Global.NewContact" in page metadata and "NewContact" in the describe: one key (SB-10).
     key: `qa:${String(qa.name || '').replace(/^Global\./, '')}`,
     confidence,
     title: `Quick action ${qa.name}`,
@@ -938,7 +938,7 @@ function quickActionResult(org, object, objectLabel, qa, confidence) {
 }
 
 // Global actions Salesforce creates with every org. Translation Workbench → Action does not list them
-// (DV2, German, Object Global: 9 rows, all custom; none of these), and Salesforce translates their labels.
+// (checked live, Object Global: every row is custom; none of these), and Salesforce translates their labels.
 const STANDARD_GLOBAL_ACTIONS = new Set(['NewTask', 'NewContact', 'NewCase', 'NewEvent', 'NewAccount', 'NewLead', 'NewOpportunity', 'LogACall', 'NewNote', 'NewGroup', 'SendEmail']);
 
 const isStandardGlobalAction = (name) => STANDARD_GLOBAL_ACTIONS.has(String(name || '').replace(/^Global\./, ''));
@@ -1110,7 +1110,7 @@ export function pathStepMatch(needle, info, rawText = null) {
 }
 
 /**
- * The path a step belongs to. Step DeveloperNames seen in real orgs (Nov 2026):
+ * The path a step belongs to. Step DeveloperNames seen live (Nov 2026):
  * "X<num>_<picklist value Id 01J…>_<record type Id 012… or null>_<Object>_<field without __c>",
  * the older "<Object>_<record type or null>_<field>_<01J…>_<num>", and for a custom object the object's
  * Id instead of its name, cut at 80 characters (dev org: "X…_01J…_012…_01I…_SFTL_Stat" for SFTL_Status__c).
@@ -1178,7 +1178,7 @@ function pathStepResult(org, step, where, describes, confidence) {
       `Find the row that starts with "${truncate(step.Info, 50)}". The list shows the raw HTML; the text starts "${truncate(lines[0], 60)}".`,
       'Double-click its translation cell. The whole guidance block is one translation: keep its formatting (lists, bold, links).',
     ],
-    // The grid's master cell holds the raw Info HTML (checked in a real org: all 20 rows equal Info exactly).
+    // The grid's master cell holds the raw Info HTML (checked live: every row equals Info exactly).
     goto: { ...base.goto, rows: [step.Info, lines.join(' ')], rowMatch: 'richText', rowLabel: truncate(lines[0], 80) },
     copy: step.DeveloperName,
     notes,
@@ -1190,7 +1190,7 @@ const MASTER_RECORD_TYPE = '012000000000000';
 
 /**
  * Active paths of `object` that a record of that object shows. A path belongs to one record type
- * (DV2, Nov 2026: Open_Opportunity → Sales, Specification_Path → Specification), so a record shows
+ * (e.g. Retail_Path → Retail, Design_Path → Design), so a record shows
  * only its own record type's path. record.recordTypeId: undefined = not known (every active path),
  * null = no record type (master). A record type without its own path falls back to a path with no
  * record type.
@@ -1247,9 +1247,9 @@ function pathResults(org, needle, areas, describes, add, rawText, record) {
       continue;
     }
     const where = pathOfStep(step.DeveloperName, org.paths, org.objects);
-    // A path for another object can share a line ("Who else needs to be contacted?"): never confirm it.
+    // A path for another object can share a line ("Who else reviews the sketch?"): never confirm it.
     const otherObject = where.object && pageObjects.size && !pageObjects.has(where.object);
-    // A path of another record type is not on this page (DV2: Specification Path guidance confirmed on a Sales Opportunity).
+    // A path of another record type is not on this page (bug: Design Path guidance confirmed on a Retail Opportunity).
     const otherRecordType = !otherObject && where.path && !pathAppliesToRecord(where.path, record, org.paths);
     let confidence = mt;
     if (!otherObject && !otherRecordType && (areas.has('pathGuidance') || (areas.has('path') && mt === 'exact'))) confidence = 'confirmed';
@@ -1383,11 +1383,11 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false, pa
         copy: sn.name,
       }));
     } else if (sn.kind === 'QuickAction' && sn.object === 'FeedItem') {
-      // Salesforce's own feed actions (DV2: FeedItem.ContentNote "New Note"; also TextPost, LinkPost,
+      // Salesforce's own feed actions (FeedItem.ContentNote "New Note"; also TextPost, LinkPost,
       // PollPost, QuestionPost). QuickActionDefinition has no row for them, so TW → Action does not list them.
       out.push(standardActionResult('FeedItem', sn.name, 'confirmed'));
     } else if (sn.kind === 'QuickAction' && (!sn.object || sn.object === 'Global') && isStandardGlobalAction(sn.name)) {
-      // Standard global actions (DV2: Global.NewContact, NewTask, NewCase, LogACall) are not in TW → Action.
+      // Standard global actions (Global.NewContact, NewTask, NewCase, LogACall) are not in TW → Action.
       out.push(standardActionResult('Global', sn.name, 'confirmed'));
     } else if (sn.kind === 'QuickAction') {
       const name = sn.object ? `${sn.object}.${sn.name}` : sn.name;
@@ -1405,7 +1405,7 @@ function hintResults(org, hints, describes, areas, text, pageHandled = false, pa
   const obj = contextObjects([], hints)[0] || describes[0]?.name;
   if (areas.has('layoutSection')) {
     // A heading in the path means the header itself was clicked (not blank space in the section):
-    // rank it above a field that happens to share the name (bug: "Business Unit" header → field card).
+    // rank it above a field that happens to share the name (bug: "Demo Team" header → field card).
     const onHeader = (hints.tags || []).some((t) => /^h[1-6]$/.test(t));
     // Another language: the Layout Section tree lists sections by their master name (the section's
     // translation in CustomObjectTranslation, background.js); the name you pointed at is its translation.
@@ -1555,8 +1555,8 @@ function builderTextResult(org, pc) {
 }
 
 /**
- * A related list whose label was typed (DV2 Opportunity page: Dynamic Related Lists "Involved Parties",
- * "Showpad Activities", "PPG Tech"): with the label cleared, the list shows its standard title, which is translated.
+ * A related list whose label was typed (e.g. a Dynamic Related List "Demo Parts"
+ * on an Opportunity page): with the label cleared, the list shows its standard title, which is translated.
  */
 function relatedListFallbackStep(org, pc) {
   if (!RELATED_LIST_COMPONENTS.has(pc.component)) return [];
@@ -1564,7 +1564,7 @@ function relatedListFallbackStep(org, pc) {
   const c = pc.child;
   if (c?.childSObject && c.field) {
     const objectLabel = c.objectLabel || (org.objects || []).find((o) => o.name === c.childSObject)?.label || c.childSObject;
-    // A managed package's lookup field (DV2: ShowpadForSF__…) is translated in Workbench → Override.
+    // A managed package's lookup field (acme__…) is translated in Workbench → Override.
     const pkg = namespaceOf(c.field);
     const tool = pkg ? `Translation Workbench → Override (package ${pkg})` : 'Translation Workbench';
     return [
@@ -1578,7 +1578,7 @@ function relatedListFallbackStep(org, pc) {
 }
 
 const LABEL_REF = /^\{!\$Label\.(?:([A-Za-z0-9_]+)\.)?([A-Za-z0-9_]+)\}$/;
-// Salesforce's own name for a standard section, stored in the page as a token (seen in UAT2:
+// Salesforce's own name for a standard section, stored in the page as a token (seen live:
 // "@@@SFDCOpportunity_InformationSFDC@@@"). Salesforce shows and translates it itself.
 const SFDC_TOKEN = /^@@@SFDC(.+)SFDC@@@$/;
 // Salesforce's own tab names (Details, Related, Chatter...): "Standard.Tab.detail".
@@ -1613,7 +1613,7 @@ function demoteSameTextLabels(results, why) {
 const onPage = (pc) => (pc.page ? ` on the Lightning page ${pc.page}` : ' in the Related Lists component');
 
 /**
- * Related list with no label of its own (UAT2: Files = AttachedContentDocuments, Account Team,
+ * Related list with no label of its own (Files = AttachedContentDocuments, Account Team,
  * Opportunities). A custom relationship (…__r) keeps the generic Translation Workbench card.
  */
 function standardRelatedList(org, results, add, pc) {
@@ -1711,7 +1711,7 @@ function confirmPathValues(org, describes, results, record) {
   const paths = describes.flatMap((d) => pathsForRecord(org.paths, d.name, record));
   const hitsOf = (p) => results.filter((r) => r.key.startsWith(`picklist:${p.SobjectType}.${p.SobjectProcessField}.`) && r.confidence === 'exact');
   const withHits = paths.filter((p) => hitsOf(p).length);
-  // Record type not known and steps of several paths match (e.g. "Connect" is a StageName and a Sub Stage
+  // Record type not known and steps of several paths match (e.g. "Sketch" is a StageName and a Mid Stage
   // value): the page shows one of them only, so confirm none.
   const unknown = !record || record.recordTypeId === undefined;
   const ambiguous = unknown && new Set(withHits.map((p) => `${p.SobjectType}.${p.SobjectProcessField}`)).size > 1;
@@ -1812,7 +1812,7 @@ function utilityItemLabelResult({ bar, item }) {
   };
 }
 
-// Pipeline Inspection metric tiles (PipelineInspMetricConfig.Metric picklist, UAT2 describe).
+// Pipeline Inspection metric tiles (PipelineInspMetricConfig.Metric picklist, read from its describe).
 const PIPELINE_METRICS = {
   TotalPipeline: 'Total',
   ClosedWon: 'Closed Won',
@@ -1896,7 +1896,7 @@ function addPipelineResults(areas, results, add, hints = {}, needle = '', org = 
     r.notes = ['Same words only: the Pipeline Inspection buttons are Salesforce text, not quick actions.', ...(r.notes || [])];
   }
   const orgName = results.some((r) => r.confidence === 'confirmed' || r.confidence === 'exact');
-  // List rows (UAT2 with records, checked live: lightning-datatable inside runtime_pipeline_inspector-…-common-list).
+  // List rows (with records, checked live: lightning-datatable inside runtime_pipeline_inspector-…-common-list).
   if (areas.has('pipelineGrid')) {
     const tags = hints.tags || [];
     // The Activity cell is Salesforce's activity chart ("No recent activity": runtime_sales_activities-activity-stacked-bar-chart…).
@@ -2013,9 +2013,9 @@ const LWC_PATH_BUTTONS = [/^mark (.+) as complete$/, /^mark as current (.+)$/, /
 const LWC_PATH_CLOSED = ['closed'];
 
 /**
- * The fields a path step button names ("Mark Sub Stage as Complete", French "Marquer Sous-étape comme terminé(e)"):
+ * The fields a path step button names ("Mark Mid Stage as Complete", French "Marquer Mi-étape comme terminé(e)"):
  * fields whose label is a whole phrase of the button text, in any language. The record's path fields first; else
- * picklists, without a label that is part of a longer one found (Stage inside Sub Stage).
+ * picklists, without a label that is part of a longer one found (Stage inside Mid Stage).
  */
 function fieldsNamedInButton(org, needle, describes, record) {
   // The path is the record's: only its object's fields, when the record is known.
@@ -2094,7 +2094,7 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
   if ((areas.has('pathHeading') || areas.has('pathButton') || lwcButton || (noMarker && needle === 'guidance for success')) && needle) {
     add(standardTextResult('path', 'confirmed'));
     demoteLabelsToPartial(results, 'this is Salesforce path text.');
-    // The button names the path field ("Sub Stage"): its label is translated like any field label.
+    // The button names the path field ("Mid Stage"): its label is translated like any field label.
     for (const { d, f } of areas.has('pathButton') || lwcButton ? fieldsNamedInButton(org, needle, describes, record) : []) {
       const r = fieldLabelResult(org, d, f, 'context');
       r.notes = [`The button shows this field's label ("${f.label}"). Translating the label changes the button text.`, ...r.notes];
@@ -2132,7 +2132,7 @@ function addStandardTextResults(org, needle, areas, describes, results, add, rec
       }));
       return;
     }
-    // To Do List: its Label field is locked in App Manager (UAT2 checked live). Found by its component, in any language.
+    // To Do List: its Label field is locked in App Manager (checked live). Found by its component, in any language.
     if (areas.has('utilityToDo')) {
       demoteLabelsToPartial(results, `custom labels are not used in ${STANDARD_AREAS.utilityBar.what}.`);
       add(salesforceTextResult('sfdctext:utilityBar', 'confirmed', {
@@ -2230,7 +2230,7 @@ function addRecordValueResults(org, d, f, results, add) {
   if (f.name === 'RecordTypeId' && results.some((r) => r.key.startsWith(`rt:${d.name}.`) && r.confidence !== 'partial')) return;
   // Several values of a multi-select do not match one value: not typed data.
   if (f.type === 'multipicklist') return;
-  // A single-select value that is not a value of the picklist (DV2: Lead Source "Partner Referral").
+  // A single-select value that is not a value of the picklist (e.g. Lead Source "Example Referral").
   if (/picklist/.test(f.type || '') && f.name !== 'CurrencyIsoCode') {
     // Part of a real value (partial highlight, or a partial match of an inactive value): the value is in
     // the picklist, so do not flag it. Only a text that matches no value of the field at all is flagged.
@@ -2261,7 +2261,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       if (mt) add(customLabelResult(org, label, mt, translationsById.get(label.Id)));
     }
     // A user viewing the org's default language sees master values: a match on another language's
-    // translation only is a coincidence (DV2 R-34: en_US user, maps__ labels matched through sv/fr).
+    // translation only is a coincidence (R-34: en_US user, package labels matched through sv/fr).
     const otherLanguage = (lang) => org.userLanguage && org.userLanguage === org.defaultLanguage && lang !== org.userLanguage;
     for (const tr of org.labelTranslations || []) {
       const label = labelsById.get(tr.ExternalStringId);
@@ -2336,13 +2336,13 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       }
       for (const qa of d.quickActions || []) {
         const mt = matchType(needle, qa.label);
-        // Object actions are "Account.New_Case"; a name without a dot is a global action
-        // (UAT2: NewTaskServiceACEMEAANZ was shown as Object: Account).
+        // Object actions are "Account.Demo_New_Case"; a name without a dot is a global action
+        // (bug: Demo_Service_Task was shown as Object: Account).
         const global = !String(qa.name || '').includes('.');
         if (!mt) continue;
-        // Salesforce's standard global actions are not listed in TW → Action (DV2-10 review).
+        // Salesforce's standard global actions are not listed in TW → Action (SB-10 review).
         if (global && isStandardGlobalAction(qa.name)) add(standardActionResult('Global', String(qa.name).replace(/^Global\./, ''), mt, qa.label));
-        // Feed actions in the describe (DV2 Contact: FeedItem.TextPost, ContentNote...): Salesforce's own (DV2-04, R-20).
+        // Feed actions in the describe (Contact: FeedItem.TextPost, ContentNote...): Salesforce's own (SB-04, R-20).
         else if (String(qa.name).startsWith('FeedItem.')) add(standardActionResult('FeedItem', String(qa.name).slice(9), mt, qa.label));
         // TW → Action has an Object option "Global" (value Global) for these.
         else add(quickActionResult(org, global ? 'Global' : d.name, global ? 'Global' : d.label, qa, mt));
@@ -2365,13 +2365,13 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     pathResults(org, needle, areas, describes, add, text, record);
   }
 
-  // Path chevrons show the path field's picklist values (UAT2: Sub Stage "Connect" ranked below maps__MA_Connect).
+  // Path chevrons show the path field's picklist values (bug: Mid Stage "Sketch" ranked below acme__Pkg_Sketch).
   if (areas.has('path') && !areas.has('pathGuidance')) confirmPathValues(org, describes, results, record);
 
   // Navigation bar items are object, tab and app names, never custom labels.
   if (areas.has('navTab')) confirmNames(results, /^(object|tab|app):/, 'navigation bar items show object, tab and app names, not custom labels.');
   if (areas.has('appName')) confirmNames(results, /^app:/, 'the app name comes from the app, not from a custom label.');
-  // A standard tab that matched no object, tab or app name is Salesforce's own tab (DV2 nav items: data-id="home",
+  // A standard tab that matched no object, tab or app name is Salesforce's own tab (nav items: data-id="home",
   // sfdc:TabDefinition.standard-home; R-67 "Calendar", sfdc:TabDefinition.standard-Event, whose object is "Event").
   const stdTab =
     (hints.selectionNames || []).map((s) => /^sfdc:TabDefinition\.standard-(\w+)$/.exec(s)?.[1]).find(Boolean) ||
@@ -2383,7 +2383,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     add(salesforceTextResult(`sfdctab:${stdTab}`, 'confirmed', { subtitle: `Standard tab ${shown}` }));
     demoteLabelsToPartial(results, `the ${shown} tab is named by Salesforce, not by a custom label.`);
   }
-  // The object name above the record name in the highlights panel (UAT2: "Account" ranked below 3 labels).
+  // The object name above the record name in the highlights panel (bug: "Account" ranked below custom labels).
   if (areas.has('highlights')) confirmNames(results, /^object:/, 'the highlights panel shows the object name, not a custom label.');
   // Pipeline Inspection: the small heading above the view name is the object's plural name.
   if (areas.has('pipelineObjectName')) confirmNames(results, /^(object|tab):/, 'Pipeline Inspection shows the object name above the view name, not a custom label.');
@@ -2461,7 +2461,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     if (r.confidence === 'exact' && confirmedFields.some((cf) => aboutField(r, cf))) r.confidence = 'confirmed';
   }
   // A value of one field: another field's picklist or global value set value with the same words is a
-  // coincidence (DV2 R-62: Lead Source value matched GVS Source System of Lead.Source_System_LST__c).
+  // coincidence (R-62: Lead Source value matched GVS Demo Source of Lead.Demo_Source__c).
   if (hints.fieldPart === 'value' && confirmedFields.length) {
     const [o, fName] = confirmedFields[0].split('.');
     const shown = describes.find((x) => x.name === o)?.fields?.find((x) => x.name === fName)?.label || fName;
@@ -2470,8 +2470,8 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       r.confidence = 'partial';
       r.notes = [`Same words only: you pointed at the ${shown} field.`, ...(r.notes || [])];
     }
-    // Part of this field's value highlighted (DV2 R-02: "ANZ" of "EX ANZ"): its value card is the answer,
-    // not one of hundreds of similar texts.
+    // Part of this field's value highlighted (R-02: "OLD" of "EX OLD"): its value card is the answer,
+    // not one of many similar texts.
     // Only values that contain the highlighted text ("USD - U.S. Dollar" contains a value: not this case).
     const prefix = `picklist:${confirmedFields[0]}.`;
     const fieldDesc = describes.find((x) => x.name === o)?.fields?.find((x) => x.name === fName);
@@ -2486,7 +2486,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
       }
     }
   }
-  // The value of the Record Type field is a record type name (DV2: "Buying Accounts" under Account Record Type).
+  // The value of the Record Type field is a record type name (e.g. "Example Accounts" under Account Record Type).
   for (const cf of hints.fieldPart === 'label' ? [] : confirmedFields) {
     const [o, fName] = cf.split('.');
     if (fName !== 'RecordTypeId') continue;
@@ -2541,7 +2541,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     }
     if (found) demoteSameTextLabels(results, 'this is a validation rule message, not a custom label.');
   }
-  // Help (i) icon of a field: its help text, not the label (bug: "Help Display Name" matched labels only).
+  // Help (i) icon of a field: its help text, not the label (bug: "Help Demo Title" matched labels only).
   if (areas.has('helpIcon')) addHelpIconResults(org, describes, confirmedFields, results, add, hints, needle);
   // The record name in the highlights panel is the Name field's value.
   if (areas.has('recordTitle')) {
@@ -2563,7 +2563,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
     if (f) add(dataResult(org, dt, f, 'context', null));
     else if (!dt && DATA_TRANSLATION_FIELDS[o]?.includes(fName) && Array.isArray(org.objects)) add(dataOffResult(o, fName));
   }
-  // Clicked a record value: also list org-built translation objects (e.g. Product_Translations__c).
+  // Clicked a record value: also list org-built translation objects (e.g. Demo_Translations__c).
   for (const cf of onLabel || onError ? [] : confirmedFields) {
     if (results.some((r) => aboutField(r, cf) && r.confidence !== 'partial' && !r.key.startsWith('data:'))) continue;
     const d = describes.find((x) => x.name === cf.split('.')[0]);
@@ -2604,7 +2604,7 @@ export function locate({ text, hints = {}, org = {}, describes = [], dataTransla
   }
 
   // Setup pages show Salesforce's own text. Custom labels are not used there, so a label
-  // with the same words is a coincidence (bug: "Export" heading matched the maps__MA_Export label).
+  // with the same words is a coincidence (bug: "Export" heading matched the acme__Pkg_Export label).
   if (isSetupPage(pageUrls)) {
     for (const r of results) {
       if (r.source !== SOURCE.CUSTOM_LABEL) continue;
@@ -2778,7 +2778,7 @@ function addOrgWideResults(org, needle, text, describes, results, add, pageFlowN
 }
 
 // Managed-package labels with the same words as a field or object are usually a coincidence
-// (UAT2: maps__ and genesysps__ labels "Territory", "Phone", "Type"...). Rank them after non-label answers.
+// (seen live: package labels "Workshop", "Phone", "Type"...). Rank them after non-label answers.
 const MANAGED_EXACT_RANK = SOURCE_RANK[SOURCE.NOT_TRANSLATABLE] + 0.5;
 // With a page-confirmed answer, show at most this many same-text managed labels; fold the rest.
 const MAX_MANAGED_WITH_CONFIRMED = 2;
@@ -2813,7 +2813,7 @@ function finalize(results, areas, orgWide = {}) {
     (a, b) =>
       CONFIDENCE_RANK[a.confidence] - CONFIDENCE_RANK[b.confidence] ||
       sourceRank(a) - sourceRank(b) ||
-      // Unmanaged labels before managed ones (bug: maps__Territory sorted before the org's own Territory label).
+      // Unmanaged labels before managed ones (bug: acme__Workshop sorted before the org's own Workshop label).
       Number(isManagedLabel(a)) - Number(isManagedLabel(b)) ||
       a.title.localeCompare(b.title)
   );

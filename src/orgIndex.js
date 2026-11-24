@@ -2,7 +2,7 @@ import { queryAll, soapCall, xmlBlocks, xmlValue, dropBlocks, escapeXml, parseSe
 
 // Org-wide search data (#24): page layout section names, screen flow text and button labels of the whole
 // org, not only the object on the current page. Metadata API listMetadata + readMetadata, 10 names per call,
-// 6 calls at a time: UAT2's 507 layouts in about 3 s (one Metadata API retrieve took over 2 minutes there;
+// 6 calls at a time: seconds in a large test sandbox (one Metadata API retrieve took minutes there;
 // Tooling reads layout metadata one row per call). Buttons come from one WebLink query. Kept per org in
 // chrome.storage.local, so a new browser session does not read it again.
 
@@ -154,7 +154,7 @@ export function readMetadataRecords(xml) {
 
 /**
  * Metadata API listMetadata: the fullNames of one metadata type. Managed-package items are left out:
- * readMetadata returns them empty (UAT2: 171 of 507 layouts came back as <records xsi:nil="true"/>).
+ * readMetadata returns them empty (checked live: their layouts come back as <records xsi:nil="true"/>).
  * Their states: installed, installedEditable, deprecated, deprecatedEditable, deleted.
  */
 export async function listMetadataNames(session, type) {

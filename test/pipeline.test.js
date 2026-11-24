@@ -1,4 +1,4 @@
-// Pipeline Inspection (UAT2 /lightning/o/Opportunity/pipelineInspection, checked live Nov 2026): Salesforce's
+// Pipeline Inspection (/lightning/o/Opportunity/pipelineInspection, checked live Nov 2026): Salesforce's
 // own page. Paths below are the real element paths with made-up names and Ids.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ const org = {
   apps: [],
   validationRules: [],
   customLabels: [
-    lbl('101D00000000050', 'Example_Won', 'Won', 'maps'),
+    lbl('101D00000000050', 'Example_Won', 'Won', 'acme'),
     lbl('101D00000000051', 'Example_Opportunities', 'Opportunities'),
     lbl('101D00000000052', 'Example_Close_Date', 'Close Date'),
   ],
@@ -25,7 +25,7 @@ const opp = {
   quickActions: [{ label: 'New', name: 'NewOpportunity', type: 'Create' }],
   fields: [
     { name: 'CloseDate', label: 'Close Date', custom: false, type: 'date' },
-    { name: 'Business_Unit__c', label: 'Business Unit', custom: true, type: 'picklist', picklistValues: [{ label: 'Coatings', value: 'Coatings', active: true }] },
+    { name: 'Demo_Team__c', label: 'Demo Team', custom: true, type: 'picklist', picklistValues: [{ label: 'Blue', value: 'Blue', active: true }] },
   ],
 };
 const HOME = 'runtime_pipeline_inspectorPipelineInspectorHome';
@@ -87,16 +87,16 @@ test('Pipeline Inspection: the heading above the view name is the object name (R
 });
 
 test('Pipeline Inspection: a list column header is the field label; rows get no Salesforce text card', () => {
-  const header = run('Business Unit', { tags: ['span', 'div', 'th', 'tr', 'thead', 'table', 'lightning-datatable', 'div'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorRecordsView', HOME] });
+  const header = run('Demo Team', { tags: ['span', 'div', 'th', 'tr', 'thead', 'table', 'lightning-datatable', 'div'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorRecordsView', HOME] });
   assert.ok(header.areas.includes('pipelineGrid'));
-  assert.equal(header.results[0].key, 'field:Opportunity.Business_Unit__c');
+  assert.equal(header.results[0].key, 'field:Opportunity.Demo_Team__c');
   assert.equal(header.results[0].confidence, 'confirmed');
   const cell = run('Example Deal 42', { tags: ['span', 'div', 'td', 'tr', 'tbody', 'table', 'lightning-datatable'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorRecordsView', HOME] });
   assert.ok(!cell.results.some((r) => r.key === 'sfdctext:pipelineInspection'));
 });
 
 test('Pipeline Inspection: the list status line is Salesforce text with org filter names', () => {
-  const out = run('0 items • Filtered by Close Date, My Team, Open Pipeline - Business Unit', { tags: ['span', 'force-list-view-manager-status-info', 'div'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorRecordsView', HOME] });
+  const out = run('0 items • Filtered by Close Date, My Team, Open Pipeline - Demo Team', { tags: ['span', 'force-list-view-manager-status-info', 'div'], auraClasses: ['runtime_pipeline_inspectorPipelineInspectorRecordsView', HOME] });
   const card = out.results.find((r) => r.key === 'sfdctext:pipelineInspection');
   assert.ok(card);
   assert.equal(card.confidence, 'context');
@@ -111,7 +111,7 @@ test('Pipeline Inspection: a metric tile says where an admin-set metric name is 
   assert.ok(r.notes.some((n) => n.includes('Pipeline Inspection Metric Configuration')));
 });
 
-// List rows read live in UAT2 (My Pipeline, Close Date Next Month, a team's opportunities).
+// List rows as read live from a list view with records.
 const GRID = ['lightning-datatable', 'lst-primary-display-grid', 'lst-primary-display', 'lst-primary-display-manager', 'lst-common-list-internal', 'lst-common-list', 'runtime_pipeline_inspector-pipeline-inspector-common-list'];
 const gridAura = ['runtime_pipeline_inspectorPipelineInspectorRecordsView', HOME];
 const header = { tags: ['span', 'a', 'lightning-primitive-header-factory', 'th', 'tr', 'thead', 'table', 'div', ...GRID], auraClasses: gridAura };
@@ -140,18 +140,18 @@ test('Pipeline Inspection list: "No recent activity" is the Salesforce activity 
 });
 
 test('Pipeline Inspection list: an account name cell is record data; a count gets no card', () => {
-  const out = run('Example Paint Shop', cell(['span', 'slot', 'a', 'div', 'force-lookup']));
+  const out = run('Example Shop', cell(['span', 'slot', 'a', 'div', 'force-lookup']));
   assert.equal(out.results[0].key, 'value:pipelineList');
   assert.equal(out.results[0].source, SOURCE.NOT_TRANSLATABLE);
   assert.ok(!out.results.some((r) => r.source === SOURCE.SALESFORCE));
   assert.equal(run('2', cell(['span', 'div'])).results.length, 0);
   // A picklist value in a cell is the picklist value, not record data.
-  const value = run('Coatings', cell(['lightning-base-formatted-text']));
-  assert.equal(value.results[0].key.startsWith('picklist:Opportunity.Business_Unit__c'), true, value.results[0].key);
+  const value = run('Blue', cell(['lightning-base-formatted-text']));
+  assert.equal(value.results[0].key.startsWith('picklist:Opportunity.Demo_Team__c'), true, value.results[0].key);
   assert.ok(!value.results.some((r) => r.key === 'value:pipelineList'));
 });
 
-// Metric names an admin set (Pipeline Settings → Metrics Settings): PipelineInspMetricConfig rows (UAT2 describe:
+// Metric names an admin set (Pipeline Settings → Metrics Settings): PipelineInspMetricConfig rows (its describe:
 // MasterLabel = the tile name, Metric = which tile).
 const metricOrg = (rows) => ({ ...org, pipelineMetrics: rows });
 const renamed = { Id: '0ZZ000000000001', DeveloperName: 'Example_Open', MasterLabel: 'Example Open Deals', Language: 'en_US', Metric: 'OpenPipeline' };

@@ -39,7 +39,7 @@ const orgIndex = {
   ],
   buttons: [
     { name: 'Ship_It', label: 'Ship It', object: 'SFTL_Widget__c', namespace: null },
-    { name: 'Map_It', label: 'Map It', object: 'Account', namespace: 'maps' },
+    { name: 'Show_It', label: 'Show It', object: 'Account', namespace: 'acme' },
   ],
 };
 const org = {
@@ -107,9 +107,9 @@ test('a button label anywhere in the org gets its Button and Link Label location
 });
 
 test('a packaged button goes to Override, named with its namespace', () => {
-  const r = run('Map It').results.find((x) => x.key === 'btn:Account.maps__Map_It');
+  const r = run('Show It').results.find((x) => x.key === 'btn:Account.acme__Show_It');
   assert.equal(r.source, SOURCE.OVERRIDE);
-  assert.equal(r.goto.package, 'maps');
+  assert.equal(r.goto.package, 'acme');
 });
 
 test('the button you pointed at keeps its confirmed page-metadata card', () => {

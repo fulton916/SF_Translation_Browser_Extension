@@ -1,4 +1,4 @@
-// DV2 live run 2 (Nov 2026): one test per confirmed finding, using the failing example with
+// Large test sandbox, run 2 (Nov 2026): one test per confirmed finding, using the failing example with
 // made-up names and Ids.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,16 +33,16 @@ const oppLeadSource = {
   name: 'Opportunity', label: 'Opportunity', labelPlural: 'Opportunities', custom: false, recordTypeInfos: [], quickActions: [],
   fields: [
     { name: 'LeadSource', label: 'Lead Source', custom: false, type: 'picklist', picklistValues: [{ label: 'Web', value: 'Web', active: true }] },
-    { name: 'Region_LST__c', label: 'Region', custom: true, type: 'picklist', picklistValues: [{ label: 'North', value: 'North', active: true }] },
+    { name: 'Demo_Region__c', label: 'Region', custom: true, type: 'picklist', picklistValues: [{ label: 'North', value: 'North', active: true }] },
   ],
 };
 const valueHints = (f) => ({ selectionNames: [`sfdc:RecordField.Opportunity.${f}`], fieldPart: 'value' });
 
 test('ISS-01: not-a-value and user calendar cards never say "as-is" or "(not translatable)"', () => {
-  const org = { ...baseOrg, valueSets: { 'Opportunity.Region_LST__c': { name: null, values: [{ value: 'North', label: 'North', active: true }] } } };
+  const org = { ...baseOrg, valueSets: { 'Opportunity.Demo_Region__c': { name: null, values: [{ value: 'North', label: 'North', active: true }] } } };
   const cards = [
     ...locate({ text: 'Example Referral', org, describes: [oppLeadSource], hints: valueHints('LeadSource') }).results,
-    ...locate({ text: 'Example Region', org, describes: [oppLeadSource], hints: valueHints('Region_LST__c') }).results,
+    ...locate({ text: 'Example Region', org, describes: [oppLeadSource], hints: valueHints('Demo_Region__c') }).results,
     ...locate({
       text: 'Example Team Visits',
       org,
@@ -52,7 +52,7 @@ test('ISS-01: not-a-value and user calendar cards never say "as-is" or "(not tra
     }).results,
   ];
   assert.ok(cards.some((r) => r.key === 'value:Opportunity.LeadSource'));
-  assert.ok(cards.some((r) => r.key === 'value:Opportunity.Region_LST__c'));
+  assert.ok(cards.some((r) => r.key === 'value:Opportunity.Demo_Region__c'));
   const cal = cards.find((r) => r.key === 'sfdctext:calendarName');
   assert.equal(cal.title, 'Calendar name created by a user');
   assert.equal(cal.source, SOURCE.NOT_TRANSLATABLE);
@@ -63,12 +63,12 @@ test('ISS-01: not-a-value and user calendar cards never say "as-is" or "(not tra
 
 // ---------- ISS-02: standard picklists read their StandardValueSet ----------
 
-test('ISS-02: loadValueSet reads a standard picklist from its StandardValueSet (real DV2 shape)', async () => {
+test('ISS-02: loadValueSet reads a standard picklist from its StandardValueSet (real shape)', async () => {
   const urls = [];
   globalThis.fetch = async (u) => {
     const url = decodeURIComponent(u);
     urls.push(url);
-    // DV2 (live, v62.0): every StandardValueSet row carries this placeholder Id, and a Metadata
+    // Checked live (v62.0): every StandardValueSet row carries this placeholder Id, and a Metadata
     // query filtered by Id fails with MALFORMED_QUERY.
     if (/FROM StandardValueSet WHERE Id/.test(url)) return { ok: false, status: 400, text: async () => '[{"message":"StandardValueSet: filtered column Id not found","errorCode":"MALFORMED_QUERY"}]' };
     const records = /SELECT (Id, )?MasterLabel FROM StandardValueSet/.test(url)
@@ -79,13 +79,13 @@ test('ISS-02: loadValueSet reads a standard picklist from its StandardValueSet (
         ] } }];
     return { ok: true, json: async () => ({ done: true, records }) };
   };
-  const vs = await loadValueSet({ host: 'live2-std.my.salesforce.com', sid: 's' }, 'Opportunity', 'LeadSource');
+  const vs = await loadValueSet({ host: 'sandbox-std.my.salesforce.com', sid: 's' }, 'Opportunity', 'LeadSource');
   assert.deepEqual(vs, { name: null, values: [{ value: 'Web', label: 'Web', active: true }, { value: 'Old Fair', label: 'Old Fair', active: false }] });
   assert.match(urls[0], /\/tooling\/query\/.*WHERE MasterLabel IN \('OpportunityLeadSource','LeadSource'\)/);
   assert.match(urls[1], /SELECT Metadata FROM StandardValueSet WHERE MasterLabel = 'LeadSource'/);
   assert.ok(!urls.some((u) => /StandardValueSet WHERE Id/.test(u)), 'never filters StandardValueSet Metadata by Id');
   // Known names first: StageName is in the OpportunityStage set.
-  await loadValueSet({ host: 'live2-std.my.salesforce.com', sid: 's' }, 'Opportunity', 'StageName');
+  await loadValueSet({ host: 'sandbox-std.my.salesforce.com', sid: 's' }, 'Opportunity', 'StageName');
   assert.match(urls[2], /MasterLabel IN \('OpportunityStage','OpportunityStageName','StageName'\)/);
 });
 
@@ -133,7 +133,7 @@ test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed ac
     assert.equal(sf[0].key, 'stdaction:FeedItem.TextPost');
     assert.equal(sf[0].subtitle, 'Standard feed action FeedItem.TextPost');
   }
-  // UI-03: the publisher inside a page's Chatter tab (real DV2 path: the publisher's own a[role=tab] inside
+  // UI-03: the publisher inside a page's Chatter tab (real path: the publisher's own a[role=tab] inside
   // flexipage-tab2[role=tabpanel]) is not a "Lightning page tab label".
   const inChatterTab = {
     selectionNames: ['sfdc:QuickAction.FeedItem.TextPost'],
@@ -155,19 +155,19 @@ test('ISS-03: Chatter "Post" gives exactly one Salesforce text card (the feed ac
 
 // ---------- ISS-04: part of a picklist value highlighted ----------
 
-test('ISS-04: highlighting "ANZ" in the value "EX ANZ" puts that value card first, ahead of similar labels', () => {
+test('ISS-04: highlighting "OLD" in the value "EX OLD" puts that value card first, ahead of similar labels', () => {
   const account = {
     name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
-    fields: [{ name: 'Business_Unit_LST__c', label: 'Business Unit', custom: true, type: 'picklist', picklistValues: [{ label: 'EX NORTH', value: 'EX NORTH', active: true }] }],
+    fields: [{ name: 'Demo_Team__c', label: 'Demo Team', custom: true, type: 'picklist', picklistValues: [{ label: 'EX NORTH', value: 'EX NORTH', active: true }] }],
   };
   const org = {
     ...baseOrg,
-    customLabels: Array.from({ length: 30 }, (_, i) => lbl(`101D0000000${String(100 + i)}`, `Example_${i}`, `Example ganz text ${i}`)),
-    valueSets: { 'Account.Business_Unit_LST__c': { name: null, values: [{ value: 'EX NORTH', label: 'EX NORTH', active: true }, { value: 'EX ANZ', label: 'EX ANZ', active: false }] } },
+    customLabels: Array.from({ length: 30 }, (_, i) => lbl(`101D0000000${String(100 + i)}`, `Example_${i}`, `Example gold text ${i}`)),
+    valueSets: { 'Account.Demo_Team__c': { name: null, values: [{ value: 'EX NORTH', label: 'EX NORTH', active: true }, { value: 'EX OLD', label: 'EX OLD', active: false }] } },
   };
-  const out = locate({ text: 'ANZ', org, describes: [account], hints: { selectionNames: ['sfdc:RecordField.Account.Business_Unit_LST__c'], fieldPart: 'value' } });
+  const out = locate({ text: 'OLD', org, describes: [account], hints: { selectionNames: ['sfdc:RecordField.Account.Demo_Team__c'], fieldPart: 'value' } });
   const r = out.results[0];
-  assert.equal(r.key, 'picklist:Account.Business_Unit_LST__c.EX ANZ');
+  assert.equal(r.key, 'picklist:Account.Demo_Team__c.EX OLD');
   assert.equal(r.confidence, 'context');
   assert.equal(r.notes[0], 'You highlighted part of this value.');
   assert.ok(!out.results.some((x) => x.source === SOURCE.CUSTOM_LABEL), 'similar labels stay behind "Show more"');
@@ -175,17 +175,17 @@ test('ISS-04: highlighting "ANZ" in the value "EX ANZ" puts that value card firs
 });
 
 test('ISS-04: a highlight under 5 characters matches whole words only', () => {
-  assert.equal(matchType('anz', 'EX ANZ'), 'partial');
-  assert.equal(matchType('anz', 'Ganz anz'), 'partial');
-  assert.equal(matchType('anz', 'Example ganz text'), null);
-  assert.equal(matchType('emea', 'EX EMEA (old)'), 'partial');
+  assert.equal(matchType('old', 'EX OLD'), 'partial');
+  assert.equal(matchType('old', 'Gold old'), 'partial');
+  assert.equal(matchType('old', 'Example gold text'), null);
+  assert.equal(matchType('west', 'EX WEST (new)'), 'partial');
   assert.equal(matchType('portal', 'Welcome to the portals'), 'partial', '5+ characters still match inside words');
 });
 
 // ---------- ISS-06: Aura (page layout) section header ----------
 
 test('ISS-06: an Aura record layout section header is the Layout Section, not a same-text custom label', () => {
-  // Real path (DV2 Event Details): span < button < h3 < legend < fieldset[forcePageBlockSection] < div[forcePageBlock].
+  // Real path (Event Details): span < button < h3 < legend < fieldset[forcePageBlockSection] < div[forcePageBlock].
   const header = { tags: ['span', 'button', 'h3', 'legend', 'fieldset', 'div'], auraClasses: ['forcePageBlockSection', 'forcePageBlock', 'force_detailPanel'] };
   const event = { name: 'Event', label: 'Event', labelPlural: 'Events', custom: false, recordTypeInfos: [], quickActions: [], fields: [] };
   const org = { ...baseOrg, customLabels: [lbl('101D00000000081', 'Example_Visit_Info', 'Visit Information')] };
@@ -217,7 +217,7 @@ test('ISS-08: the Closed path step card has no subtitle; step 2 explains the clo
 // ---------- ISS-09: an event box on the Calendar page is the Event's subject ----------
 
 test('ISS-09: an event box in the calendar week grid is record data (Event subject), confirmed', () => {
-  // Real path (DV2): a.subject-link < div.eventBox < div.calendarEvent < runtime_calendar-timed-event < ... day-timed-events.
+  // Real path: a.subject-link < div.eventBox < div.calendarEvent < runtime_calendar-timed-event < ... day-timed-events.
   const ev = { tags: ['a', 'div', 'div', 'runtime_calendar-timed-event', 'ul', 'runtime_calendar-day-timed-events', 'div'], auraClasses: ['forceCalendarDay', 'forceCalendarDayWeekView', 'forceCalendar', 'calendarHome'] };
   const org = { ...baseOrg, customLabels: [lbl('101D00000000091', 'Example_Visit', 'Example customer visit')] };
   const out = locate({ text: 'Example customer visit', org, describes: [], hints: ev, pageUrls: ['https://example.lightning.force.com/lightning/o/Event/home'] });

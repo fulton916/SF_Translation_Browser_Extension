@@ -1,5 +1,5 @@
-// Page metadata and page-area fixes from the UAT2 Account / Opportunity sweep (Nov 2026).
-// FlexiPage shapes and DOM ids are copied from the real Buying Account record page.
+// Page metadata and page-area fixes from the Account / Opportunity sweep (Nov 2026).
+// FlexiPage shapes and element paths as Salesforce returns them, with made-up names and Ids.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { locate, buildGotoUrl, SOURCE } from '../src/locator.js';
@@ -21,28 +21,28 @@ const org = {
   apps: [],
   validationRules: [],
   customLabels: [
-    lbl('101P00000000001', 'Territory', 'Territory'),
-    lbl('101P00000000002', 'MA_Territory', 'Territory', 'maps'),
-    lbl('101P00000000003', 'MA_Details', 'Details', 'maps'),
-    lbl('101P00000000004', 'Value_Recorder', 'Value Recorder'),
-    lbl('101P00000000005', 'MA_Account', 'Account', 'maps'),
+    lbl('101P00000000001', 'Workshop', 'Workshop'),
+    lbl('101P00000000002', 'Pkg_Workshop', 'Workshop', 'acme'),
+    lbl('101P00000000003', 'Pkg_Details', 'Details', 'acme'),
+    lbl('101P00000000004', 'Demo_Recorder', 'Demo Recorder'),
+    lbl('101P00000000005', 'Pkg_Account', 'Account', 'acme'),
     lbl('101P00000000006', 'Account_Label', 'Account'),
-    lbl('101P00000000007', 'MA_Files', 'Files', 'maps'),
+    lbl('101P00000000007', 'Pkg_Files', 'Files', 'acme'),
   ],
 };
 const account = {
   name: 'Account', label: 'Account', labelPlural: 'Accounts', custom: false, recordTypeInfos: [], quickActions: [],
   fields: [
     { name: 'Name', label: 'Account Name', custom: false, type: 'string', picklistValues: [] },
-    { name: 'Display_Name__c', label: 'Display Name', custom: true, type: 'string', inlineHelpText: 'Name shown to customers', picklistValues: [] },
+    { name: 'Demo_Title__c', label: 'Demo Title', custom: true, type: 'string', inlineHelpText: 'Title shown on the page', picklistValues: [] },
     {
-      name: 'Market_Unit_MST__c', label: 'Market Unit', custom: true, type: 'multipicklist',
-      picklistValues: [{ label: 'Market Unit 1', value: 'MU1', active: true }],
+      name: 'Demo_Markets__c', label: 'Demo Market', custom: true, type: 'multipicklist',
+      picklistValues: [{ label: 'Demo Market 1', value: 'DM1', active: true }],
     },
   ],
 };
-const FLEXI = 'forcegenerated-flexipage_buying_account_record_page_three_column_account__view_js___lmt___1794593739000';
-const page = 'Buying Account Record Page Three Column';
+const FLEXI = 'forcegenerated-flexipage_demo_account_record_page_account__view_js___lmt___1';
+const page = 'Demo Account Record Page';
 const run = (text, extra = {}) => locate({ text, org, describes: [account], ...extra });
 const tabHints = (id) => ({ tags: ['a', 'li', 'ul', 'lightning-tab-bar', 'div', 'flexipage-tabset2', FLEXI], tabRole: 'tab', componentIds: [id, 'flexipage_tabset'], flexipage: FLEXI });
 const listHints = (id, header = true) => ({
@@ -60,11 +60,11 @@ const flexiFetch = (urls) => async (u) => {
     json: async () => ({
       done: true,
       records: [{
-        DeveloperName: 'Buying_Account_Record_Page_Three_Column', MasterLabel: page,
+        DeveloperName: 'Demo_Account_Record_Page', MasterLabel: page,
         Metadata: { flexiPageRegions: [{ itemInstances: [
-          ci('flexipage_tab2', 'flexipage:tab', { body: 'Facet-52bb', title: 'Standard.Tab.detail' }),
-          ci('flexipage_tab', 'flexipage:tab', { body: 'Facet-9574', title: '{!$Label.Territory}' }),
-          ci('lst_dynamicRelatedList16', 'lst:dynamicRelatedList', { parentFieldApiName: 'Account.Id', relatedListApiName: 'Value_Recorders__r', relatedListLabel: 'Value Recorder' }),
+          ci('flexipage_tab2', 'flexipage:tab', { body: 'Facet-1', title: 'Standard.Tab.detail' }),
+          ci('flexipage_tab', 'flexipage:tab', { body: 'Facet-2', title: '{!$Label.Workshop}' }),
+          ci('lst_dynamicRelatedList16', 'lst:dynamicRelatedList', { parentFieldApiName: 'Account.Id', relatedListApiName: 'Demo_Recorders__r', relatedListLabel: 'Demo Recorder' }),
           ci('force_relatedListSingleContainer15', 'force:relatedListSingleContainer', { parentFieldApiName: 'Account.Id', relatedListApiName: 'AttachedContentDocuments', relatedListComponentOverride: 'NONE' }),
         ] }] },
       }],
@@ -79,8 +79,8 @@ test('M-03/M-09: FlexiPage reader returns the shown text per component kind, and
   const tab = await loadFlexiPageComponent(s, FLEXI, 'flexipage_tab2Tab', ['Account']);
   assert.deepEqual([tab.id, tab.component, tab.label], ['flexipage_tab2', 'flexipage:tab', 'Standard.Tab.detail']);
   const rl = await loadFlexiPageComponent(s, FLEXI, 'lst_dynamicRelatedList16', ['Account']);
-  assert.equal(rl.label, 'Value Recorder');
-  assert.equal(rl.props.relatedListApiName, 'Value_Recorders__r');
+  assert.equal(rl.label, 'Demo Recorder');
+  assert.equal(rl.props.relatedListApiName, 'Demo_Recorders__r');
   const files = await loadFlexiPageComponent(s, FLEXI, 'force_relatedListSingleContainer15', ['Account']);
   assert.equal(files.label, null);
   assert.equal(files.props.relatedListApiName, 'AttachedContentDocuments');
@@ -96,43 +96,43 @@ test('M-09: standard tab title Standard.Tab.detail → Salesforce standard tab n
   assert.ok(!out.results.some((r) => r.key === 'area:lightningPageTab'), 'no contradictory generic tab card');
 });
 
-test('M-09: tab title {!$Label.Territory} confirms the unmanaged Territory label; plain text is App Builder text', () => {
-  const pc = { page, id: 'flexipage_tab', component: 'flexipage:tab', label: '{!$Label.Territory}', props: {} };
-  const out = run('Territory', { hints: tabHints('flexipage_tabTab'), pageComponent: pc });
+test('M-09: tab title {!$Label.Workshop} confirms the unmanaged Workshop label; plain text is App Builder text', () => {
+  const pc = { page, id: 'flexipage_tab', component: 'flexipage:tab', label: '{!$Label.Workshop}', props: {} };
+  const out = run('Workshop', { hints: tabHints('flexipage_tabTab'), pageComponent: pc });
   assert.equal(out.results[0].key, 'label:101P00000000001');
   assert.equal(out.results[0].confidence, 'confirmed');
   assert.ok(!out.results.some((r) => r.key === 'area:lightningPageTab'));
-  const plain = run('Additional Attributes', { hints: tabHints('flexipage_tab3Tab'), pageComponent: { page, id: 'flexipage_tab3', component: 'flexipage:tab', label: 'Additional Attributes', props: {} } });
+  const plain = run('Extra Facts', { hints: tabHints('flexipage_tab3Tab'), pageComponent: { page, id: 'flexipage_tab3', component: 'flexipage:tab', label: 'Extra Facts', props: {} } });
   assert.equal(plain.results[0].title, 'Tab label typed in Lightning App Builder');
   assert.match(plain.results[0].steps[2], /click the tab → set Label to/);
 });
 
-test('M-03: related list label typed in App Builder (Value Recorder) → not translatable, no misleading TW card', () => {
-  const pc = { page, id: 'lst_dynamicRelatedList16', component: 'lst:dynamicRelatedList', label: 'Value Recorder', props: { relatedListApiName: 'Value_Recorders__r', relatedListLabel: 'Value Recorder' } };
-  const out = run('Value Recorder (3)', { hints: listHints('lst_dynamicRelatedList16'), pageComponent: pc });
+test('M-03: related list label typed in App Builder (Demo Recorder) → not translatable, no misleading TW card', () => {
+  const pc = { page, id: 'lst_dynamicRelatedList16', component: 'lst:dynamicRelatedList', label: 'Demo Recorder', props: { relatedListApiName: 'Demo_Recorders__r', relatedListLabel: 'Demo Recorder' } };
+  const out = run('Demo Recorder (3)', { hints: listHints('lst_dynamicRelatedList16'), pageComponent: pc });
   assert.equal(out.results[0].title, 'Related list label typed in Lightning App Builder');
-  assert.equal(out.results[0].copy, '{!$Label.c.Value_Recorder}');
-  assert.match(out.results[0].steps[2], /click the related list → set Related List Label to \{!\$Label\.c\.Value_Recorder\}/);
+  assert.equal(out.results[0].copy, '{!$Label.c.Demo_Recorder}');
+  assert.match(out.results[0].steps[2], /click the related list → set Related List Label to \{!\$Label\.c\.Demo_Recorder\}/);
   assert.ok(!out.results.some((r) => r.key === 'area:relatedList'));
 });
 
-test('DV2: a typed related list label also says the list falls back to a translated title when cleared', () => {
-  const child = { childSObject: 'Example_Party__c', field: 'Opportunity__c', fieldLabel: 'Opportunity', objectLabel: 'Example Party' };
-  const pc = { page, id: 'lst_dynamicRelatedList7', component: 'lst:dynamicRelatedList', label: 'Example Parties', props: { relatedListApiName: 'Example_Parties__r', relatedListLabel: 'Example Parties' }, child };
-  const out = run('Example Parties (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: pc });
+test('a typed related list label also says the list falls back to a translated title when cleared', () => {
+  const child = { childSObject: 'Demo_Part__c', field: 'Demo_Opportunity__c', fieldLabel: 'Opportunity', objectLabel: 'Demo Part' };
+  const pc = { page, id: 'lst_dynamicRelatedList7', component: 'lst:dynamicRelatedList', label: 'Demo Parts', props: { relatedListApiName: 'Demo_Parts__r', relatedListLabel: 'Demo Parts' }, child };
+  const out = run('Demo Parts (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: pc });
   assert.equal(out.results[0].title, 'Related list label typed in Lightning App Builder');
   const last = out.results[0].steps.at(-1);
   assert.match(last, /^Or clear the Related List Label → Save/);
-  assert.match(last, /Example_Party__c\.Opportunity__c/);
-  assert.match(last, /Translation Workbench → Custom Field → Example Party → Related List Label/);
+  assert.match(last, /Demo_Part__c\.Demo_Opportunity__c/);
+  assert.match(last, /Translation Workbench → Custom Field → Demo Part → Related List Label/);
   // A standard relationship: its standard title.
   const std = run('Example Opps (0)', { hints: listHints('lst_dynamicRelatedList8'), pageComponent: { ...pc, id: 'lst_dynamicRelatedList8', label: 'Example Opps', props: { relatedListApiName: 'Opportunities' }, child: undefined } });
   assert.match(std.results[0].steps.at(-1), /standard title \(Opportunities\).*Rename Tabs and Labels/);
   // A managed package's lookup field: Workbench → Override.
-  const managed = run('Example Parties (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: { ...pc, child: { ...child, childSObject: 'exns__Activity__c', field: 'exns__Opportunity__c' } } });
+  const managed = run('Demo Parts (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: { ...pc, child: { ...child, childSObject: 'exns__Activity__c', field: 'exns__Opportunity__c' } } });
   assert.match(managed.results[0].steps.at(-1), /Translation Workbench → Override \(package exns\) → Custom Field/);
   // A lookup that could not be read: no fallback step.
-  const unknown = run('Example Parties (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: { ...pc, child: undefined } });
+  const unknown = run('Demo Parts (0)', { hints: listHints('lst_dynamicRelatedList7'), pageComponent: { ...pc, child: undefined } });
   assert.ok(!unknown.results[0].steps.some((s) => s.startsWith('Or clear')));
 });
 
@@ -149,7 +149,7 @@ test('M-12: standard related list without a label (Files) → Salesforce standar
 });
 
 test('M-12: a click inside related list rows is not treated as the list title', () => {
-  const out = run('Sales Representative', { hints: listHints('lst_dynamicRelatedList9', false) });
+  const out = run('Example Role', { hints: listHints('lst_dynamicRelatedList9', false) });
   assert.ok(!out.results.some((r) => r.key === 'area:relatedList'));
   assert.ok(out.areas.includes('relatedListRow'));
   // Older content.js (no listHeader): unchanged.
@@ -158,15 +158,15 @@ test('M-12: a click inside related list rows is not treated as the list title', 
 });
 
 test('M-06: help (i) icon → the field help text, confirmed; the label card drops to page area', () => {
-  const hints = { tags: ['svg', 'button', 'lightning-helptext', 'div', 'records-record-layout-item'], helpIcon: true, selectionNames: ['sfdc:RecordField.Account.Display_Name__c'] };
-  const out = run('Display Name', { hints });
-  assert.equal(out.results[0].key, 'help:Account.Display_Name__c');
+  const hints = { tags: ['svg', 'button', 'lightning-helptext', 'div', 'records-record-layout-item'], helpIcon: true, selectionNames: ['sfdc:RecordField.Account.Demo_Title__c'] };
+  const out = run('Demo Title', { hints });
+  assert.equal(out.results[0].key, 'help:Account.Demo_Title__c');
   assert.equal(out.results[0].confidence, 'confirmed');
   assert.ok(out.results[0].steps.includes('Aspect: Help Text'));
-  assert.equal(out.results.find((r) => r.key === 'field:Account.Display_Name__c').confidence, 'context');
+  assert.equal(out.results.find((r) => r.key === 'field:Account.Demo_Title__c').confidence, 'context');
   // No field in the path: the field with this label and help text, same text only.
-  const noField = run('Display Name', { hints: { tags: ['lightning-helptext'], helpIcon: true } });
-  assert.equal(noField.results.find((r) => r.key === 'help:Account.Display_Name__c').confidence, 'exact');
+  const noField = run('Demo Title', { hints: { tags: ['lightning-helptext'], helpIcon: true } });
+  assert.equal(noField.results.find((r) => r.key === 'help:Account.Demo_Title__c').confidence, 'exact');
 });
 
 test('M-11: object name above the record name in the highlights panel → Rename Tabs object, not labels', () => {
@@ -177,7 +177,7 @@ test('M-11: object name above the record name in the highlights panel → Rename
 });
 
 test('M-13: the record name in the highlights panel is record data', () => {
-  const out = run('Example Buying Account', {
+  const out = run('Example Account 42', {
     hints: { tags: ['lightning-formatted-text', 'records-highlights2', 'records-lwc-highlights-panel'], recordTitle: true },
     record: { object: 'Account', id: '001000000000001AAA' },
   });
@@ -186,18 +186,18 @@ test('M-13: the record name in the highlights panel is record data', () => {
 });
 
 test('M-02: picklist field on a Global Value Set → TW Global Value Set tree under the value set label', () => {
-  const vsOrg = { ...org, valueSets: { 'Account.Market_Unit_MST__c': { name: 'Market_Unit_LST', label: 'Market Unit', namespace: null } } };
-  const r = locate({ text: 'Market Unit 1', org: vsOrg, describes: [account], hints: { selectionNames: ['sfdc:RecordField.Account.Market_Unit_MST__c'] } }).results[0];
-  assert.equal(r.key, 'picklist:Account.Market_Unit_MST__c.MU1');
+  const vsOrg = { ...org, valueSets: { 'Account.Demo_Markets__c': { name: 'Demo_Market_List', label: 'Demo Market', namespace: null } } };
+  const r = locate({ text: 'Demo Market 1', org: vsOrg, describes: [account], hints: { selectionNames: ['sfdc:RecordField.Account.Demo_Markets__c'] } }).results[0];
+  assert.equal(r.key, 'picklist:Account.Demo_Markets__c.DM1');
   assert.equal(r.confidence, 'confirmed');
-  assert.equal(r.title, 'Global value set Market Unit: picklist value');
+  assert.equal(r.title, 'Global value set Demo Market: picklist value');
   assert.ok(r.steps.includes('Setup Component: Global Value Set'));
   assert.ok(!r.steps.some((s) => s.startsWith('Object:')));
   assert.equal(r.goto.component, 'SharedPicklistDefinition');
-  assert.equal(r.goto.parent, 'Market Unit');
-  assert.deepEqual(r.goto.rows, ['Market Unit 1', 'MU1']);
+  assert.equal(r.goto.parent, 'Demo Market');
+  assert.deepEqual(r.goto.rows, ['Demo Market 1', 'DM1']);
   // Without value set data: unchanged Picklist Value card.
-  const plain = run('Market Unit 1').results[0];
+  const plain = run('Demo Market 1').results[0];
   assert.ok(plain.steps.includes('Setup Component: Picklist Value'));
 });
 
@@ -207,17 +207,17 @@ test('M-02: loadValueSet reads CustomField Metadata one row at a time, then the 
     const url = decodeURIComponent(u);
     urls.push(url);
     const records = /SELECT Id FROM CustomField/.test(url)
-      ? [{ Id: '00NVD000005T0kP2AS' }]
+      ? [{ Id: '00N000000000001AAA' }]
       : /SELECT Metadata FROM CustomField/.test(url)
-        ? [{ Metadata: { valueSet: { valueSetName: 'Market_Unit_LST', restricted: true } } }]
-        : [{ MasterLabel: 'Market Unit', NamespacePrefix: null }];
+        ? [{ Metadata: { valueSet: { valueSetName: 'Demo_Market_List', restricted: true } } }]
+        : [{ MasterLabel: 'Demo Market', NamespacePrefix: null }];
     return { ok: true, json: async () => ({ done: true, records }) };
   };
-  const vs = await loadValueSet({ host: 'vs-test.my.salesforce.com', sid: 's' }, 'Account', 'Market_Unit_MST__c');
-  assert.deepEqual(vs, { name: 'Market_Unit_LST', label: 'Market Unit', namespace: null });
-  assert.match(urls[0], /EntityDefinition\.QualifiedApiName = 'Account' AND DeveloperName = 'Market_Unit_MST' AND NamespacePrefix = null/);
-  assert.match(urls[1], /WHERE Id = '00NVD000005T0kP2AS'/);
-  assert.match(urls[2], /FROM GlobalValueSet WHERE DeveloperName = 'Market_Unit_LST'/);
+  const vs = await loadValueSet({ host: 'vs-test.my.salesforce.com', sid: 's' }, 'Account', 'Demo_Markets__c');
+  assert.deepEqual(vs, { name: 'Demo_Market_List', label: 'Demo Market', namespace: null });
+  assert.match(urls[0], /EntityDefinition\.QualifiedApiName = 'Account' AND DeveloperName = 'Demo_Markets' AND NamespacePrefix = null/);
+  assert.match(urls[1], /WHERE Id = '00N000000000001AAA'/);
+  assert.match(urls[2], /FROM GlobalValueSet WHERE DeveloperName = 'Demo_Market_List'/);
   assert.equal(await loadValueSet({ host: 'vs-test.my.salesforce.com', sid: 's' }, 'Account', 'Industry'), null, 'standard fields are skipped');
 });
 
