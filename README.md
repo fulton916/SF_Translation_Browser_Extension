@@ -372,3 +372,8 @@ Auto-fill (`src/content.js`) runs against live Salesforce pages and is tested by
 | `src/labelEdit.js` | Custom label translation editor: requests, plain-word errors, save and read back (unit tested) |
 | `src/myLanguage.js` | Switch my language: reads and saves the signed-in user's own language, remembers the one before the first switch (unit tested) |
 | `src/logStore.js`, `src/log.html`, `src/log.js` | Test log storage and viewer |
+
+## License
+
+Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify, or
+distribute this software without written permission. See [LICENSE](LICENSE).
