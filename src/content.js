@@ -402,8 +402,8 @@
         })
       );
     }
-    if (r.url && r.url.startsWith('/lightning/')) {
-      const a = el('a', r.goto ? 'btn secondary' : 'btn', 'Open page');
+    if (r.linkText) {
+      const a = el('a', r.goto ? 'btn secondary' : 'btn', r.linkText);
       a.href = new URL(r.url, location.origin).href;
       a.target = '_blank';
       a.rel = 'noopener';

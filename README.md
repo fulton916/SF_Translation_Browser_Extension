@@ -80,7 +80,8 @@ The **tag** (top right) says how the card was found, strongest first:
 
 Lower matches are behind the link **Show N similar texts in your org**. Click it to add those cards.
 
-Buttons: **Go to translation** (only on cards with a translation screen), **Open page** (the Setup or record page for that card),
+Buttons: **Go to translation** (only on cards with a translation screen), **Open custom label** (custom label cards: the label's own page),
+a button named after the page it opens, for example **Open Custom Labels** or **Open Object Manager** (only on cards with no translation screen),
 **Copy ...** (the API name or label reference), and **Edit translations** (custom label cards only). At the bottom: **Refresh org data** (reload the org's
 metadata after a change), **Test log**, **Missing translations** (the org's missing-translations report, the same page
 as the toolbar popup's report button), and **Report a problem**.
