@@ -10,10 +10,11 @@ filters. You type the translation and click Save.
 
 ## Demo
 
-[![Pointing at Customer Priority on an account, pressing Alt + Shift + T, picking Spanish, and Go to translation opening Translation Workbench with the row marked](media/translation-workbench-demo.gif)](media/translation-workbench-demo.mp4)
+[![Four scenes: a custom field label opens Translation Workbench, a standard field opens Rename Tabs and Labels, a tab title opens its Custom Label, and a text Owned by Salesforce has nothing to translate](media/sf-translation-locator-tour.gif)](media/sf-translation-locator-tour.mp4)
 
-Click the picture for the full-quality video (28 seconds, no sound). Loading time is trimmed and the web
-address is a placeholder.
+Click the picture for the full-quality video (98 seconds, no sound): Translation Workbench, Rename Tabs and Labels,
+Custom Labels, and text Owned by Salesforce. The web address is a placeholder. Setup loading is replaced by still
+pages with fades, and the scroll to the row is added: the extension goes straight to the row.
 
 ## Install (developer mode, about 2 minutes)
 
