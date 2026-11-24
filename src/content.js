@@ -300,7 +300,7 @@
       return panel;
     }
     if (p.state === 'error') {
-      panel.append(el('div', 'error', p.message));
+      panel.append(el('div', 'error', p.message), myLanguage());
       return panel;
     }
 
@@ -311,6 +311,7 @@
     if (p.language?.orgDefault) meta.push(`org default ${langName(p.language.orgDefault)}`);
     if (p.contextObjects?.length) meta.push(`objects searched: ${p.contextObjects.join(', ')}`);
     if (meta.length) panel.append(el('div', 'muted', meta.join(' · ')));
+    panel.append(myLanguage());
 
     const list = el('div', 'list');
     for (const r of p.results || []) list.append(card(r));
@@ -545,6 +546,85 @@
     return row;
   }
 
+  // ---------- the user's own Salesforce language (issue #46) ----------
+
+  /** "Switch my language": a picker and Switch back. Saves the signed-in user's own language, then reloads the page. */
+  function myLanguage() {
+    const wrap = el('div', 'my-lang');
+    const b = button('Switch my language', 'link', 'View Salesforce in another language, then switch back', () => {
+      const open = wrap.querySelector('.editor');
+      if (open) {
+        open.remove();
+        b.textContent = 'Switch my language';
+        return;
+      }
+      b.textContent = 'Close language switch';
+      const box = el('div', 'editor');
+      wrap.append(box);
+      loadMyLanguage(box);
+    });
+    wrap.append(b);
+    return wrap;
+  }
+
+  function loadMyLanguage(box) {
+    box.replaceChildren(el('div', 'muted', 'Reading your language…'));
+    ask({ type: 'sftl:myLanguage', op: 'load' }, 20000)
+      .then((res) => {
+        if (res?.error) throw new Error(res.error);
+        renderMyLanguage(box, res);
+      })
+      .catch((e) => {
+        box.replaceChildren(el('div', 'error', e.message), button('Reload', 'link', 'Read your language again', () => loadMyLanguage(box)));
+      });
+  }
+
+  function renderMyLanguage(box, me) {
+    // The user name says whose language changes (an admin can be logged in as someone else).
+    box.replaceChildren(el('div', 'muted', `${me.username}: ${langName(me.current)}`));
+    if (me.blocked) {
+      box.append(el('div', 'error', me.blocked));
+      return;
+    }
+    const sel = el('select', 'lang-select');
+    sel.setAttribute('aria-label', 'My Salesforce language');
+    const others = me.languages.filter((c) => c !== me.current).sort((a, b) => langName(a).localeCompare(langName(b)));
+    sel.append(new Option('Pick a language', ''));
+    others.forEach((code) => sel.append(new Option(`${langName(code)} (${code})`, code)));
+    const go = button('Switch', 'btn', 'Save this language on your Salesforce user, then reload the page', () => send({ op: 'switch', language: sel.value }));
+    const back = me.before ? button(`Switch back to ${langName(me.before)}`, 'btn secondary', 'Save the language you had before, then reload the page', () => send({ op: 'back' })) : null;
+    const status = el('div', 'muted', 'Changes the language of all your Salesforce pages and reloads this one. Save your work on this page first.');
+    const update = (busy = false) => {
+      sel.disabled = busy;
+      go.disabled = busy || !sel.value;
+      if (back) back.disabled = busy;
+    };
+    sel.addEventListener('change', () => update());
+    update();
+    const acts = el('div', 'actions');
+    acts.append(sel, go);
+    if (back) acts.append(back);
+    box.append(acts, status);
+
+    function send(change) {
+      update(true);
+      status.className = 'muted';
+      status.textContent = 'Saving…';
+      ask({ type: 'sftl:myLanguage', ...change }, 30000)
+        .then((res) => {
+          if (res?.error) throw new Error(res.error);
+          status.className = 'ok';
+          status.textContent = `Saved: ${langName(res.language)}. Reloading the page…`;
+          location.reload();
+        })
+        .catch((e) => {
+          status.className = 'error';
+          status.textContent = e.message;
+          update();
+        });
+    }
+  }
+
   // ---------- target language ----------
 
   // Salesforce language codes (end-user + common platform languages).
@@ -751,6 +831,9 @@
       .edit-lang { font-weight: 600; }
       .edit-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; padding: 4px; border: 1px solid #c9c9c9; border-radius: 4px; resize: vertical; margin-top: 2px; }
       .edit-count { margin-left: auto; align-self: center; }
+      .my-lang { margin: 2px 0 4px; }
+      .my-lang .actions { margin-top: 0; }
+      .btn.secondary:disabled { color: #fff; }
       .btn:disabled { background: #c9c9c9; cursor: default; }
       .ok { color: #2e844a; font-size: 12px; margin: 2px 0; word-break: break-word; }
     `;
