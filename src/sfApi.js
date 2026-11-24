@@ -79,7 +79,8 @@ async function sfErrorFrom(res) {
     msg = first?.message || body;
     code = first?.errorCode || null;
   } catch {}
-  if (res.status === 401) msg = 'Session expired or API access is off for your user (needs "API Enabled"). Reload Salesforce and retry.';
+  // userinfo answers an expired session with 403 and the plain text Bad_OAuth_Token (dev org, Nov 2026).
+  if (res.status === 401 || body.trim() === 'Bad_OAuth_Token') msg = 'Session expired or API access is off for your user (needs "API Enabled"). Reload Salesforce and retry.';
   return new SfError(res.status, String(msg).slice(0, 300), code);
 }
 
