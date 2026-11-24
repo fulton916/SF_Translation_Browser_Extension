@@ -159,6 +159,14 @@ test('languages the org does not offer, and an unexpected user Id, are stopped b
   }
 });
 
+test('signed out: userinfo answers 403 Bad_OAuth_Token, the panel says the session expired', async () => {
+  const f = fake();
+  globalThis.fetch = async () => ({ ok: false, status: 403, text: async () => 'Bad_OAuth_Token' });
+  await assert.rejects(loadMyLanguage(f.session, f.store), { status: 403, message: /^Session expired/ });
+  await assert.rejects(switchMyLanguage(f.session, f.store, 'fr', NAME), { message: /^Session expired/ });
+  assert.deepEqual(f.mem, {});
+});
+
 test('save errors in plain words', () => {
   assert.equal(plainSaveError(new SfError(400, 'x', 'INSUFFICIENT_ACCESS_OR_READONLY')), MESSAGES.noPermission);
   assert.equal(plainSaveError(new SfError(403, 'API limit.', 'REQUEST_LIMIT_EXCEEDED')), 'Salesforce did not save your language: API limit.');
