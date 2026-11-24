@@ -182,6 +182,8 @@ export function objectItems({ object, objectLabel = null, language, translation,
   const out = [];
   for (const f of translation.fields || []) {
     if (!f.name || !isOwnItem(f.name)) continue;
+    // Activity's own fields, also in the files of both objects: Translation Workbench lists them under Activity only.
+    if (/^(Event|Task)$/.test(object) && /__c$/i.test(f.name)) continue;
     const m = masterField(f.name);
     const fieldMaster = m?.label?.master || f.label?.master || f.name;
     if (f.label) {
@@ -204,11 +206,13 @@ export function objectItems({ object, objectLabel = null, language, translation,
           wb({ component: 'Custom Field', object, objectLabel: label, aspect: 'Related List Label', row: labelAndApi(fieldMaster, f.name), rows: [fieldMaster, relMaster, f.name] }))
       );
     }
+    // Activity is not listed for Picklist Value; its values are under Task and under Event.
+    const valuesOn = object === 'Activity' ? { object: 'Task', objectLabel: 'Task' } : { object, objectLabel: label };
     for (const pv of f.picklistValues || []) {
       if (!pv.masterLabel || !pv.translation) continue;
       out.push(
         item(ITEM_TYPE.PICKLIST_VALUE, `${object}.${f.name}: ${pv.masterLabel}`, pv.masterLabel, pv.translation,
-          wb({ component: 'Picklist Value', object, objectLabel: label, row: `${pv.masterLabel} (field: ${fieldMaster})`, rows: [pv.masterLabel], parent: fieldMaster }))
+          wb({ component: 'Picklist Value', ...valuesOn, row: `${pv.masterLabel} (field: ${fieldMaster})`, rows: [pv.masterLabel], parent: fieldMaster }))
       );
     }
   }

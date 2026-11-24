@@ -80,7 +80,8 @@ export function reportObjects(objects, ...itemObjects) {
 }
 
 /**
- * Objects with custom fields of the org's own that are not in the object list: newer than the API version. Their
+ * Objects with custom fields of the org's own that are not in the object list: newer than the API version, and
+ * Activity (never listed; it owns the custom fields of events and tasks). Their
  * CustomObjectTranslation files can still be read by name. A field without an object name has the table's API name,
  * or an Id (it starts with a digit: Data Cloud objects, which Translation Workbench does not hold).
  */
@@ -123,8 +124,6 @@ export async function loadMissingTranslations(session, { onProgress } = {}) {
     queryAll(session, `SELECT Id, ExternalStringId, Language, Value FROM ExternalStringLocalization WHERE Language IN ('${codes.join("','")}')`, { tooling: true }).catch(soft('Custom labels')),
     queryAll(session, 'SELECT TableEnumOrId, EntityDefinition.QualifiedApiName FROM CustomField WHERE NamespacePrefix = null', { tooling: true })
       .then((r) => r.map((f) => f.EntityDefinition?.QualifiedApiName || f.TableEnumOrId))
-      // Custom Activity fields are in the files of both objects.
-      .then((r) => [...new Set(r)].flatMap((n) => (n === 'Activity' ? ['Event', 'Task'] : [n])))
       .catch(soft('Field labels on standard objects')),
     queryAll(session, 'SELECT SobjectType FROM RecordType WHERE NamespacePrefix = null')
       .then((r) => r.map((x) => x.SobjectType))

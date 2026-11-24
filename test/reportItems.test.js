@@ -305,7 +305,7 @@ test('unlisted objects: own custom fields on an object the API version does not 
   assert.deepEqual(unlistedObjects([{ name: 'Account' }], ['Account', 'NewThing', 'NewThing', '9sdHu000001azwKIAQ', 'acme__Pkg__c', 'Demo_Setting__mdt', undefined, null]), ['NewThing']);
 });
 
-test('an unlisted object is read by name; an empty file gives no row; a failed read names the object; Activity fields are read as Event and Task', async () => {
+test('an unlisted object is read by name; an empty file gives no row; a failed read names the object; custom Activity fields are listed once, under Activity', async () => {
   const run = async (host, fail) => {
     const read = [];
     globalThis.fetch = async (u, init = {}) => {
@@ -326,6 +326,7 @@ test('an unlisted object is read by name; an empty file gives no row; a failed r
         { TableEnumOrId: 'NewThing', EntityDefinition: null },
         { TableEnumOrId: 'Goal', EntityDefinition: null },
         { TableEnumOrId: '9sdHu000001azwKIAQ', EntityDefinition: null },
+        { TableEnumOrId: 'Task', EntityDefinition: { QualifiedApiName: 'Task' } },
         { TableEnumOrId: 'Activity', EntityDefinition: { QualifiedApiName: 'Activity' } },
       ];
       return { ok: true, json: async () => ({ records: rows, done: true }) };
@@ -334,12 +335,12 @@ test('an unlisted object is read by name; an empty file gives no row; a failed r
   };
   const ok = await run('report3.my.salesforce.com', false);
   assert.deepEqual(ok.out.warnings, []);
-  assert.deepEqual(ok.out.missing.map((i) => i.name), ['Event.Color__c', 'NewThing.Color__c', 'Task.Color__c']);
-  assert.deepEqual(ok.read.filter((n) => /-fr$/.test(n)).sort(), ['Event-fr', 'NewThing-fr', 'Task-fr']);
-  assert.ok(!ok.read.some((n) => /^(9sd|Activity|Account)/.test(n)));
+  assert.deepEqual(ok.out.missing.map((i) => i.name), ['Activity.Color__c', 'NewThing.Color__c']);
+  assert.deepEqual(ok.read.filter((n) => /-fr$/.test(n)).sort(), ['Activity-fr', 'NewThing-fr', 'Task-fr']);
+  assert.ok(!ok.read.some((n) => /^(9sd|Account)/.test(n)));
   const failed = await run('report4.my.salesforce.com', true);
-  assert.deepEqual(failed.out.warnings, ['Goal, NewThing not checked: no access']);
-  assert.deepEqual(failed.out.missing.map((i) => i.name), ['Event.Color__c', 'Task.Color__c']);
+  assert.deepEqual(failed.out.warnings, ['Activity, Goal, NewThing not checked: no access']);
+  assert.deepEqual(failed.out.missing, []);
 });
 
 test('the whole report only reads (GET queries and readMetadata) and lists the missing items per language', async () => {
