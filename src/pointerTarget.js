@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Which element the Alt+Shift+T shortcut describes. Content script, loaded before content.js
 // (no import/export: it runs as a classic script there). Pure DOM walking, unit tested in Node with fakes.
 globalThis.sftlPointer = (() => {

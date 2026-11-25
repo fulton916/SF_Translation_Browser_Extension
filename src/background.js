@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 import { getSession, loadOrgData, loadUserLanguage, loadDescribe, loadDataTranslation, loadLabelTranslations, loadFlexiPageComponent, loadNearestFlexiPageComponent, loadFlowScreens, loadValueSet, loadRecordTypeId, loadMasterDescribe, loadObjectTranslation, loadUtilityApps, loadUtilityBar, loadPipelineMetrics, loadPipelineMetricTranslations, loadTranslationsTabIds } from './sfApi.js';
 import { locate, contextObjects, objectFromTitle, buildGotoUrl, normalize, matchType, detectAreas, findUtilityItem, needsOrgWideSearch } from './locator.js';
 import { loadOrgIndex, loadOrgSectionTranslations } from './orgIndex.js';

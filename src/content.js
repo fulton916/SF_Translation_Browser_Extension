@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Runs in every Salesforce frame. Two jobs:
 // 1. Remember what was right-clicked and collect Lightning metadata from it.
 // 2. In the top frame, render the results panel.

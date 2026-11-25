@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Pure lookup logic: matches text against org metadata and decides which of the
 // three translation places owns it. No chrome.* or network calls here, so it can
 // be unit tested in Node.

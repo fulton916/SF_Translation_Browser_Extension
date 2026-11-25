@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Switch the signed-in user's own Salesforce language from the panel (issue #46).
 // User.LanguageLocaleKey, tested in the dev org as an admin and as a Minimum Access user: both can save it
 // on their own record (204), and userinfo reads the new language right after.

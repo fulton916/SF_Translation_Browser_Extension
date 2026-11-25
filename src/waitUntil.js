@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Retry helper for auto-fill. Content script, loaded before content.js (a classic script there, no
 // import/export). Pure: the clock and the pause are passed in, so it is unit tested in Node.
 globalThis.sftlWait = (() => {

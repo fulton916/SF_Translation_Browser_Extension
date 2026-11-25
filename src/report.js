@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Missing-translations report (README Roadmap Phase 4, issue #14): pure logic, no chrome.* or network
 // calls, so it is unit tested in Node. src/reportApi.js reads the org; src/reportPage.js shows the report.
 
