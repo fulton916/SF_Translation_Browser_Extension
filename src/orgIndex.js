@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 import { queryAll, soapCall, xmlBlocks, xmlValue, dropBlocks, escapeXml, parseSectionTranslations } from './sfApi.js';
 
 // Org-wide search data (#24): page layout section names, screen flow text and button labels of the whole

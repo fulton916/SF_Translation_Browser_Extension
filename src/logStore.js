@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Local activity/error log for testing. Stored in chrome.storage.local only; never sent anywhere.
 // All writes go through the background service worker so entries are never lost to races.
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 import { PAGE_COMPONENT_KINDS, namespaceOf } from './locator.js';
 
 // Salesforce API access from the extension service worker.

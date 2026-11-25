@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Missing-translations report page (issue #14), opened from the toolbar popup with ?org=<Salesforce origin>.
 // Reads only (reportApi.js). "Go to translation" opens the same screens as the panel button (buildGotoUrl),
 // and content.js auto-fills them from the same pending entry background.js writes.

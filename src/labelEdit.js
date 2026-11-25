@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Edit a custom label translation from the panel (issue #25, README Roadmap Phase 3 part 1).
 // Tooling API ExternalStringLocalization, tested in the dev org (issue #25 comment):
 // - Create takes ExternalStringId, Language, Value. Update takes Value only. Delete is allowed.

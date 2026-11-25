@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Toolbar popup: the missing-translations report for the org in this tab, and the test log.
 
 import { reportPath } from './report.js';
