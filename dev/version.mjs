@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Fingerprint of every file Chrome loads for the extension (manifest.json and src/): path, mtime and size.
 import { readdirSync, statSync } from 'node:fs';
 import path from 'node:path';

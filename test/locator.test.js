@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { locate, normalize, matchType, contextObjects, parseSelectionName, buildGotoUrl, namespaceOf, isSetupPage, SOURCE, htmlLines, htmlToText, pathStepMatch, pathOfStep } from '../src/locator.js';

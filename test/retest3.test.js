@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Dev org re-test of v0.2.5 (Nov 2026): one test per fix, with made-up names and zero-padded fake Ids.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

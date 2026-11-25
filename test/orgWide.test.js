@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Org-wide search (#24): page layout sections and buttons of every object, from the org index
 // (src/orgIndex.js). Fake data in the shape loadOrgIndex returns.
 import { test } from 'node:test';

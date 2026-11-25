@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Developer Edition sweep (Nov 2026, tester A): one test per confirmed finding, using the failing example
 // with made-up names and Ids.
 import { test } from 'node:test';

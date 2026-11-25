@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Missing-translations report (#14): which items have no translation. The XML is shaped as Salesforce
 // returns readMetadata (dev org, checked live): an untranslated element holds only a comment with the master text.
 import { test } from 'node:test';

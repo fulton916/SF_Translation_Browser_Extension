@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Issue #13: Salesforce's own text is found by its page marker, so it is found in any language.
 // French text and hints were captured live in the dev org (user language French, Nov 2026). The org has no
 // Polish, so the Polish strings are illustrative: the checks read only page markers, never the words.
