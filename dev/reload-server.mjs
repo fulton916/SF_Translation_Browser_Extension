@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Dev only: the unpacked extension reloads itself after a code change, with no click on Reload.
 // Run `npm run dev` and leave it running. It writes dev.json next to manifest.json (gitignored, never
 // in the zip). The background worker finds that file and polls GET /__version every 30 seconds.

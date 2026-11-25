@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Pipeline Inspection (/lightning/o/Opportunity/pipelineInspection, checked live Nov 2026): Salesforce's
 // own page. Paths below are the real element paths with made-up names and Ids.
 import { test } from 'node:test';

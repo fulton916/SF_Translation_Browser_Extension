@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sean R Fulton. All rights reserved. No permission is granted to use, copy, modify,
+// or distribute this software without written permission.
+
 // Account / Opportunity page sweep (Nov 2026): one test per confirmed finding, with the hints and metadata
 // in the shape Salesforce returns, and made-up names, texts and Ids.
 import { test } from 'node:test';
