@@ -30,7 +30,7 @@ pages with fades, and the scroll to the row is added: the extension goes straigh
 4. Click **Load unpacked** and pick the `SF-Translation-Locator` folder (the one that holds `manifest.json`).
    "Manifest file is missing" means you picked the folder above it.
 5. Pin the extension: puzzle-piece menu → **SF Translation Locator** (a grey letter icon). Clicking it
-   opens the test log.
+   opens a menu: **Missing translations report** and **Test log**.
 6. Reload any open Salesforce tabs.
 7. In Salesforce, highlight a word, right-click, and choose **Find Salesforce translation for "..."**.
    With nothing highlighted, right-click the text and choose **Find Salesforce translation for this text**,
@@ -127,7 +127,7 @@ Only the language changes, not the locale (date and number formats).
 
 In the panel, click **Report a problem**. A report of the lookup is copied. Paste it into an email or chat
 to the person who sent you the extension, and add a sentence about what was wrong. Or open the test log
-(toolbar icon, or **Test log** at the bottom of the panel), click **Copy all**, and send that.
+(toolbar icon → **Test log**, or **Test log** at the bottom of the panel), click **Copy all**, and send that.
 Do not paste logs in public places: they contain field names and page addresses.
 
 ## How it works
@@ -241,7 +241,7 @@ auto-fill runs, it keeps going, and retries a failed step when you come back.
 
 ## Test log
 
-Click the extension's icon in the toolbar (or **Test log** at the bottom of the panel) to open the log.
+Click the extension's icon in the toolbar and choose **Test log** (or use **Test log** at the bottom of the panel) to open the log.
 It records each lookup, its top results and the page element behind it (tags, component names, dialog title), each Go to translation, every auto-fill step and message,
 and all errors with details. It updates live while you test. **Copy all** gives plain text to send
 to the person who sent you the extension. **Download** saves JSON. Stored only in this browser (last 500 entries);
